@@ -13,7 +13,10 @@
     <div class="sep"></div>
     <button class="btn" onclick="editor.goImage(-1)">&lt;</button>
     <button class="btn" onclick="editor.goImage(1)">&gt;</button>
-    <span style="font-size:0.9em; color:#aaa; max-width:200px; overflow:hidden; white-space:nowrap;">{{ filename }}</span>
+    
+    <!-- ИСПРАВЛЕНИЕ: Добавлен class="file-info" -->
+    <span class="file-info" style="font-size:0.9em; color:#aaa; max-width:200px; overflow:hidden; white-space:nowrap;">{{ filename }}</span>
+    
     <div style="flex:1"></div>
 
     <button class="btn" id="btn-edit" onclick="editor.setMode('edit')">Выделение (V)</button>
