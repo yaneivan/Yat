@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>HTR Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="dashboard">
+
+<div class="container">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+        <h1 style="margin:0">Проекты</h1>
+        <div>
+            <button class="btn" style="background:#17a2b8" onclick="document.getElementById('zipInput').click()">Импорт ZIP</button>
+            <input type="file" id="zipInput" accept=".zip" style="display:none" onchange="handleZipImport(this)">
+            <button id="btn-delete" class="btn danger" style="display:none" onclick="deleteSelected()">Удалить</button>
+        </div>
+    </div>
+
+    <div id="drop-area">
+        <p style="pointer-events:none; color:#666;">Перетащите картинки сюда</p>
+        <input type="file" id="fileElem" multiple accept="image/*" style="display:none">
+        <div id="upload-status" style="display:none; margin-top:10px; color:#007bff; font-weight:bold;"></div>
+    </div>
+
+    <div class="file-list">
+        {% for file in files %}
+        <div class="file-card">
+            <img src="/data/images/{{ file }}" class="thumb" onclick="window.location.href='/editor?image={{ file }}'" loading="lazy">
+            <div class="meta">
+                <span title="{{ file }}" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100px;">{{ file }}</span>
+                <input type="checkbox" class="select-chk" value="{{ file }}" onchange="toggleDeleteBtn()">
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script src="/static/js/api.js"></script>
+<script src="/static/js/dashboard.js"></script>
+</body>
+</html>
