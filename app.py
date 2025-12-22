@@ -1,7 +1,10 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for
+from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for, send_file
 import utils
+import os
 
 app = Flask(__name__)
+
+# --- Страницы ---
 
 @app.route('/')
 def index():
@@ -31,12 +34,6 @@ def upload_files():
         if utils.save_image(f): count += 1
     return jsonify({'status': 'success', 'count': count})
 
-@app.route('/api/import_zip', methods=['POST'])
-def import_zip():
-    if 'file' not in request.files: return jsonify({'status': 'error'})
-    count = utils.process_zip_import(request.files['file'])
-    return jsonify({'status': 'success', 'count': count})
-
 @app.route('/api/delete', methods=['POST'])
 def delete_files():
     count = utils.delete_files(request.json.get('filenames', []))
@@ -51,6 +48,35 @@ def save_annotation():
 @app.route('/api/load/<filename>')
 def load_annotation(filename):
     return jsonify(utils.load_annotation(filename))
+
+# --- Новые API для Импорта/Экспорта ---
+
+@app.route('/api/import_zip', methods=['POST'])
+def import_zip():
+    if 'file' not in request.files: return jsonify({'status': 'error', 'msg': 'No file'})
+    
+    # Получаем значение simplify из формы (по умолчанию 0)
+    simplify = request.form.get('simplify', 0)
+    try:
+        simplify = int(simplify)
+    except:
+        simplify = 0
+        
+    count = utils.process_zip_import(request.files['file'], simplify_val=simplify)
+    return jsonify({'status': 'success', 'count': count})
+
+@app.route('/api/export_zip')
+def export_zip():
+    """Создает ZIP с данными проекта и отдает пользователю"""
+    try:
+        zip_path = utils.create_export_zip()
+        return send_file(
+            zip_path, 
+            as_attachment=True, 
+            download_name='project_export.zip'
+        )
+    except Exception as e:
+        return jsonify({'status': 'error', 'msg': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

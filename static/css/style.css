@@ -1,14 +1,34 @@
 body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #222; color: #ddd; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
-
-/* Dashboard Specific (Overrides body) */
 body.dashboard { background: #f4f4f4; color: #333; padding: 40px; overflow: auto; display: block; }
 
 /* Components */
-.btn { padding: 6px 12px; border: none; background: #444; color: #ccc; cursor: pointer; border-radius: 4px; font-size: 13px; font-weight: 500; transition: 0.2s; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+.btn { 
+    padding: 8px 14px; 
+    border: none; 
+    background: #444; 
+    color: #e0e0e0; /* Светлее чем было */
+    cursor: pointer; 
+    border-radius: 4px; 
+    font-size: 13px; 
+    font-weight: 500; 
+    transition: 0.2s; 
+    text-decoration: none; 
+    display: inline-flex; 
+    align-items: center; 
+    justify-content: center; 
+}
 .btn:hover { background: #555; color: #fff; }
 .btn.active { background: #007bff; color: white; }
 .btn.danger { background: #dc3545; color: white; }
 .btn.disabled { opacity: 0.3; pointer-events: none; }
+
+/* Специальные цветные кнопки (Импорт/Экспорт) */
+.btn-primary { background: #17a2b8; color: #fff !important; font-weight: 600; }
+.btn-primary:hover { background: #138496; }
+
+.btn-success { background: #28a745; color: #fff !important; font-weight: 600; }
+.btn-success:hover { background: #218838; }
+
 .sep { border-left: 1px solid #555; height: 20px; margin: 0 8px; }
 
 /* Editor Layout */

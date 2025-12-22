@@ -10,9 +10,9 @@
 <div class="container">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
         <h1 style="margin:0">Проекты</h1>
-        <div>
-            <button class="btn" style="background:#17a2b8" onclick="document.getElementById('zipInput').click()">Импорт ZIP</button>
-            <input type="file" id="zipInput" accept=".zip" style="display:none" onchange="handleZipImport(this)">
+        <div style="display:flex; gap:10px;">
+            <button class="btn btn-primary" onclick="openImportModal()">Импорт ZIP</button>
+            <button class="btn btn-success" onclick="window.location.href='/api/export_zip'">Экспорт (eScriptorium)</button>
             <button id="btn-delete" class="btn danger" style="display:none" onclick="deleteSelected()">Удалить</button>
         </div>
     </div>
@@ -36,7 +36,78 @@
     </div>
 </div>
 
+<!-- Модальное окно Импорта -->
+<div id="importModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); align-items:center; justify-content:center; z-index:999;">
+    <div style="background:white; padding:20px; border-radius:8px; width:400px; box-shadow:0 0 10px rgba(0,0,0,0.3);">
+        <h3 style="margin-top:0">Импорт проекта</h3>
+        <p style="font-size:0.9em; color:#555;">Выберите ZIP архив (eScriptorium export: METS + PageXML)</p>
+        
+        <input type="file" id="zipInput" accept=".zip" style="width:100%; margin-bottom:15px; border:1px solid #ddd; padding:5px; border-radius:4px;">
+        
+        <label style="display:block; margin-bottom:5px; font-weight:600; font-size:0.9em;">Упрощение полигонов:</label>
+        <div style="display:flex; gap:10px; align-items:center; margin-bottom:20px;">
+            <input type="number" id="simplifyInput" value="5" min="0" style="width:60px; padding:5px; border:1px solid #ddd; border-radius:4px;">
+            <span style="font-size:0.8em; color:#666;">мин. расстояние между точками (px)</span>
+        </div>
+        
+        <div style="text-align:right;">
+            <button class="btn" onclick="closeImportModal()" style="background:#ddd; color:#333; margin-right:10px;">Отмена</button>
+            <button class="btn btn-primary" onclick="submitZipImport()">Импортировать</button>
+        </div>
+    </div>
+</div>
+
 <script src="/static/js/api.js"></script>
 <script src="/static/js/dashboard.js"></script>
+<script>
+    const modal = document.getElementById('importModal');
+    
+    function openImportModal() {
+        modal.style.display = 'flex';
+        document.getElementById('zipInput').value = '';
+    }
+    
+    function closeImportModal() {
+        modal.style.display = 'none';
+    }
+    
+    async function submitZipImport() {
+        const fileInput = document.getElementById('zipInput');
+        const simplifyInput = document.getElementById('simplifyInput');
+        
+        if (!fileInput.files.length) {
+            alert('Выберите файл');
+            return;
+        }
+        
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+        formData.append('simplify', simplifyInput.value);
+        
+        closeImportModal();
+        const statusDiv = document.getElementById('upload-status');
+        if(statusDiv) { statusDiv.style.display='block'; statusDiv.textContent = 'Импорт... Ждите...'; }
+        
+        try {
+            const resp = await fetch('/api/import_zip', { method: 'POST', body: formData });
+            const data = await resp.json();
+            if (data.status === 'success') {
+                alert(`Импортировано файлов: ${data.count}`);
+                window.location.reload();
+            } else {
+                alert('Ошибка: ' + data.msg);
+                if(statusDiv) statusDiv.style.display='none';
+            }
+        } catch(e) {
+            alert('Ошибка сети');
+            if(statusDiv) statusDiv.style.display='none';
+        }
+    }
+    
+    // Закрытие по клику вне окна
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) closeImportModal();
+    });
+</script>
 </body>
 </html>

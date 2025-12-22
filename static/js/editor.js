@@ -1,77 +1,65 @@
 /**
  * Класс для управления Историей (Undo/Redo)
- * Изолирует логику сохранения состояний и предотвращает зацикливание.
  */
 class HistoryManager {
     constructor(canvas, onHistoryChange) {
         this.canvas = canvas;
-        this.onHistoryChange = onHistoryChange; // callback для сохранения на сервер
+        this.onHistoryChange = onHistoryChange;
         
         this.undoStack = [];
         this.redoStack = [];
-        this.locked = false; // Блокировка во время загрузки состояния
+        this.locked = false; 
         this.maxHistory = 50;
     }
 
-    /**
-     * Сохраняет текущее состояние. Вызывать ПЕРЕД или ПОСЛЕ изменения.
-     * В Fabric обычно удобнее сохранять после modification.
-     */
     save() {
         if (this.locked) return;
+        if (this.redoStack.length > 0) this.redoStack = [];
 
-        // Если мы сделали новое действие, ветка Redo теряется
-        if (this.redoStack.length > 0) {
-            this.redoStack = [];
-        }
-
-        const json = this.canvas.toObject(['class', 'selectable', 'evented']);
+        // Сохраняем только объекты (полигоны), чтобы не перезагружать фон (убирает мерцание)
+        const objects = this.canvas.getObjects().map(o => o.toObject(['class', 'selectable', 'evented']));
         
-        // Лимит стека
         if (this.undoStack.length >= this.maxHistory) this.undoStack.shift();
-        
-        this.undoStack.push(JSON.stringify(json));
+        this.undoStack.push(JSON.stringify(objects));
     }
 
     undo() {
-        if (this.undoStack.length <= 1 || this.locked) return; // Нужно хотя бы 2 состояния (начальное + 1)
-
+        if (this.undoStack.length <= 1 || this.locked) return;
         this.locked = true;
 
-        // 1. Текущее состояние переносим в Redo
         const current = this.undoStack.pop();
         this.redoStack.push(current);
-
-        // 2. Достаем предыдущее состояние
         const prev = this.undoStack[this.undoStack.length - 1];
 
-        this._loadState(prev);
+        this._loadObjects(prev);
     }
 
     redo() {
         if (this.redoStack.length === 0 || this.locked) return;
-
         this.locked = true;
 
-        // 1. Достаем состояние из Redo
         const next = this.redoStack.pop();
-        
-        // 2. Возвращаем его в Undo
         this.undoStack.push(next);
-
-        this._loadState(next);
+        
+        this._loadObjects(next);
     }
 
     reset() {
         this.undoStack = [];
         this.redoStack = [];
-        this.save(); // Сохраняем начальное "пустое" состояние
+        this.save(); // Сохраняем начальное состояние
     }
 
-    _loadState(jsonState) {
-        this.canvas.loadFromJSON(jsonState, () => {
-            // Восстанавливаем настройки объектов, которые не сохраняются в JSON
-            this.canvas.getObjects().forEach(obj => {
+    _loadObjects(jsonString) {
+        const objectsData = JSON.parse(jsonString);
+
+        // 1. Удаляем текущие полигоны (не трогая фон)
+        const currentObjects = this.canvas.getObjects().filter(o => o.type === 'polygon'); 
+        this.canvas.remove(...currentObjects);
+
+        // 2. Восстанавливаем объекты из истории
+        fabric.util.enlivenObjects(objectsData, (enlivenedObjects) => {
+            enlivenedObjects.forEach((obj) => {
                 if (obj.type === 'polygon') {
                     obj.set({
                         objectCaching: false, 
@@ -80,17 +68,15 @@ class HistoryManager {
                         strokeWidth: 2
                     });
                 }
+                this.canvas.add(obj);
             });
             
             this.canvas.requestRenderAll();
             this.locked = false;
-            
-            // Сообщаем редактору, что данные изменились (обновить UI и автосейв)
             if (this.onHistoryChange) this.onHistoryChange();
         });
     }
 }
-
 
 /**
  * Основной класс редактора
@@ -100,12 +86,8 @@ class HTREditor {
         this.filename = filename;
         this.snapDist = snapDist;
         this.canvas = new fabric.Canvas(canvasId, {
-            fireRightClick: true, 
-            stopContextMenu: true, 
-            preserveObjectStacking: true,
-            uniformScaling: false, 
-            selection: true, 
-            backgroundColor: "#151515"
+            fireRightClick: true, stopContextMenu: true, preserveObjectStacking: true,
+            uniformScaling: false, selection: true, backgroundColor: "#151515"
         });
         
         // State
@@ -115,9 +97,13 @@ class HTREditor {
         this.editPointsMode = false;
         this.imageList = [];
         this.autoSaveTimer = null;
+        
+        // Для восстановления выделения после Undo
+        this.savedState = null; 
 
         // Sub-modules
         this.history = new HistoryManager(this.canvas, () => {
+            this.restoreSelectionState();
             this.updateSelectionUI();
             this.triggerAutoSave();
         });
@@ -129,15 +115,12 @@ class HTREditor {
         this.imageList = await API.listImages();
         this.resize();
         window.addEventListener('resize', () => this.resize());
-        
-        // SPA Back button handler
-        window.addEventListener('popstate', (event) => {
-            if (event.state && event.state.filename) {
-                this.filename = event.state.filename;
+        window.addEventListener('popstate', (e) => {
+            if (e.state && e.state.filename) {
+                this.filename = e.state.filename;
                 this.loadImageAndData();
             }
         });
-
         this.setupInputHandlers();
         this.setupCanvasEvents();
         await this.loadImageAndData();
@@ -152,34 +135,25 @@ class HTREditor {
     // --- Loading Logic ---
 
     async loadImageAndData() {
-        // UI Update
         const infoSpan = document.querySelector('.file-info');
         if (infoSpan) infoSpan.textContent = this.filename;
 
-        // Canvas Reset
         this.canvas.clear();
         this.canvas.setBackgroundColor("#151515", this.canvas.renderAll.bind(this.canvas));
         
-        // 1. Load Image
         fabric.Image.fromURL(`/data/images/${this.filename}`, img => {
             this.canvas.setBackgroundImage(img, this.canvas.renderAll.bind(this.canvas));
-            
             const scale = (this.canvas.width / img.width) * 0.9;
             this.canvas.setZoom(scale);
-            
             const newW = img.width * scale;
             this.canvas.viewportTransform[4] = (this.canvas.width - newW) / 2;
             this.canvas.viewportTransform[5] = 20;
-
+            
             this.setMode('edit');
-            
-            // Инициализируем историю (начальное состояние)
             this.history.reset();
-            
             this.preloadNeighbors();
         });
 
-        // 2. Load Data
         const data = await API.loadAnnotation(this.filename);
         if (data.regions) {
             data.regions.forEach(r => {
@@ -190,7 +164,6 @@ class HTREditor {
                 });
                 this.canvas.add(p);
             });
-            // Сохраняем состояние после загрузки полигонов
             this.history.save(); 
         }
     }
@@ -198,8 +171,7 @@ class HTREditor {
     preloadNeighbors() {
         const idx = this.imageList.indexOf(this.filename);
         if (idx === -1) return;
-        const indices = [(idx + 1) % this.imageList.length, (idx - 1 + this.imageList.length) % this.imageList.length];
-        indices.forEach(i => {
+        [(idx + 1) % this.imageList.length, (idx - 1 + this.imageList.length) % this.imageList.length].forEach(i => {
             const fname = this.imageList[i];
             new Image().src = `/data/images/${fname}`;
             fetch(`/api/load/${fname}`); 
@@ -214,6 +186,35 @@ class HTREditor {
         history.pushState({ filename: newFilename }, '', newUrl);
         this.filename = newFilename;
         this.loadImageAndData();
+    }
+
+    // --- History Helper: Selection Restore ---
+
+    captureSelectionState() {
+        const active = this.canvas.getActiveObject();
+        this.savedState = {
+            index: active ? this.canvas.getObjects().indexOf(active) : -1,
+            isEditPoints: this.editPointsMode
+        };
+    }
+
+    restoreSelectionState() {
+        if (!this.savedState || this.savedState.index === -1) {
+            this.editPointsMode = false;
+            return;
+        }
+        const objects = this.canvas.getObjects();
+        if (this.savedState.index < objects.length) {
+            const obj = objects[this.savedState.index];
+            this.canvas.setActiveObject(obj);
+            if (this.savedState.isEditPoints && obj.type === 'polygon') {
+                this.editPointsMode = true;
+                this.enablePolyEdit(obj);
+            } else {
+                this.editPointsMode = false;
+            }
+        }
+        this.savedState = null;
     }
 
     // --- Modes ---
@@ -242,16 +243,13 @@ class HTREditor {
         this.canvas.requestRenderAll();
     }
 
-    // --- Drawing Tool ---
+    // --- Drawing ---
 
     handleDrawClick(pointer) {
         if (this.drawPoints.length > 2) {
             const p0 = this.drawPoints[0];
             const dist = Math.hypot(p0.x - pointer.x, p0.y - pointer.y) * this.canvas.getZoom();
-            if (dist < this.snapDist) {
-                this.finishPolygon();
-                return;
-            }
+            if (dist < this.snapDist) { this.finishPolygon(); return; }
         }
         
         this.drawPoints.push({x: pointer.x, y: pointer.y});
@@ -287,7 +285,6 @@ class HTREditor {
         });
         this.canvas.add(poly);
         this.canvas.requestRenderAll();
-        // При добавлении сработает object:added -> history.save
     }
 
     abortDrawing() {
@@ -300,7 +297,7 @@ class HTREditor {
         this.canvas.requestRenderAll();
     }
 
-    // --- Edit Tool (Points) ---
+    // --- Poly Editing ---
 
     toggleEditPoints() {
         const poly = this.canvas.getActiveObject();
@@ -309,44 +306,54 @@ class HTREditor {
         this.editPointsMode = !this.editPointsMode;
         
         if (this.editPointsMode) {
-            poly.controls = poly.points.reduce((acc, point, index) => {
-                acc['p' + index] = new fabric.Control({
-                    positionHandler: (dim, finalMatrix, fabricObject) => {
-                        const x = (fabricObject.points[index].x - fabricObject.pathOffset.x);
-                        const y = (fabricObject.points[index].y - fabricObject.pathOffset.y);
-                        return fabric.util.transformPoint({ x, y }, 
-                            fabric.util.multiplyTransformMatrices(fabricObject.canvas.viewportTransform, fabricObject.calcTransformMatrix())
-                        );
-                    },
-                    actionHandler: (eventData, transform, x, y) => {
-                        const polygon = transform.target;
-                        const mouseLocal = polygon.toLocalPoint(new fabric.Point(x, y), 'center', 'center');
-                        const polygonBaseSize = polygon._getNonTransformedDimensions();
-                        const size = polygon._getTransformedDimensions(0, 0);
-                        polygon.points[index] = {
-                            x: mouseLocal.x * polygonBaseSize.x / size.x + polygon.pathOffset.x,
-                            y: mouseLocal.y * polygonBaseSize.y / size.y + polygon.pathOffset.y
-                        };
-                        return true;
-                    },
-                    actionName: 'modifyPolygon', cursorStyle: 'crosshair',
-                    render: (ctx, left, top) => {
-                        ctx.save(); ctx.translate(left, top); ctx.fillStyle = '#ff00ff';
-                        ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI * 2); ctx.fill(); ctx.restore();
-                    }
-                });
-                return acc;
-            }, {});
-            poly.hasBorders = false;
+            this.enablePolyEdit(poly);
         } else {
-            poly.controls = fabric.Object.prototype.controls;
-            poly.hasBorders = true;
+            this.disablePolyEdit(poly);
         }
         this.canvas.requestRenderAll();
         this.updateSelectionUI();
     }
 
-    // --- Event Listeners ---
+    enablePolyEdit(poly) {
+        poly.controls = poly.points.reduce((acc, point, index) => {
+            acc['p' + index] = new fabric.Control({
+                positionHandler: (dim, finalMatrix, fabricObject) => {
+                    const x = (fabricObject.points[index].x - fabricObject.pathOffset.x);
+                    const y = (fabricObject.points[index].y - fabricObject.pathOffset.y);
+                    return fabric.util.transformPoint({ x, y }, 
+                        fabric.util.multiplyTransformMatrices(fabricObject.canvas.viewportTransform, fabricObject.calcTransformMatrix())
+                    );
+                },
+                actionHandler: (eventData, transform, x, y) => {
+                    const polygon = transform.target;
+                    const mouseLocal = polygon.toLocalPoint(new fabric.Point(x, y), 'center', 'center');
+                    const polygonBaseSize = polygon._getNonTransformedDimensions();
+                    const size = polygon._getTransformedDimensions(0, 0);
+                    polygon.points[index] = {
+                        x: mouseLocal.x * polygonBaseSize.x / size.x + polygon.pathOffset.x,
+                        y: mouseLocal.y * polygonBaseSize.y / size.y + polygon.pathOffset.y
+                    };
+                    return true;
+                },
+                actionName: 'modifyPolygon', cursorStyle: 'crosshair',
+                render: (ctx, left, top) => {
+                    ctx.save(); ctx.translate(left, top); ctx.fillStyle = '#ff00ff';
+                    ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+                }
+            });
+            return acc;
+        }, {});
+        poly.hasBorders = false;
+    }
+
+    disablePolyEdit(poly) {
+        if(poly) {
+            poly.controls = fabric.Object.prototype.controls;
+            poly.hasBorders = true;
+        }
+    }
+
+    // --- Events ---
 
     setupCanvasEvents() {
         let isPanning = false;
@@ -373,14 +380,12 @@ class HTREditor {
                 lastMouse = { x: e.clientX, y: e.clientY };
                 return;
             }
-
             if (this.currentMode === 'draw') {
                 const pointer = this.canvas.getPointer(opt.e);
-                // Rubberband
                 if (this.drawPoints.length > 0) {
                     if (!this.activeLine) {
                         this.activeLine = new fabric.Line([this.drawPoints[this.drawPoints.length-1].x, this.drawPoints[this.drawPoints.length-1].y, pointer.x, pointer.y], {
-                            stroke:'red', strokeWidth: 2/this.canvas.getZoom(), selectable:false, evented:false, opacity:0.8, class:'temp'
+                            stroke:'red', strokeWidth: 2/this.canvas.getZoom(), selectable:false, evented:false, class:'temp'
                         });
                         this.canvas.add(this.activeLine);
                     } else {
@@ -388,7 +393,6 @@ class HTREditor {
                     }
                     this.canvas.requestRenderAll();
                 }
-                // Cursor snap
                 if (this.drawPoints.length > 2) {
                     const p0 = this.drawPoints[0];
                     const dist = Math.hypot(p0.x - pointer.x, p0.y - pointer.y) * this.canvas.getZoom();
@@ -419,14 +423,26 @@ class HTREditor {
             opt.e.stopPropagation();
         });
 
-        // UI Updates
-        const updateUI = () => this.updateSelectionUI();
-        this.canvas.on('selection:created', updateUI);
-        this.canvas.on('selection:updated', updateUI);
-        this.canvas.on('selection:cleared', updateUI);
+        // Обработка смены выделения (сброс режима точек)
+        const onSelectionChange = (e) => {
+            // Если были объекты, которые потеряли выделение - сбрасываем им режим точек (возвращаем рамку)
+            if (e.deselected) {
+                e.deselected.forEach(obj => this.disablePolyEdit(obj));
+            }
+            this.editPointsMode = false;
+            this.updateSelectionUI();
+        };
+
+        this.canvas.on('selection:created', onSelectionChange);
+        this.canvas.on('selection:updated', onSelectionChange);
+        this.canvas.on('selection:cleared', (e) => {
+            if (e.deselected) {
+                e.deselected.forEach(obj => this.disablePolyEdit(obj));
+            }
+            this.editPointsMode = false;
+            this.updateSelectionUI();
+        });
         
-        // History Hooks
-        // Сохраняем ТОЛЬКО постоянные объекты (фильтруем temp/class)
         const onObjectChanged = (e) => {
             if(!e.target.class && e.target.type==='polygon') {
                 this.history.save();
@@ -440,24 +456,23 @@ class HTREditor {
 
     setupInputHandlers() {
         document.addEventListener('keydown', (e) => {
-            // Shortcuts
             const isCtrl = e.ctrlKey || e.metaKey;
             const key = e.key.toLowerCase();
 
-            // Undo: Ctrl+Z
-            // Redo: Ctrl+Shift+Z или Ctrl+Y (стандарт) или Ctrl+Shift+Я
             if (isCtrl) {
                 if (e.shiftKey && (key === 'z' || key === 'я')) {
                     e.preventDefault();
+                    this.captureSelectionState();
                     this.history.redo();
                     return;
                 }
                 if (key === 'z' || key === 'я') {
                     e.preventDefault();
+                    this.captureSelectionState();
                     this.history.undo();
                     return;
                 }
-                if (key === 'a' || key === 'ф') { // Select All
+                if (key === 'a' || key === 'ф') {
                     e.preventDefault();
                     if (this.currentMode === 'edit') this.selectAll();
                     return;
