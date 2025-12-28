@@ -1,5 +1,5 @@
 /**
- * Класс для управления Историей (Undo/Redo)
+ * History Manager Class
  */
 class HistoryManager {
     constructor(canvas, onHistoryChange) {
@@ -16,7 +16,6 @@ class HistoryManager {
         if (this.locked) return;
         if (this.redoStack.length > 0) this.redoStack = [];
 
-        // Сохраняем только объекты (полигоны), чтобы не перезагружать фон (убирает мерцание)
         const objects = this.canvas.getObjects().map(o => o.toObject(['class', 'selectable', 'evented']));
         
         if (this.undoStack.length >= this.maxHistory) this.undoStack.shift();
@@ -47,17 +46,14 @@ class HistoryManager {
     reset() {
         this.undoStack = [];
         this.redoStack = [];
-        this.save(); // Сохраняем начальное состояние
+        this.save(); 
     }
 
     _loadObjects(jsonString) {
         const objectsData = JSON.parse(jsonString);
-
-        // 1. Удаляем текущие полигоны (не трогая фон)
         const currentObjects = this.canvas.getObjects().filter(o => o.type === 'polygon'); 
         this.canvas.remove(...currentObjects);
 
-        // 2. Восстанавливаем объекты из истории
         fabric.util.enlivenObjects(objectsData, (enlivenedObjects) => {
             enlivenedObjects.forEach((obj) => {
                 if (obj.type === 'polygon') {
@@ -79,7 +75,7 @@ class HistoryManager {
 }
 
 /**
- * Основной класс редактора
+ * Editor Class
  */
 class HTREditor {
     constructor(canvasId, filename, snapDist = 15) {
@@ -90,18 +86,14 @@ class HTREditor {
             uniformScaling: false, selection: true, backgroundColor: "#151515"
         });
         
-        // State
         this.currentMode = null; 
         this.drawPoints = [];
         this.activeLine = null;
         this.editPointsMode = false;
         this.imageList = [];
         this.autoSaveTimer = null;
-        
-        // Для восстановления выделения после Undo
         this.savedState = null; 
 
-        // Sub-modules
         this.history = new HistoryManager(this.canvas, () => {
             this.restoreSelectionState();
             this.updateSelectionUI();
@@ -132,8 +124,6 @@ class HTREditor {
         this.canvas.setHeight(el.clientHeight);
     }
 
-    // --- Loading Logic ---
-
     async loadImageAndData() {
         const infoSpan = document.querySelector('.file-info');
         if (infoSpan) infoSpan.textContent = this.filename;
@@ -141,18 +131,31 @@ class HTREditor {
         this.canvas.clear();
         this.canvas.setBackgroundColor("#151515", this.canvas.renderAll.bind(this.canvas));
         
-        fabric.Image.fromURL(`/data/images/${this.filename}`, img => {
-            this.canvas.setBackgroundImage(img, this.canvas.renderAll.bind(this.canvas));
-            const scale = (this.canvas.width / img.width) * 0.9;
-            this.canvas.setZoom(scale);
-            const newW = img.width * scale;
-            this.canvas.viewportTransform[4] = (this.canvas.width - newW) / 2;
-            this.canvas.viewportTransform[5] = 20;
+        // --- ROBUST IMAGE LOADING FIX ---
+        const timestamp = new Date().getTime();
+        const imgUrl = `/data/images/${this.filename}?t=${timestamp}`;
+        
+        const imgEl = new Image();
+        imgEl.onload = () => {
+            const fabricImg = new fabric.Image(imgEl);
             
-            this.setMode('edit');
-            this.history.reset();
-            this.preloadNeighbors();
-        });
+            this.canvas.setBackgroundImage(fabricImg, () => {
+                const scale = (this.canvas.width / fabricImg.width) * 0.9;
+                this.canvas.setZoom(scale);
+                const newW = fabricImg.width * scale;
+                this.canvas.viewportTransform[4] = (this.canvas.width - newW) / 2;
+                this.canvas.viewportTransform[5] = 20;
+                
+                this.canvas.requestRenderAll(); 
+                this.setMode('edit');
+                this.history.reset();
+                this.preloadNeighbors();
+            });
+        };
+        imgEl.onerror = () => {
+            alert("Image load error.");
+        };
+        imgEl.src = imgUrl;
 
         const data = await API.loadAnnotation(this.filename);
         if (data.regions) {
@@ -188,8 +191,6 @@ class HTREditor {
         this.loadImageAndData();
     }
 
-    // --- History Helper: Selection Restore ---
-
     captureSelectionState() {
         const active = this.canvas.getActiveObject();
         this.savedState = {
@@ -217,8 +218,6 @@ class HTREditor {
         this.savedState = null;
     }
 
-    // --- Modes ---
-
     setMode(mode) {
         this.currentMode = mode;
         this.editPointsMode = false;
@@ -243,15 +242,12 @@ class HTREditor {
         this.canvas.requestRenderAll();
     }
 
-    // --- Drawing ---
-
     handleDrawClick(pointer) {
         if (this.drawPoints.length > 2) {
             const p0 = this.drawPoints[0];
             const dist = Math.hypot(p0.x - pointer.x, p0.y - pointer.y) * this.canvas.getZoom();
             if (dist < this.snapDist) { this.finishPolygon(); return; }
         }
-        
         this.drawPoints.push({x: pointer.x, y: pointer.y});
         this._renderDrawHelpers(pointer);
     }
@@ -263,7 +259,6 @@ class HTREditor {
             selectable:false, evented:false, class:'temp'
         });
         this.canvas.add(circle);
-        
         if (this.drawPoints.length > 1) {
             const p1 = this.drawPoints[this.drawPoints.length-2];
             const p2 = this.drawPoints[this.drawPoints.length-1];
@@ -297,14 +292,10 @@ class HTREditor {
         this.canvas.requestRenderAll();
     }
 
-    // --- Poly Editing ---
-
     toggleEditPoints() {
         const poly = this.canvas.getActiveObject();
         if (!poly || poly.type !== 'polygon' || poly._objects) return;
-
         this.editPointsMode = !this.editPointsMode;
-        
         if (this.editPointsMode) {
             this.enablePolyEdit(poly);
         } else {
@@ -352,8 +343,6 @@ class HTREditor {
             poly.hasBorders = true;
         }
     }
-
-    // --- Events ---
 
     setupCanvasEvents() {
         let isPanning = false;
@@ -423,9 +412,7 @@ class HTREditor {
             opt.e.stopPropagation();
         });
 
-        // Обработка смены выделения (сброс режима точек)
         const onSelectionChange = (e) => {
-            // Если были объекты, которые потеряли выделение - сбрасываем им режим точек (возвращаем рамку)
             if (e.deselected) {
                 e.deselected.forEach(obj => this.disablePolyEdit(obj));
             }
@@ -492,8 +479,6 @@ class HTREditor {
             }
         });
     }
-
-    // --- Helpers ---
 
     updateSelectionUI() {
         const active = this.canvas.getActiveObject();

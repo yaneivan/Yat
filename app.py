@@ -1,14 +1,14 @@
 from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for, send_file
-import utils
-import os
+import storage
+import logic
+import threading
 
 app = Flask(__name__)
 
-# --- Страницы ---
-
+# --- Pages ---
 @app.route('/')
 def index():
-    return render_template('index.html', files=utils.get_sorted_images())
+    return render_template('index.html', files=storage.get_images_with_status())
 
 @app.route('/editor')
 def editor():
@@ -16,67 +16,79 @@ def editor():
     if not filename: return redirect(url_for('index'))
     return render_template('editor.html', filename=filename)
 
-# --- API ---
+@app.route('/cropper')
+def cropper():
+    filename = request.args.get('image')
+    if not filename: return redirect(url_for('index'))
+    return render_template('cropper.html', filename=filename)
 
+# --- API ---
 @app.route('/api/images_list')
-def api_images_list():
-    return jsonify(utils.get_sorted_images())
+def list_images():
+    return jsonify(storage.get_sorted_images())
 
 @app.route('/data/images/<path:filename>')
 def serve_image(filename):
-    return send_from_directory(utils.IMAGE_FOLDER, filename)
+    return send_from_directory(storage.IMAGE_FOLDER, filename)
+
+@app.route('/data/originals/<path:filename>')
+def serve_original(filename):
+    try:
+        return send_from_directory(storage.ORIGINALS_FOLDER, filename)
+    except:
+        return send_from_directory(storage.IMAGE_FOLDER, filename)
+
+@app.route('/api/load/<filename>')
+def load_data(filename):
+    return jsonify(storage.load_json(filename))
+
+@app.route('/api/save', methods=['POST'])
+def save_data():
+    if storage.save_json(request.json): return jsonify({'status': 'success'})
+    return jsonify({'status': 'error'}), 400
 
 @app.route('/api/upload', methods=['POST'])
-def upload_files():
-    files = request.files.getlist('files[]')
-    count = 0
-    for f in files:
-        if utils.save_image(f): count += 1
+def upload():
+    count = sum(1 for f in request.files.getlist('files[]') if storage.save_image(f))
     return jsonify({'status': 'success', 'count': count})
 
 @app.route('/api/delete', methods=['POST'])
-def delete_files():
-    count = utils.delete_files(request.json.get('filenames', []))
+def delete():
+    count = storage.delete_file_set(request.json.get('filenames', []))
     return jsonify({'status': 'success', 'deleted': count})
 
-@app.route('/api/save', methods=['POST'])
-def save_annotation():
-    if utils.save_annotation(request.json):
-        return jsonify({'status': 'success'})
-    return jsonify({'status': 'error'}), 400
+@app.route('/api/crop', methods=['POST'])
+def crop():
+    data = request.json
+    filename = data.get('image_name')
+    box = data.get('box')
+    
+    if not filename or not box:
+        return jsonify({'status': 'error', 'msg': 'No data'}), 400
 
-@app.route('/api/load/<filename>')
-def load_annotation(filename):
-    return jsonify(utils.load_annotation(filename))
-
-# --- Новые API для Импорта/Экспорта ---
+    # Async background processing
+    def task():
+        logic.perform_crop(filename, box)
+    
+    thread = threading.Thread(target=task)
+    thread.start()
+    
+    return jsonify({'status': 'success', 'msg': 'Background processing started'})
 
 @app.route('/api/import_zip', methods=['POST'])
-def import_zip():
-    if 'file' not in request.files: return jsonify({'status': 'error', 'msg': 'No file'})
-    
-    # Получаем значение simplify из формы (по умолчанию 0)
-    simplify = request.form.get('simplify', 0)
+def import_zip_route():
     try:
-        simplify = int(simplify)
-    except:
-        simplify = 0
-        
-    count = utils.process_zip_import(request.files['file'], simplify_val=simplify)
+        simp = int(request.form.get('simplify', 0))
+    except: simp = 0
+    count = logic.process_zip_import(request.files['file'], simp)
     return jsonify({'status': 'success', 'count': count})
 
 @app.route('/api/export_zip')
-def export_zip():
-    """Создает ZIP с данными проекта и отдает пользователю"""
+def export_zip_route():
     try:
-        zip_path = utils.create_export_zip()
-        return send_file(
-            zip_path, 
-            as_attachment=True, 
-            download_name='project_export.zip'
-        )
+        return send_file(logic.generate_export_zip(), as_attachment=True, download_name='export.zip')
     except Exception as e:
-        return jsonify({'status': 'error', 'msg': str(e)}), 500
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>HTR Cropper</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <style>
+        body { margin: 0; background: #222; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        #toolbar { background: #333; height: 50px; display: flex; align-items: center; padding: 0 15px; border-bottom: 1px solid #444; color: #ccc; gap: 10px; }
+        #workspace { flex: 1; position: relative; background: #111; }
+    </style>
+</head>
+<body>
+
+<div id="toolbar">
+    <button class="btn" onclick="window.location.href='/'" title="Home">🏠</button>
+    <div class="sep"></div>
+    <button class="btn" onclick="goImage(-1)">&lt;</button>
+    <button class="btn" onclick="goImage(1)">&gt;</button>
+    <span style="font-size:0.9em; max-width:200px; white-space:nowrap; overflow:hidden; color:#aaa;">{{ filename }}</span>
+    
+    <div style="flex:1"></div>
+    <div style="font-size:0.8em; color:#888; margin-right:15px;">
+        Shift: Пропорции | ПКМ: Обзор
+    </div>
+    <button class="btn btn-primary" onclick="applyCrop()">✂️ Сохранить</button>
+</div>
+
+<div id="workspace">
+    <canvas id="c"></canvas>
+</div>
+
+<script src="/static/js/api.js"></script>
+<script>
+    const filename = "{{ filename }}";
+    const canvas = new fabric.Canvas('c', { 
+        selection: false, 
+        backgroundColor: "#111",
+        uniScaleKey: 'shiftKey',
+        uniformScaling: false,
+        fireRightClick: true,
+        stopContextMenu: true
+    });
+
+    let cropRect = null;
+    let imgObj = null;
+    let imageList = [];
+
+    (async () => {
+        resize();
+        window.addEventListener('resize', resize);
+        
+        imageList = await API.listImages();
+        
+        fabric.Image.fromURL(`/data/originals/${filename}`, img => {
+            imgObj = img;
+            canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
+            
+            fitImageHeight(img);
+            loadExistingCropData();
+        });
+    })();
+
+    function resize() {
+        const el = document.getElementById('workspace');
+        canvas.setWidth(el.clientWidth);
+        canvas.setHeight(el.clientHeight);
+    }
+
+    function fitImageHeight(img) {
+        const scale = (canvas.height / img.height) * 0.9;
+        canvas.setZoom(scale);
+        
+        const vpt = canvas.viewportTransform;
+        vpt[4] = (canvas.width - img.width * scale) / 2;
+        vpt[5] = (canvas.height - img.height * scale) / 2;
+    }
+
+    async function loadExistingCropData() {
+        const data = await API.loadAnnotation(filename);
+        let left, top, width, height, angle = 0;
+
+        if (data.crop_params) {
+            left = data.crop_params.x;
+            top = data.crop_params.y;
+            width = data.crop_params.w;
+            height = data.crop_params.h;
+            angle = data.crop_params.angle || 0;
+        } else {
+            left = imgObj.width * 0.05;
+            top = imgObj.height * 0.05;
+            width = imgObj.width * 0.9;
+            height = imgObj.height * 0.9;
+        }
+
+        addCropRect(left, top, width, height, angle);
+    }
+
+    function addCropRect(left, top, width, height, angle) {
+        const z = canvas.getZoom();
+        
+        cropRect = new fabric.Rect({
+            left: left, top: top, width: width, height: height, angle: angle,
+            fill: 'rgba(0,0,0,0)',
+            stroke: 'yellow',
+            strokeWidth: 2 / z,
+            strokeDashArray: [10, 5],
+            
+            cornerColor: 'white',
+            cornerSize: 4 / z, 
+            transparentCorners: false,
+            
+            lockRotation: false,
+            hasRotatingPoint: true
+        });
+
+        cropRect.on('moving', () => constrainRect(cropRect));
+        cropRect.on('scaling', () => constrainRect(cropRect));
+        
+        canvas.add(cropRect);
+        canvas.setActiveObject(cropRect);
+    }
+
+    function constrainRect(obj) {
+        if (obj.angle !== 0) return;
+
+        const br = obj.getBoundingRect(true); 
+        if (br.left < 0) obj.left = 0;
+        if (br.top < 0) obj.top = 0;
+        if (br.left + br.width > imgObj.width) obj.left = imgObj.width - br.width;
+        if (br.top + br.height > imgObj.height) obj.top = imgObj.height - br.height;
+    }
+
+    canvas.on('mouse:wheel', (opt) => {
+        let zoom = canvas.getZoom();
+        zoom *= 0.999 ** opt.e.deltaY;
+        if (zoom > 20) zoom = 20;
+        if (zoom < 0.01) zoom = 0.01;
+        canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
+        
+        if(cropRect) {
+            cropRect.set('strokeWidth', 2 / zoom);
+            cropRect.set('cornerSize', 4 / zoom);
+        }
+        opt.e.preventDefault();
+        opt.e.stopPropagation();
+    });
+
+    let isPanning = false, lastMouse = {x:0, y:0};
+    canvas.on('mouse:down', opt => {
+        if(opt.e.button===2 || opt.e.altKey) {
+            isPanning=true; lastMouse={x:opt.e.clientX, y:opt.e.clientY};
+            canvas.defaultCursor = 'grab';
+        }
+    });
+    canvas.on('mouse:move', opt => {
+        if(isPanning) {
+            canvas.relativePan(new fabric.Point(opt.e.clientX-lastMouse.x, opt.e.clientY-lastMouse.y));
+            lastMouse={x:opt.e.clientX, y:opt.e.clientY};
+        }
+    });
+    canvas.on('mouse:up', () => { 
+        if(isPanning) {
+            isPanning=false; 
+            canvas.defaultCursor = 'default';
+            canvas.setViewportTransform(canvas.viewportTransform);
+            if(cropRect) cropRect.setCoords();
+        }
+    });
+    document.oncontextmenu = () => false;
+
+    async function applyCrop() {
+        if (!cropRect) return;
+        
+        const cropData = {
+            x: cropRect.left,
+            y: cropRect.top,
+            w: cropRect.getScaledWidth(),
+            h: cropRect.getScaledHeight(),
+            angle: cropRect.angle
+        };
+        
+        const resp = await fetch('/api/crop', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ image_name: filename, box: cropData })
+        });
+        
+        if (resp.ok) {
+            goImage(1);
+        } else {
+            alert('Ошибка (см. консоль)');
+        }
+    }
+
+    function goImage(dir) {
+        const idx = imageList.indexOf(filename);
+        if (idx === -1) return;
+        const newIdx = (idx + dir + imageList.length) % imageList.length;
+        window.location.href = `?image=${imageList[newIdx]}`;
+    }
+</script>
+</body>
+</html>
