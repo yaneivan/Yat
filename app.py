@@ -90,5 +90,19 @@ def export_zip_route():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/detect_lines', methods=['POST'])
+def detect_lines():
+    data = request.json
+    filename = data.get('image_name')
+    if not filename:
+        return jsonify({'status': 'error', 'msg': 'No image name provided'}), 400
+
+    try:
+        from logic import detect_text_lines_yolo
+        regions = detect_text_lines_yolo(filename)
+        return jsonify({'status': 'success', 'regions': regions})
+    except Exception as e:
+        return jsonify({'status': 'error', 'msg': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

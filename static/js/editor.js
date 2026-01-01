@@ -542,13 +542,67 @@ class HTREditor {
                 regions.push({ points: pts.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })) });
             }
         });
-        
+
         try {
             await API.saveAnnotation(this.filename, regions);
             const el = document.getElementById('status');
             if(el) el.textContent = 'Сохранено';
         } catch(e) {
             console.error(e);
+        }
+    }
+
+    async detectTextLines() {
+        const statusEl = document.getElementById('status');
+        if (statusEl) statusEl.textContent = 'Обнаружение строк...';
+
+        try {
+            const response = await fetch('/api/detect_lines', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ image_name: this.filename })
+            });
+
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                // Clear existing polygons
+                const existingPolygons = this.canvas.getObjects().filter(obj => obj.type === 'polygon' && !obj.class);
+                this.canvas.remove(...existingPolygons);
+
+                // Add detected regions as polygons
+                data.regions.forEach(region => {
+                    if (region.points && region.points.length >= 3) {
+                        const poly = new fabric.Polygon(region.points, {
+                            fill: 'rgba(0, 255, 0, 0.2)',
+                            stroke: 'green',
+                            strokeWidth: 2,
+                            objectCaching: false,
+                            transparentCorners: false,
+                            cornerColor: 'blue',
+                            selectable: true,
+                            evented: true
+                        });
+                        this.canvas.add(poly);
+                    }
+                });
+
+                this.canvas.requestRenderAll();
+
+                // Save to history and trigger auto-save
+                this.history.save();
+                this.triggerAutoSave();
+
+                if (statusEl) statusEl.textContent = `Найдено ${data.regions.length} строк`;
+            } else {
+                if (statusEl) statusEl.textContent = 'Ошибка: ' + (data.msg || 'Неизвестная ошибка');
+                console.error('Detection error:', data.msg);
+            }
+        } catch (error) {
+            console.error('Detection API error:', error);
+            if (statusEl) statusEl.textContent = 'Ошибка при обнаружении строк';
         }
     }
 }

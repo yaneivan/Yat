@@ -7,6 +7,15 @@ from datetime import datetime
 from PIL import Image, ImageOps # Added ImageOps
 import storage
 
+# YOLOv9 imports
+try:
+    import torch
+    from ultralytics import YOLO
+    YOLO_AVAILABLE = True
+except ImportError:
+    YOLO_AVAILABLE = False
+    print("YOLOv9 not available. Install ultralytics and torch to enable text-line detection.")
+
 # --- Математика ---
 
 def rotate_point(x, y, cx, cy, angle_deg):
@@ -249,3 +258,60 @@ def generate_export_zip():
             ET.SubElement(dp, 'fptr', FILEID=m['id']+'x')
         zf.writestr('METS.xml', ET.tostring(mets, encoding='utf-8'))
     return zpath
+
+def detect_text_lines_yolo(filename):
+    """
+    Detect text lines in an image using YOLOv9 model.
+    Returns a list of regions (polygons) representing detected text lines.
+    """
+    if not YOLO_AVAILABLE:
+        raise Exception("YOLOv9 not available. Install ultralytics and torch to enable text-line detection.")
+
+    # Load the YOLOv9 instance segmentation model for text-line detection
+    # Based on the model you specified: yolov9-lines-within-regions-handwritten
+    # This model is designed for segmenting text-lines within text-regions
+    model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'model.pt')
+
+    # Check if model file exists
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"YOLOv9 model not found at {model_path}. Please ensure the model file is in the project root directory.")
+
+    # Load the specific model for text-line detection within regions
+    model = YOLO(model_path)
+
+    # Get the image path
+    image_path = os.path.join(storage.IMAGE_FOLDER, filename)
+    if not os.path.exists(image_path):
+        raise Exception(f"Image file does not exist: {image_path}")
+
+    # Run inference
+    results = model(image_path)
+
+    # Process results - we want segmentation masks for text lines
+    regions = []
+    for result in results:
+        if result.masks is not None:
+            # Process segmentation masks (this is what we want for text-line segmentation)
+            masks = result.masks.xy  # List of masks as numpy arrays
+            for mask in masks:
+                # Convert mask to the format expected by the editor
+                points = []
+                for point in mask:
+                    points.append({'x': int(point[0]), 'y': int(point[1])})
+                if len(points) >= 3:  # Only add if it's a valid polygon
+                    regions.append({'points': points})
+        elif result.boxes is not None:
+            # Process bounding boxes if no masks available (fallback)
+            boxes = result.boxes.xyxy.cpu().numpy()  # x1, y1, x2, y2
+            for box in boxes:
+                x1, y1, x2, y2 = map(int, box)
+                # Create a rectangular polygon from the bounding box
+                points = [
+                    {'x': x1, 'y': y1},
+                    {'x': x2, 'y': y1},
+                    {'x': x2, 'y': y2},
+                    {'x': x1, 'y': y2}
+                ]
+                regions.append({'points': points})
+
+    return regions
