@@ -259,11 +259,210 @@ def generate_export_zip():
         zf.writestr('METS.xml', ET.tostring(mets, encoding='utf-8'))
     return zpath
 
-def detect_text_lines_yolo(filename):
+def calculate_polygon_area(points):
+    """
+    Calculate the area of a polygon using the Shoelace formula.
+    """
+    if len(points) < 3:
+        return 0
+
+    area = 0
+    n = len(points)
+
+    for i in range(n):
+        j = (i + 1) % n
+        area += points[i]['x'] * points[j]['y']
+        area -= points[j]['x'] * points[i]['y']
+
+    return abs(area) / 2
+
+def merge_overlapping_regions(regions, overlap_threshold=30):
+    """
+    Merge overlapping regions in the list based on overlap threshold.
+    overlap_threshold: percentage of area overlap required to merge regions
+    """
+    print(f"Starting merge process with {len(regions)} regions and overlap_threshold {overlap_threshold}%")  # Отладочный вывод
+
+    if not regions:
+        return regions
+
+    # Create a working copy of regions
+    unprocessed_regions = [r.copy() for r in regions]
+    merged_regions = []
+
+    # Process each region once
+    while unprocessed_regions:
+        current_region = unprocessed_regions.pop(0)
+        print(f"Processing region with {len(current_region['points'])} points")  # Отладочный вывод
+
+        # Find all regions that can be merged with current_region
+        regions_to_merge = []
+        for other_region in unprocessed_regions[:]:  # Create a copy to iterate
+            overlap_ratio = calculate_overlap_ratio(current_region['points'], other_region['points'])
+            is_spatially_close = are_regions_spatially_close(current_region['points'], other_region['points'])
+
+            print(f"  Comparing with other region: overlap_ratio={overlap_ratio:.2f}%, is_spatially_close={is_spatially_close}, threshold={overlap_threshold}%")  # Отладочный вывод
+
+            if overlap_ratio >= overlap_threshold and is_spatially_close:
+                print(f"    Marking for merging")  # Отладочный вывод
+                regions_to_merge.append(other_region)
+
+        # Merge all marked regions with current region
+        final_region = current_region
+        for region_to_merge in regions_to_merge:
+            print(f"  Merging region")  # Отладочный вывод
+            final_region = merge_two_polygons(final_region['points'], region_to_merge['points'])
+            unprocessed_regions.remove(region_to_merge)  # Remove from unprocessed list
+
+        merged_regions.append(final_region)
+        print(f"  Added merged region to results")  # Отладочный вывод
+
+    print(f"Merge process complete: {len(regions)} -> {len(merged_regions)} regions")  # Отладочный вывод
+    return merged_regions
+
+def are_regions_spatially_close(points1, points2):
+    """
+    Check if two regions are spatially close to each other.
+    This prevents merging distant regions that happen to have some overlap due to bounding box approximation.
+    """
+    # Calculate centroids of both regions
+    centroid1_x = sum(p['x'] for p in points1) / len(points1)
+    centroid1_y = sum(p['y'] for p in points1) / len(points1)
+
+    centroid2_x = sum(p['x'] for p in points2) / len(points2)
+    centroid2_y = sum(p['y'] for p in points2) / len(points2)
+
+    # Calculate distance between centroids
+    distance = math.sqrt((centroid1_x - centroid2_x)**2 + (centroid1_y - centroid2_y)**2)
+
+    # Calculate average size of regions (using bounding box dimensions)
+    width1 = max(p['x'] for p in points1) - min(p['x'] for p in points1)
+    height1 = max(p['y'] for p in points1) - min(p['y'] for p in points1)
+    size1 = math.sqrt(width1 * height1)  # Geometric mean as size approximation
+
+    width2 = max(p['x'] for p in points2) - min(p['x'] for p in points2)
+    height2 = max(p['y'] for p in points2) - min(p['y'] for p in points2)
+    size2 = math.sqrt(width2 * height2)  # Geometric mean as size approximation
+
+    avg_size = (size1 + size2) / 2
+
+    # Regions are considered close if distance between centroids is less than 3x average size
+    # Using a more generous threshold to allow for reasonable merging
+    return distance < avg_size * 3
+
+def calculate_overlap_ratio(points1, points2):
+    """
+    Calculate the overlap ratio between two polygons as a percentage of the smaller polygon.
+    This is a simplified implementation using bounding box approximation.
+    """
+    # Get bounding boxes
+    min_x1 = min(p['x'] for p in points1)
+    max_x1 = max(p['x'] for p in points1)
+    min_y1 = min(p['y'] for p in points1)
+    max_y1 = max(p['y'] for p in points1)
+
+    min_x2 = min(p['x'] for p in points2)
+    max_x2 = max(p['x'] for p in points2)
+    min_y2 = min(p['y'] for p in points2)
+    max_y2 = max(p['y'] for p in points2)
+
+    # Calculate intersection area
+    inter_x1 = max(min_x1, min_x2)
+    inter_y1 = max(min_y1, min_y2)
+    inter_x2 = min(max_x1, max_x2)
+    inter_y2 = min(max_y1, max_y2)
+
+    if inter_x1 < inter_x2 and inter_y1 < inter_y2:
+        intersection_area = (inter_x2 - inter_x1) * (inter_y2 - inter_y1)
+
+        area1 = calculate_polygon_area(points1)
+        area2 = calculate_polygon_area(points2)
+
+        # Calculate the overlap as percentage of the intersection relative to the union
+        union_area = area1 + area2 - intersection_area
+        if union_area > 0:
+            # Jaccard similarity (intersection over union)
+            jaccard_similarity = (intersection_area / union_area) * 100
+            return jaccard_similarity
+        else:
+            return 0
+    else:
+        return 0
+
+def polygons_overlap(points1, points2):
+    """
+    Check if two polygons overlap using bounding box check as a simple approximation.
+    """
+    # Get bounding boxes
+    min_x1 = min(p['x'] for p in points1)
+    max_x1 = max(p['x'] for p in points1)
+    min_y1 = min(p['y'] for p in points1)
+    max_y1 = max(p['y'] for p in points1)
+
+    min_x2 = min(p['x'] for p in points2)
+    max_x2 = max(p['x'] for p in points2)
+    min_y2 = min(p['y'] for p in points2)
+    max_y2 = max(p['y'] for p in points2)
+
+    # Check if bounding boxes overlap
+    return not (max_x1 < min_x2 or max_x2 < min_x1 or max_y1 < min_y2 or max_y2 < min_y1)
+
+def merge_two_polygons(points1, points2):
+    """
+    Merge two polygons by combining them into a single polygon.
+    This creates a more natural union of the two polygons by using a
+    simplified approach that maintains the general shape.
+    """
+    import math
+
+    # For a more natural merge, we'll create a polygon that connects
+    # the two polygons through their closest points
+    all_points = points1 + points2
+
+    # Use convex hull as a simple approach, but we could implement
+    # a more sophisticated polygon union algorithm if needed
+    hull_points = convex_hull(all_points)
+
+    return {'points': hull_points}
+
+def convex_hull(points):
+    """
+    Find the convex hull of a set of points using Graham scan algorithm.
+    """
+    def polar_angle(p0, p1):
+        if p0['x'] == p1['x']:
+            return float('inf')
+        return math.atan2(p1['y'] - p0['y'], p1['x'] - p0['x'])
+
+    def distance_squared(p0, p1):
+        return (p1['x'] - p0['x']) ** 2 + (p1['y'] - p0['y']) ** 2
+
+    def cross_product(o, a, b):
+        return (a['x'] - o['x']) * (b['y'] - o['y']) - (a['y'] - o['y']) * (b['x'] - o['x'])
+
+    # Find the bottom-most point (or left most in case of tie)
+    start = min(points, key=lambda p: (p['y'], p['x']))
+
+    # Sort points by polar angle with respect to start
+    sorted_points = sorted(points, key=lambda p: (polar_angle(start, p), distance_squared(start, p)))
+
+    # Create and return convex hull
+    hull = []
+    for point in sorted_points:
+        while len(hull) > 1 and cross_product(hull[-2], hull[-1], point) <= 0:
+            hull.pop()
+        hull.append(point)
+
+    return hull
+
+def detect_text_lines_yolo(filename, settings=None):
     """
     Detect text lines in an image using YOLOv9 model.
     Returns a list of regions (polygons) representing detected text lines.
     """
+    if settings is None:
+        settings = {}
+
     if not YOLO_AVAILABLE:
         raise Exception("YOLOv9 not available. Install ultralytics and torch to enable text-line detection.")
 
@@ -288,8 +487,18 @@ def detect_text_lines_yolo(filename):
     if not os.path.exists(image_path):
         raise Exception(f"Image file does not exist: {image_path}")
 
-    # Run inference
-    results = model(image_path)
+    # Get detection parameters from settings
+    confidence_threshold = settings.get('threshold', 50) / 100.0  # Convert percentage to decimal
+
+    # Run inference with confidence threshold
+    results = model(image_path, conf=confidence_threshold)
+
+    # Get additional settings
+    simplification_threshold = settings.get('simplification', 2.0)
+    merge_overlapping = settings.get('mergeOverlapping', False)
+    overlap_threshold = settings.get('overlapThreshold', 30)  # Percentage of overlap required to merge
+
+    print(f"Using settings - simplification: {simplification_threshold}, merge_overlapping: {merge_overlapping}, overlap_threshold: {overlap_threshold}")  # Отладочный вывод
 
     # Process results - we want segmentation masks for text lines
     regions = []
@@ -302,6 +511,11 @@ def detect_text_lines_yolo(filename):
                 points = []
                 for point in mask:
                     points.append({'x': int(point[0]), 'y': int(point[1])})
+
+                # Apply simplification if threshold is set
+                if simplification_threshold > 0:
+                    points = simplify_points(points, simplification_threshold)
+
                 if len(points) >= 3:  # Only add if it's a valid polygon
                     regions.append({'points': points})
         elif result.boxes is not None:
@@ -316,6 +530,15 @@ def detect_text_lines_yolo(filename):
                     {'x': x2, 'y': y2},
                     {'x': x1, 'y': y2}
                 ]
+
+                # Apply simplification if threshold is set
+                if simplification_threshold > 0:
+                    points = simplify_points(points, simplification_threshold)
+
                 regions.append({'points': points})
+
+    # Optionally merge overlapping regions
+    if merge_overlapping:
+        regions = merge_overlapping_regions(regions, overlap_threshold)
 
     return regions

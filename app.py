@@ -94,12 +94,15 @@ def export_zip_route():
 def detect_lines():
     data = request.json
     filename = data.get('image_name')
+    settings = data.get('settings', {})
     if not filename:
         return jsonify({'status': 'error', 'msg': 'No image name provided'}), 400
 
+    print(f"Received settings: {settings}")  # Отладочный вывод
+
     try:
         from logic import detect_text_lines_yolo
-        regions = detect_text_lines_yolo(filename)
+        regions = detect_text_lines_yolo(filename, settings)
         return jsonify({'status': 'success', 'regions': regions})
     except Exception as e:
         return jsonify({'status': 'error', 'msg': str(e)}), 500

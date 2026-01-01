@@ -617,15 +617,24 @@ class HTREditor {
         if (statusEl) statusEl.textContent = 'Обнаружение строк...';
 
         try {
+            // Get current detection settings
+            const settings = this.getDetectionSettings();
+
+            console.log('Sending settings to API:', settings); // Отладочный вывод
+
             const response = await fetch('/api/detect_lines', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ image_name: this.filename })
+                body: JSON.stringify({
+                    image_name: this.filename,
+                    settings: settings
+                })
             });
 
             const data = await response.json();
+            console.log('Received data from API:', data); // Отладочный вывод
 
             if (data.status === 'success') {
                 const existingPolygons = this.canvas.getObjects().filter(obj => obj.type === 'polygon' && !obj.class);
@@ -652,6 +661,139 @@ class HTREditor {
         } catch (error) {
             console.error('Detection API error:', error);
             if (statusEl) statusEl.textContent = 'Ошибка при обнаружении строк';
+        }
+    }
+
+    // Show detection settings modal
+    showDetectionSettings() {
+        // Create modal HTML
+        const modal = document.createElement('div');
+        modal.id = 'detection-settings-modal';
+        modal.innerHTML = `
+            <div class="modal-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center;">
+                <div class="modal-content" style="background: #f0f0f0; padding: 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); min-width: 320px;">
+                    <h3 style="margin-top: 0; margin-bottom: 15px; color: #333;">Настройки авто-разметки</h3>
+
+                    <div style="margin-bottom: 15px;">
+                        <label for="detection-threshold" style="display: block; margin-bottom: 5px; color: #333;">Порог уверенности:</label>
+                        <input type="range" id="detection-threshold" min="0" max="100" value="50" style="width: 100%;">
+                        <span id="threshold-value" style="font-size: 0.9em; color: #666;">50%</span>
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label for="polygon-simplification" style="display: block; margin-bottom: 5px; color: #333;">Упрощение полигонов:</label>
+                        <input type="range" id="polygon-simplification" min="0" max="20" value="2" step="0.5" style="width: 100%;">
+                        <span id="simplification-value" style="font-size: 0.9em; color: #666;">2.0</span>
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label for="overlap-threshold" style="display: block; margin-bottom: 5px; color: #333;">Порог перекрытия (%):</label>
+                        <input type="range" id="overlap-threshold" min="0" max="100" value="30" style="width: 100%;">
+                        <span id="overlap-value" style="font-size: 0.9em; color: #666;">30%</span>
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px; color: #333;">Дополнительные параметры:</label>
+                        <label style="display: block; margin-bottom: 5px; color: #333;">
+                            <input type="checkbox" id="merge-overlapping"> Объединять перекрывающиеся
+                        </label>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 20px;">
+                        <button id="detect-with-settings" class="btn">Сохранить и переразметить</button>
+                        <div>
+                            <button id="cancel-settings" class="btn">Отмена</button>
+                            <button id="save-settings" class="btn">Сохранить</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        // Load saved settings
+        this.loadDetectionSettings();
+
+        // Add event listeners
+        document.getElementById('detection-threshold').addEventListener('input', (e) => {
+            document.getElementById('threshold-value').textContent = e.target.value + '%';
+        });
+
+        document.getElementById('polygon-simplification').addEventListener('input', (e) => {
+            document.getElementById('simplification-value').textContent = e.target.value;
+        });
+
+        document.getElementById('overlap-threshold').addEventListener('input', (e) => {
+            document.getElementById('overlap-value').textContent = e.target.value + '%';
+        });
+
+        document.getElementById('cancel-settings').addEventListener('click', () => {
+            document.body.removeChild(modal);
+        });
+
+        document.getElementById('save-settings').addEventListener('click', () => {
+            this.saveDetectionSettings();
+            document.body.removeChild(modal);
+        });
+
+        document.getElementById('detect-with-settings').addEventListener('click', () => {
+            this.saveDetectionSettings();
+            this.detectTextLines(); // Вызываем переразметку с новыми настройками
+            document.body.removeChild(modal);
+        });
+    }
+
+    // Load detection settings from localStorage
+    loadDetectionSettings() {
+        const settings = JSON.parse(localStorage.getItem('detectionSettings') || '{}');
+
+        if (settings.threshold !== undefined) {
+            document.getElementById('detection-threshold').value = settings.threshold;
+            document.getElementById('threshold-value').textContent = settings.threshold + '%';
+        }
+
+        if (settings.simplification !== undefined) {
+            document.getElementById('polygon-simplification').value = settings.simplification;
+            document.getElementById('simplification-value').textContent = settings.simplification;
+        }
+
+        if (settings.overlapThreshold !== undefined) {
+            document.getElementById('overlap-threshold').value = settings.overlapThreshold;
+            document.getElementById('overlap-value').textContent = settings.overlapThreshold + '%';
+        }
+
+        if (settings.mergeOverlapping !== undefined) {
+            document.getElementById('merge-overlapping').checked = settings.mergeOverlapping;
+        }
+    }
+
+    // Save detection settings to localStorage
+    saveDetectionSettings() {
+        const settings = {
+            threshold: parseFloat(document.getElementById('detection-threshold').value),
+            simplification: parseFloat(document.getElementById('polygon-simplification').value),
+            overlapThreshold: parseFloat(document.getElementById('overlap-threshold').value),
+            mergeOverlapping: document.getElementById('merge-overlapping').checked
+        };
+
+        localStorage.setItem('detectionSettings', JSON.stringify(settings));
+    }
+
+    // Get current detection settings
+    getDetectionSettings() {
+        const defaultSettings = {
+            threshold: 50,
+            simplification: 2.0,
+            overlapThreshold: 30,
+            mergeOverlapping: false
+        };
+
+        try {
+            const saved = JSON.parse(localStorage.getItem('detectionSettings') || '{}');
+            return { ...defaultSettings, ...saved };
+        } catch (e) {
+            return defaultSettings;
         }
     }
 }
