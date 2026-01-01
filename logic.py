@@ -270,11 +270,15 @@ def detect_text_lines_yolo(filename):
     # Load the YOLOv9 instance segmentation model for text-line detection
     # Based on the model you specified: yolov9-lines-within-regions-handwritten
     # This model is designed for segmenting text-lines within text-regions
-    model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'model.pt')
+    # First check in models folder, then in root directory (following README recommendations)
+    model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models', 'model.pt')
+
+    if not os.path.exists(model_path):
+        model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'model.pt')
 
     # Check if model file exists
     if not os.path.exists(model_path):
-        raise FileNotFoundError(f"YOLOv9 model not found at {model_path}. Please ensure the model file is in the project root directory.")
+        raise FileNotFoundError(f"YOLOv9 model not found at {model_path}. Please ensure the model file is in the project root or models directory.")
 
     # Load the specific model for text-line detection within regions
     model = YOLO(model_path)
