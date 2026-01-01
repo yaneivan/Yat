@@ -51,18 +51,24 @@ class HistoryManager {
 
     _loadObjects(jsonString) {
         const objectsData = JSON.parse(jsonString);
+        // Используем HTREditor._configurePolygon для единообразия, но так как доступа нет, дублируем логику
+        const configurePolygon = (obj) => {
+             obj.set({
+                objectCaching: false,
+                transparentCorners: false,
+                cornerColor: 'blue',
+                strokeWidth: 2,
+                perPixelTargetFind: true // ВАЖНО: Включаем точный клик
+            });
+        };
+
         const currentObjects = this.canvas.getObjects().filter(o => o.type === 'polygon'); 
         this.canvas.remove(...currentObjects);
 
         fabric.util.enlivenObjects(objectsData, (enlivenedObjects) => {
             enlivenedObjects.forEach((obj) => {
                 if (obj.type === 'polygon') {
-                    obj.set({
-                        objectCaching: false, 
-                        transparentCorners: false, 
-                        cornerColor: 'blue', 
-                        strokeWidth: 2
-                    });
+                    configurePolygon(obj);
                 }
                 this.canvas.add(obj);
             });
@@ -82,8 +88,12 @@ class HTREditor {
         this.filename = filename;
         this.snapDist = snapDist;
         this.canvas = new fabric.Canvas(canvasId, {
-            fireRightClick: true, stopContextMenu: true, preserveObjectStacking: true,
-            uniformScaling: false, selection: true, backgroundColor: "#151515"
+            fireRightClick: true, 
+            stopContextMenu: true, 
+            preserveObjectStacking: true,
+            uniformScaling: false, 
+            selection: true, 
+            backgroundColor: "#151515"
         });
         
         this.currentMode = null; 
@@ -120,8 +130,27 @@ class HTREditor {
 
     resize() {
         const el = document.getElementById('workspace');
-        this.canvas.setWidth(el.clientWidth);
-        this.canvas.setHeight(el.clientHeight);
+        if (el) {
+            this.canvas.setWidth(el.clientWidth);
+            this.canvas.setHeight(el.clientHeight);
+            this.canvas.calcOffset(); 
+        }
+    }
+
+    // Единая функция для настройки ВСЕХ полигонов
+    _configurePolygon(obj) {
+        obj.set({
+            fill: 'rgba(0, 255, 0, 0.2)', 
+            stroke: 'green', 
+            strokeWidth: 2,
+            objectCaching: false, 
+            transparentCorners: false, 
+            cornerColor: 'blue',
+            selectable: true, 
+            evented: true,
+            // Включаем нативный точный поиск. Это решает проблему клика по "пустоте"
+            perPixelTargetFind: true
+        });
     }
 
     async loadImageAndData() {
@@ -131,7 +160,6 @@ class HTREditor {
         this.canvas.clear();
         this.canvas.setBackgroundColor("#151515", this.canvas.renderAll.bind(this.canvas));
         
-        // --- ROBUST IMAGE LOADING FIX ---
         const timestamp = new Date().getTime();
         const imgUrl = `/data/images/${this.filename}?t=${timestamp}`;
         
@@ -160,11 +188,8 @@ class HTREditor {
         const data = await API.loadAnnotation(this.filename);
         if (data.regions) {
             data.regions.forEach(r => {
-                const p = new fabric.Polygon(r.points, {
-                    fill: 'rgba(0, 255, 0, 0.2)', stroke: 'green', strokeWidth: 2,
-                    objectCaching: false, transparentCorners: false, cornerColor: 'blue',
-                    selectable: true, evented: true
-                });
+                const p = new fabric.Polygon(r.points);
+                this._configurePolygon(p); // Применяем единые настройки
                 this.canvas.add(p);
             });
             this.history.save(); 
@@ -273,11 +298,9 @@ class HTREditor {
         if (this.drawPoints.length < 3) return;
         const finalPoints = this.drawPoints.map(p=>({x:p.x, y:p.y}));
         this.abortDrawing();
-        const poly = new fabric.Polygon(finalPoints, {
-            fill: 'rgba(0, 255, 0, 0.2)', stroke: 'green', strokeWidth: 2/this.canvas.getZoom(),
-            objectCaching: false, transparentCorners: false, cornerColor: 'blue',
-            selectable: false, evented: false
-        });
+        const poly = new fabric.Polygon(finalPoints);
+        this._configurePolygon(poly); // Применяем единые настройки
+        poly.set({ selectable: false, evented: false }); 
         this.canvas.add(poly);
         this.canvas.requestRenderAll();
     }
@@ -343,10 +366,40 @@ class HTREditor {
             poly.hasBorders = true;
         }
     }
-
+    
     setupCanvasEvents() {
         let isPanning = false;
         let lastMouse = {x:0, y:0};
+
+        // --- ДВОЙНОЙ КЛИК: ЦИКЛИЧЕСКИЙ ВЫБОР СЛОЕВ (ПРОСТОЙ И РАБОЧИЙ) ---
+        this.canvas.on('mouse:dblclick', (opt) => {
+            if (this.currentMode !== 'edit' || !opt.target) return;
+
+            const clickedObject = opt.target;
+            if (clickedObject.type !== 'polygon') return;
+
+            // Находим все объекты под курсором. Fabric уже сделал это за нас (opt.target),
+            // но нам нужны и те, что лежат глубже.
+            const targets = this.canvas.getObjects().filter(obj => {
+                // Используем встроенный метод, т.к. perPixelTargetFind включен
+                return obj.selectable && obj.visible && obj.containsPoint(opt.pointer);
+            });
+
+            if (targets.length < 2) return;
+
+            // Ищем индекс текущего объекта в стеке (визуально он верхний)
+            const topDownTargets = [...targets].reverse();
+            const currentIndex = topDownTargets.indexOf(clickedObject);
+
+            if (currentIndex === -1) return; // На всякий случай
+
+            // Выбираем следующий
+            const nextIndex = (currentIndex + 1) % topDownTargets.length;
+            const nextObject = topDownTargets[nextIndex];
+
+            this.canvas.setActiveObject(nextObject);
+            this.canvas.requestRenderAll();
+        });
 
         this.canvas.on('mouse:down', (opt) => {
             const evt = opt.e;
@@ -445,27 +498,34 @@ class HTREditor {
         document.addEventListener('keydown', (e) => {
             const isCtrl = e.ctrlKey || e.metaKey;
             const key = e.key.toLowerCase();
+            const active = this.canvas.getActiveObject();
 
             if (isCtrl) {
                 if (e.shiftKey && (key === 'z' || key === 'я')) {
-                    e.preventDefault();
-                    this.captureSelectionState();
-                    this.history.redo();
-                    return;
+                    e.preventDefault(); this.captureSelectionState(); this.history.redo(); return;
                 }
                 if (key === 'z' || key === 'я') {
-                    e.preventDefault();
-                    this.captureSelectionState();
-                    this.history.undo();
-                    return;
+                    e.preventDefault(); this.captureSelectionState(); this.history.undo(); return;
                 }
                 if (key === 'a' || key === 'ф') {
-                    e.preventDefault();
-                    if (this.currentMode === 'edit') this.selectAll();
-                    return;
+                    e.preventDefault(); if (this.currentMode === 'edit') this.selectAll(); return;
                 }
                 if (e.key === 'ArrowRight') this.goImage(1);
                 if (e.key === 'ArrowLeft') this.goImage(-1);
+                
+                if (e.key === 'ArrowUp' && active && this.currentMode === 'edit') {
+                    e.preventDefault(); active.bringForward(); this.history.save(); return;
+                }
+                if (e.key === 'ArrowDown' && active && this.currentMode === 'edit') {
+                    e.preventDefault(); active.sendBackwards(); this.history.save(); return;
+                }
+            }
+
+            if (e.key === 'PageUp' && active && this.currentMode === 'edit') {
+                active.bringToFront(); this.history.save();
+            }
+            if (e.key === 'PageDown' && active && this.currentMode === 'edit') {
+                active.sendToBack(); this.history.save();
             }
 
             if (e.key === 'Delete') this.deleteSelected();
@@ -568,30 +628,19 @@ class HTREditor {
             const data = await response.json();
 
             if (data.status === 'success') {
-                // Clear existing polygons
                 const existingPolygons = this.canvas.getObjects().filter(obj => obj.type === 'polygon' && !obj.class);
                 this.canvas.remove(...existingPolygons);
 
-                // Add detected regions as polygons
                 data.regions.forEach(region => {
                     if (region.points && region.points.length >= 3) {
-                        const poly = new fabric.Polygon(region.points, {
-                            fill: 'rgba(0, 255, 0, 0.2)',
-                            stroke: 'green',
-                            strokeWidth: 2,
-                            objectCaching: false,
-                            transparentCorners: false,
-                            cornerColor: 'blue',
-                            selectable: true,
-                            evented: true
-                        });
+                        const poly = new fabric.Polygon(region.points);
+                        this._configurePolygon(poly); // Применяем единые настройки
                         this.canvas.add(poly);
                     }
                 });
 
                 this.canvas.requestRenderAll();
 
-                // Save to history and trigger auto-save
                 this.history.save();
                 this.triggerAutoSave();
 
