@@ -65,14 +65,21 @@ def load_json(filename):
     path = os.path.join(ANNOTATION_FOLDER, name)
     if os.path.exists(path):
         with open(path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {'regions': [], 'crop_params': None}
+            data = json.load(f)
+            # Ensure texts field exists
+            if 'texts' not in data:
+                data['texts'] = {}
+            return data
+    return {'regions': [], 'texts': {}, 'crop_params': None}
 
 def save_json(data):
     image_name = data.get('image_name')
     if not image_name: return False
     name = os.path.splitext(image_name)[0] + '.json'
     path = os.path.join(ANNOTATION_FOLDER, name)
+    # Ensure texts field exists before saving
+    if 'texts' not in data:
+        data['texts'] = {}
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4)
     return True

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Text Editor - eScriptorium Style</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <style>
+        body { 
+            margin: 0; 
+            font-family: 'Segoe UI', sans-serif; 
+            background: #222; 
+            color: #ddd; 
+            height: 100vh; 
+            overflow: hidden; 
+            display: flex; 
+            flex-direction: column; 
+        }
+        
+        #toolbar { 
+            height: 50px; 
+            background: #333; 
+            border-bottom: 1px solid #444; 
+            display: flex; 
+            align-items: center; 
+            padding: 0 15px; 
+            gap: 8px; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2); 
+            z-index: 100; 
+            flex-shrink: 0; 
+        }
+        
+        #workspace { 
+            flex: 1; 
+            display: flex; 
+            overflow: hidden; 
+        }
+        
+        .panel {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .panel.left {
+            border-right: 1px solid #444;
+        }
+        
+        .panel-title {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.6);
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            z-index: 10;
+        }
+        
+        .canvas-container {
+            width: 100%;
+            height: 100%;
+        }
+        
+        #left-canvas, #right-canvas {
+            display: block;
+        }
+        
+        /* Modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-content {
+            background: #333;
+            border-radius: 8px;
+            width: 80%;
+            max-width: 800px;
+            max-height: 90vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .modal-header {
+            padding: 15px;
+            border-bottom: 1px solid #444;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-body {
+            flex: 1;
+            padding: 15px;
+            overflow: auto;
+        }
+        
+        .modal-footer {
+            padding: 15px;
+            border-top: 1px solid #444;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        
+        .region-preview {
+            width: 100%;
+            height: 300px;
+            background: #222;
+            border: 1px solid #444;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .region-preview img {
+            max-width: 100%;
+            max-height: 100%;
+        }
+        
+        .text-input {
+            width: 100%;
+            min-height: 100px;
+            padding: 10px;
+            background: #222;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #ddd;
+            font-size: 1.2em;
+            resize: vertical;
+        }
+        
+        .text-input:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+        
+        .region-counter {
+            font-size: 0.9em;
+            color: #888;
+            margin-top: 5px;
+        }
+        
+        .help-overlay {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.6);
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            pointer-events: none;
+            color: #ccc;
+            z-index: 10;
+        }
+
+    </style>
+</head>
+<body>
+    <div id="toolbar">
+        <button class="btn" onclick="window.location.href='/'" title="Home">🏠</button>
+        <div class="sep"></div>
+        <button class="btn" onclick="editor.goImage(-1)">&lt;</button>
+        <button class="btn" onclick="editor.goImage(1)">&gt;</button>
+        <span class="file-info" style="font-size:0.9em; color:#aaa; max-width:200px; overflow:hidden; white-space:nowrap;">{{ filename }}</span>
+        
+        <div style="flex:1"></div>
+        
+        <button class="btn" id="btn-prev-region" onclick="editor.previousRegion()">← Пред. регион</button>
+        <button class="btn" id="btn-next-region" onclick="editor.nextRegion()">След. регион →</button>
+        <div class="sep"></div>
+        <button class="btn" id="btn-save" onclick="editor.saveData()">💾 Сохранить</button>
+        <span id="status" style="font-size:0.8em; color:#888; min-width:80px; text-align:right;"></span>
+    </div>
+
+    <div id="workspace">
+        <div class="panel left">
+            <div class="panel-title">Оригинальное изображение</div>
+            <div class="canvas-container">
+                <canvas id="left-canvas"></canvas>
+            </div>
+            <div class="help-overlay">ЛКМ: ввод текста | ПКМ: панорамирование | Колесо: масштаб</div>
+        </div>
+        
+        <div class="panel right">
+            <div class="panel-title">Регионы для ввода текста</div>
+            <div class="canvas-container">
+                <canvas id="right-canvas"></canvas>
+            </div>
+            <div class="help-overlay">ЛКМ: ввод текста | ПКМ: панорамирование | Колесо: масштаб</div>
+        </div>
+    </div>
+
+    <!-- Text Input Modal -->
+    <div id="text-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Ввод текста для региона</h3>
+                <button class="btn" onclick="editor.closeModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="region-preview">
+                    <img id="region-preview-img" src="" alt="Предпросмотр региона">
+                </div>
+                <textarea id="text-input" class="text-input" placeholder="Введите текст для этого региона..."></textarea>
+                <div class="region-counter">Регион <span id="current-region-index">1</span> из <span id="total-regions">0</span></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="editor.closeModal()">Отмена</button>
+                <button class="btn btn-primary" onclick="editor.saveTextAndNext()">Сохранить и следующий (Enter)</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/text_editor.js"></script>
+    <script>
+        // Инициализация
+        const editor = new TextEditor('left-canvas', 'right-canvas', "{{ filename }}");
+    </script>
+</body>
+</html>

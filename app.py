@@ -16,6 +16,12 @@ def editor():
     if not filename: return redirect(url_for('index'))
     return render_template('editor.html', filename=filename)
 
+@app.route('/text_editor')
+def text_editor():
+    filename = request.args.get('image')
+    if not filename: return redirect(url_for('index'))
+    return render_template('text_editor.html', filename=filename)
+
 @app.route('/cropper')
 def cropper():
     filename = request.args.get('image')
@@ -44,7 +50,11 @@ def load_data(filename):
 
 @app.route('/api/save', methods=['POST'])
 def save_data():
-    if storage.save_json(request.json): return jsonify({'status': 'success'})
+    data = request.json
+    # Ensure texts field exists in the data
+    if 'texts' not in data:
+        data['texts'] = {}
+    if storage.save_json(data): return jsonify({'status': 'success'})
     return jsonify({'status': 'error'}), 400
 
 @app.route('/api/upload', methods=['POST'])
