@@ -189,9 +189,12 @@ class TextEditor {
             this.rightCanvas.add(bgRect);
             this.rightCanvas.add(textObj);
 
-            // Move both objects just above the polygon
-            this.rightCanvas.moveTo(bgRect, 1);
-            this.rightCanvas.moveTo(textObj, 2); // Text should be above the background
+            // Move both objects to the top to ensure they're visible
+            this.rightCanvas.bringToFront(bgRect);
+            this.rightCanvas.bringToFront(textObj);
+
+            // Ensure the polygon is below the text and background
+            this.rightCanvas.sendToBack(polygon);
 
             console.log("Text object created:", textObj); // Debug print
 
@@ -315,9 +318,13 @@ class TextEditor {
             if (data.texts) {
                 this.texts = data.texts;
 
+                console.log("Loading text data:", this.texts); // Debug print
+
                 // Update regions with text content
                 this.regions.forEach((region, index) => {
                     const textContent = this.texts[index] || '';
+                    console.log(`Processing region ${index}, text content: "${textContent}"`); // Debug print
+
                     // Find the corresponding polygon on the left canvas
                     const leftPoly = this.leftCanvas.getObjects().find(obj => obj.index === index);
                     if (leftPoly) {
@@ -339,15 +346,21 @@ class TextEditor {
                             // Text exists - white background to match the white canvas
                             rightPoly.set({ fill: 'rgba(255, 255, 255, 1.0)', stroke: '#0066ff' });
 
+                            console.log(`Calling updatePolygonText for right polygon ${index} with text: "${textContent}"`); // Debug print
+
                             // Add text inside the right polygon if text exists
                             this.updatePolygonText(rightPoly, textContent);
                         } else {
                             // No text - blue transparent background to show the image underneath
                             rightPoly.set({ fill: 'rgba(0, 0, 255, 0.2)', stroke: 'blue' });
 
+                            console.log(`Calling updatePolygonText for right polygon ${index} with empty text`); // Debug print
+
                             // Remove text if it exists
                             this.updatePolygonText(rightPoly, '');
                         }
+                    } else {
+                        console.log(`Right polygon not found for index ${index}`); // Debug print
                     }
                 });
 
@@ -817,15 +830,21 @@ class TextEditor {
                 // Text exists - white background to match the white canvas
                 rightPoly.set({ fill: 'rgba(255, 255, 255, 1.0)', stroke: '#0066ff' });
 
+                console.log(`Calling updatePolygonText from saveCurrentText for right polygon ${rightPoly.index} with text: "${text}"`); // Debug print
+
                 // Add text inside the right polygon if text exists
                 this.updatePolygonText(rightPoly, text);
             } else {
                 // No text - blue transparent background to show the image underneath
                 rightPoly.set({ fill: 'rgba(0, 0, 255, 0.2)', stroke: 'blue' });
 
+                console.log(`Calling updatePolygonText from saveCurrentText for right polygon ${rightPoly.index} with empty text`); // Debug print
+
                 // Remove text if it exists
                 this.updatePolygonText(rightPoly, '');
             }
+        } else {
+            console.log("Right polygon not found in saveCurrentText"); // Debug print
         }
 
         this.leftCanvas.requestRenderAll();
