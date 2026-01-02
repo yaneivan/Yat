@@ -37,10 +37,13 @@ class TextEditor {
         this.resize();
         window.addEventListener('resize', () => this.resize());
         window.addEventListener('keydown', (e) => this.handleKeyDown(e));
-        
+
         // Setup canvas events
         this.setupCanvasEvents();
-        
+
+        // Initialize viewport synchronization
+        this.initViewportSync();
+
         // Load image and data
         await this.loadImageAndData();
     }
@@ -103,24 +106,18 @@ class TextEditor {
 
     // Update text inside a polygon
     updatePolygonText(polygon, text) {
-        console.log("updatePolygonText called for polygon", polygon.index, "with text:", text); // Debug print
-
         // Remove existing text and background objects if they exist
         if (polygon.textObject) {
-            console.log("Removing existing text object for polygon", polygon.index); // Debug print
             this.rightCanvas.remove(polygon.textObject);
             polygon.textObject = null;
         }
 
         if (polygon.bgRectObject) {
-            console.log("Removing existing background rectangle for polygon", polygon.index); // Debug print
             this.rightCanvas.remove(polygon.bgRectObject);
             polygon.bgRectObject = null;
         }
 
         if (text && text.trim() !== '') {
-            console.log("Adding text to polygon", polygon.index, "text:", text); // Debug print
-
             // Calculate the bounding box of the polygon to determine appropriate font size
             const minX = Math.min(...polygon.points.map(p => p.x));
             const maxX = Math.max(...polygon.points.map(p => p.x));
@@ -129,11 +126,8 @@ class TextEditor {
             const polygonWidth = maxX - minX;
             const polygonHeight = maxY - minY;
 
-            console.log("Polygon dimensions - width:", polygonWidth, "height:", polygonHeight); // Debug print
-
             // Use 30% of the smaller dimension for the font size, with a minimum of 12 and maximum of 60 for better readability
             const fontSize = Math.max(12, Math.min(60, Math.round(Math.min(polygonWidth, polygonHeight) * 0.3)));
-            console.log("Calculated font size:", fontSize); // Debug print
 
             // Create a text object with better styling for visibility
             const textObj = new fabric.Text(text, {
@@ -150,7 +144,6 @@ class TextEditor {
 
             // Position the text in the center of the polygon
             const center = this.getPolygonCenter(polygon);
-            console.log("Center position:", center); // Debug print
 
             // Set the position for the text
             textObj.set({
@@ -196,18 +189,12 @@ class TextEditor {
             // Ensure the polygon is below the text and background
             this.rightCanvas.sendToBack(polygon);
 
-            console.log("Text object created:", textObj); // Debug print
-
             // Store reference to both objects
             polygon.textObject = textObj;
             polygon.bgRectObject = bgRect;
-            console.log("Text object and background added and stored for polygon", polygon.index); // Debug print
-        } else {
-            console.log("No text to add for polygon", polygon.index); // Debug print
         }
 
         this.rightCanvas.requestRenderAll();
-        console.log("Canvas rendered"); // Debug print
     }
 
     // Calculate the center of a polygon
@@ -225,6 +212,63 @@ class TextEditor {
             x: xSum / points.length,
             y: ySum / points.length
         };
+    }
+
+    // Synchronize viewport between left and right canvases
+    syncViewports(sourceCanvas, targetCanvas) {
+        // Copy the viewport transformation matrix
+        targetCanvas.setViewportTransform([...sourceCanvas.viewportTransform]);
+        targetCanvas.requestRenderAll();
+    }
+
+    // Initialize viewport synchronization
+    initViewportSync() {
+        // Add event listeners to synchronize viewport changes
+        this.leftCanvas.on('mouse:wheel', (opt) => {
+            // Synchronize zoom on mouse wheel
+            this.syncViewports(this.leftCanvas, this.rightCanvas);
+        });
+
+        this.leftCanvas.on('mouse:up', (opt) => {
+            // Synchronize panning after mouse release
+            this.syncViewports(this.leftCanvas, this.rightCanvas);
+        });
+
+        this.leftCanvas.on('mouse:down', (opt) => {
+            // Set up continuous synchronization during dragging
+            this.leftCanvas.on('after:render', () => {
+                this.syncViewports(this.leftCanvas, this.rightCanvas);
+            });
+        });
+
+        this.leftCanvas.on('mouse:up', (opt) => {
+            // Stop continuous synchronization after dragging
+            this.leftCanvas.off('after:render');
+            this.syncViewports(this.leftCanvas, this.rightCanvas);
+        });
+
+        this.rightCanvas.on('mouse:wheel', (opt) => {
+            // Synchronize zoom on mouse wheel
+            this.syncViewports(this.rightCanvas, this.leftCanvas);
+        });
+
+        this.rightCanvas.on('mouse:up', (opt) => {
+            // Synchronize panning after mouse release
+            this.syncViewports(this.rightCanvas, this.leftCanvas);
+        });
+
+        this.rightCanvas.on('mouse:down', (opt) => {
+            // Set up continuous synchronization during dragging
+            this.rightCanvas.on('after:render', () => {
+                this.syncViewports(this.rightCanvas, this.leftCanvas);
+            });
+        });
+
+        this.rightCanvas.on('mouse:up', (opt) => {
+            // Stop continuous synchronization after dragging
+            this.rightCanvas.off('after:render');
+            this.syncViewports(this.rightCanvas, this.leftCanvas);
+        });
     }
 
     async loadImageAndData() {
@@ -318,12 +362,9 @@ class TextEditor {
             if (data.texts) {
                 this.texts = data.texts;
 
-                console.log("Loading text data:", this.texts); // Debug print
-
                 // Update regions with text content
                 this.regions.forEach((region, index) => {
                     const textContent = this.texts[index] || '';
-                    console.log(`Processing region ${index}, text content: "${textContent}"`); // Debug print
 
                     // Find the corresponding polygon on the left canvas
                     const leftPoly = this.leftCanvas.getObjects().find(obj => obj.index === index);
@@ -346,21 +387,15 @@ class TextEditor {
                             // Text exists - white background to match the white canvas
                             rightPoly.set({ fill: 'rgba(255, 255, 255, 1.0)', stroke: '#0066ff' });
 
-                            console.log(`Calling updatePolygonText for right polygon ${index} with text: "${textContent}"`); // Debug print
-
                             // Add text inside the right polygon if text exists
                             this.updatePolygonText(rightPoly, textContent);
                         } else {
                             // No text - blue transparent background to show the image underneath
                             rightPoly.set({ fill: 'rgba(0, 0, 255, 0.2)', stroke: 'blue' });
 
-                            console.log(`Calling updatePolygonText for right polygon ${index} with empty text`); // Debug print
-
                             // Remove text if it exists
                             this.updatePolygonText(rightPoly, '');
                         }
-                    } else {
-                        console.log(`Right polygon not found for index ${index}`); // Debug print
                     }
                 });
 
@@ -830,21 +865,15 @@ class TextEditor {
                 // Text exists - white background to match the white canvas
                 rightPoly.set({ fill: 'rgba(255, 255, 255, 1.0)', stroke: '#0066ff' });
 
-                console.log(`Calling updatePolygonText from saveCurrentText for right polygon ${rightPoly.index} with text: "${text}"`); // Debug print
-
                 // Add text inside the right polygon if text exists
                 this.updatePolygonText(rightPoly, text);
             } else {
                 // No text - blue transparent background to show the image underneath
                 rightPoly.set({ fill: 'rgba(0, 0, 255, 0.2)', stroke: 'blue' });
 
-                console.log(`Calling updatePolygonText from saveCurrentText for right polygon ${rightPoly.index} with empty text`); // Debug print
-
                 // Remove text if it exists
                 this.updatePolygonText(rightPoly, '');
             }
-        } else {
-            console.log("Right polygon not found in saveCurrentText"); // Debug print
         }
 
         this.leftCanvas.requestRenderAll();
