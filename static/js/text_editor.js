@@ -645,29 +645,33 @@ class TextEditor {
             const minY = Math.min(...ys);
             const maxY = Math.max(...ys);
 
-            // Add a small padding
-            const padding = 10;
+            // Add a larger padding to show context around the polygon
+            const padding = 50;
             const width = maxX - minX + padding * 2;
             const height = maxY - minY + padding * 2;
 
             canvas.width = width;
             canvas.height = height;
 
-            // Set background to white
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // Draw the main image at the correct position to show context
+            ctx.drawImage(img, -minX + padding, -minY + padding);
 
-            // Create a clipping path for the polygon
+            // Draw the polygon with a semi-transparent fill and border to highlight the region
             ctx.beginPath();
             ctx.moveTo(region.points[0].x - minX + padding, region.points[0].y - minY + padding);
             for (let i = 1; i < region.points.length; i++) {
                 ctx.lineTo(region.points[i].x - minX + padding, region.points[i].y - minY + padding);
             }
             ctx.closePath();
-            ctx.clip();
 
-            // Draw the main image at the correct position
-            ctx.drawImage(img, -minX + padding, -minY + padding);
+            // Fill with semi-transparent color to highlight the polygon
+            ctx.fillStyle = 'rgba(0, 100, 255, 0.3)';
+            ctx.fill();
+
+            // Draw a border around the polygon
+            ctx.strokeStyle = 'rgba(0, 0, 255, 0.8)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
 
             // Set the src of the preview image to the data URL of the canvas
             imgElement.src = canvas.toDataURL('image/png');
