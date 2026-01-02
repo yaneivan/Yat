@@ -101,6 +101,129 @@ class TextEditor {
         });
     }
 
+    // Update text inside a polygon
+    updatePolygonText(polygon, text) {
+        console.log("updatePolygonText called for polygon", polygon.index, "with text:", text); // Debug print
+
+        // Remove existing text and background objects if they exist
+        if (polygon.textObject) {
+            console.log("Removing existing text object for polygon", polygon.index); // Debug print
+            this.rightCanvas.remove(polygon.textObject);
+            polygon.textObject = null;
+        }
+
+        if (polygon.bgRectObject) {
+            console.log("Removing existing background rectangle for polygon", polygon.index); // Debug print
+            this.rightCanvas.remove(polygon.bgRectObject);
+            polygon.bgRectObject = null;
+        }
+
+        if (text && text.trim() !== '') {
+            console.log("Adding text to polygon", polygon.index, "text:", text); // Debug print
+
+            // Calculate the bounding box of the polygon to determine appropriate font size
+            const minX = Math.min(...polygon.points.map(p => p.x));
+            const maxX = Math.max(...polygon.points.map(p => p.x));
+            const minY = Math.min(...polygon.points.map(p => p.y));
+            const maxY = Math.max(...polygon.points.map(p => p.y));
+            const polygonWidth = maxX - minX;
+            const polygonHeight = maxY - minY;
+
+            console.log("Polygon dimensions - width:", polygonWidth, "height:", polygonHeight); // Debug print
+
+            // Use 30% of the smaller dimension for the font size, with a minimum of 12 and maximum of 60 for better readability
+            const fontSize = Math.max(12, Math.min(60, Math.round(Math.min(polygonWidth, polygonHeight) * 0.3)));
+            console.log("Calculated font size:", fontSize); // Debug print
+
+            // Create a text object with better styling for visibility
+            const textObj = new fabric.Text(text, {
+                fontSize: fontSize,
+                fill: '#000000', // Black text for contrast
+                originX: 'center',
+                originY: 'center',
+                fontFamily: 'Arial, sans-serif',
+                fontWeight: 'bold',
+                // Add text wrapping if needed
+                width: polygonWidth * 0.8, // Use 80% of polygon width for text wrapping
+                textAlign: 'center'
+            });
+
+            // Position the text in the center of the polygon
+            const center = this.getPolygonCenter(polygon);
+            console.log("Center position:", center); // Debug print
+
+            // Set the position for the text
+            textObj.set({
+                left: center.x,
+                top: center.y,
+            });
+
+            // Update coordinates after setting position
+            textObj.setCoords();
+
+            // Calculate text dimensions to create a background rectangle
+            // We need to add the text temporarily to get accurate dimensions
+            this.rightCanvas.add(textObj);
+            textObj.bringToFront(); // Ensure text is on top for accurate measurements
+            textObj.setCoords(); // Update coordinates after adding to canvas
+
+            // Create a background rectangle for better visibility against white polygon
+            const bgRect = new fabric.Rect({
+                left: textObj.aCoords.tl.x - 5, // Add padding
+                top: textObj.aCoords.tl.y - 5, // Add padding
+                width: (textObj.aCoords.tr.x - textObj.aCoords.tl.x) + 10, // Add padding
+                height: (textObj.aCoords.bl.y - textObj.aCoords.tl.y) + 10, // Add padding
+                fill: 'rgba(255, 255, 0, 0.4)', // Light yellow semi-transparent background for contrast
+                stroke: '#000000',
+                strokeWidth: 1,
+                rx: 8, // More rounded corners
+                ry: 8,
+                originX: 'left',
+                originY: 'top'
+            });
+
+            // Remove the text temporarily to add the background first
+            this.rightCanvas.remove(textObj);
+
+            // Add the background rectangle and then the text object to the canvas
+            this.rightCanvas.add(bgRect);
+            this.rightCanvas.add(textObj);
+
+            // Move both objects just above the polygon
+            this.rightCanvas.moveTo(bgRect, 1);
+            this.rightCanvas.moveTo(textObj, 2); // Text should be above the background
+
+            console.log("Text object created:", textObj); // Debug print
+
+            // Store reference to both objects
+            polygon.textObject = textObj;
+            polygon.bgRectObject = bgRect;
+            console.log("Text object and background added and stored for polygon", polygon.index); // Debug print
+        } else {
+            console.log("No text to add for polygon", polygon.index); // Debug print
+        }
+
+        this.rightCanvas.requestRenderAll();
+        console.log("Canvas rendered"); // Debug print
+    }
+
+    // Calculate the center of a polygon
+    getPolygonCenter(polygon) {
+        const points = polygon.points;
+        let xSum = 0;
+        let ySum = 0;
+
+        for (let i = 0; i < points.length; i++) {
+            xSum += points[i].x;
+            ySum += points[i].y;
+        }
+
+        return {
+            x: xSum / points.length,
+            y: ySum / points.length
+        };
+    }
+
     async loadImageAndData() {
         const infoSpan = document.querySelector('.file-info');
         if (infoSpan) infoSpan.textContent = this.filename;
@@ -108,8 +231,8 @@ class TextEditor {
         // Clear both canvases
         this.leftCanvas.clear();
         this.rightCanvas.clear();
-        
-        // Load image on left canvas
+
+        // Load image on both canvases
         const timestamp = new Date().getTime();
         const imgUrl = `/data/images/${this.filename}?t=${timestamp}`;
 
@@ -117,6 +240,7 @@ class TextEditor {
         imgEl.onload = () => {
             const fabricImg = new fabric.Image(imgEl);
 
+            // Load image on left canvas
             this.leftCanvas.setBackgroundImage(fabricImg, () => {
                 const scale = (this.leftCanvas.width / fabricImg.width) * 0.9;
                 this.leftCanvas.setZoom(scale);
@@ -125,6 +249,21 @@ class TextEditor {
                 this.leftCanvas.viewportTransform[5] = 20;
 
                 this.leftCanvas.requestRenderAll();
+            });
+
+            // Load image on right canvas with white background
+            this.rightCanvas.setBackgroundImage(fabricImg, () => {
+                const scale = (this.rightCanvas.width / fabricImg.width) * 0.9;
+                this.rightCanvas.setZoom(scale);
+                const newW = fabricImg.width * scale;
+                this.rightCanvas.viewportTransform[4] = (this.rightCanvas.width - newW) / 2;
+                this.rightCanvas.viewportTransform[5] = 20;
+
+                // Set white background for right canvas
+                this.rightCanvas.backgroundColor = "#ffffff";
+                this.rightCanvas.requestRenderAll();
+
+                // Load regions after both images are loaded
                 this.loadRegions();
             });
         };
@@ -132,9 +271,6 @@ class TextEditor {
             alert("Image load error.");
         };
         imgEl.src = imgUrl;
-
-        // Set white background for right canvas
-        this.rightCanvas.setBackgroundColor("#ffffff", this.rightCanvas.renderAll.bind(this.rightCanvas));
     }
 
     async loadRegions() {
@@ -163,11 +299,11 @@ class TextEditor {
                 }
             });
 
-            // Load existing text data if available
-            this.loadTextData();
-
             this.leftCanvas.requestRenderAll();
             this.rightCanvas.requestRenderAll();
+
+            // Load existing text data if available
+            this.loadTextData();
         } catch (error) {
             console.error('Error loading regions:', error);
         }
@@ -182,21 +318,35 @@ class TextEditor {
                 // Update regions with text content
                 this.regions.forEach((region, index) => {
                     const textContent = this.texts[index] || '';
-                    if (textContent) {
-                        // Find the corresponding polygon on the left canvas
-                        const leftPoly = this.leftCanvas.getObjects().find(obj => obj.index === index);
-                        if (leftPoly) {
-                            leftPoly.set({ hasText: true, textContent: textContent });
-                            // Update color to indicate text is entered
+                    // Find the corresponding polygon on the left canvas
+                    const leftPoly = this.leftCanvas.getObjects().find(obj => obj.index === index);
+                    if (leftPoly) {
+                        leftPoly.set({ hasText: textContent !== '', textContent: textContent });
+                        // Update color to indicate text is entered
+                        if (textContent) {
                             leftPoly.set({ fill: 'rgba(0, 128, 0, 0.3)', stroke: '#00cc66' });
+                        } else {
+                            leftPoly.set({ fill: 'rgba(0, 255, 0, 0.2)', stroke: 'green' });
                         }
+                    }
 
-                        // Find the corresponding polygon on the right canvas
-                        const rightPoly = this.rightCanvas.getObjects().find(obj => obj.index === index);
-                        if (rightPoly) {
-                            rightPoly.set({ hasText: true, textContent: textContent });
-                            // Update color to indicate text is entered
-                            rightPoly.set({ fill: 'rgba(0, 0, 255, 0.3)', stroke: '#0066ff' });
+                    // Find the corresponding polygon on the right canvas
+                    const rightPoly = this.rightCanvas.getObjects().find(obj => obj.index === index);
+                    if (rightPoly) {
+                        rightPoly.set({ hasText: textContent !== '', textContent: textContent });
+                        // Update color based on whether text exists
+                        if (textContent) {
+                            // Text exists - white background to match the white canvas
+                            rightPoly.set({ fill: 'rgba(255, 255, 255, 1.0)', stroke: '#0066ff' });
+
+                            // Add text inside the right polygon if text exists
+                            this.updatePolygonText(rightPoly, textContent);
+                        } else {
+                            // No text - blue transparent background to show the image underneath
+                            rightPoly.set({ fill: 'rgba(0, 0, 255, 0.2)', stroke: 'blue' });
+
+                            // Remove text if it exists
+                            this.updatePolygonText(rightPoly, '');
                         }
                     }
                 });
@@ -664,11 +814,17 @@ class TextEditor {
             rightPoly.set({ hasText: text !== '', textContent: text });
             // Change color based on whether text exists
             if (text) {
-                // Text exists - blue
-                rightPoly.set({ fill: 'rgba(0, 0, 255, 0.3)', stroke: '#0066ff' });
+                // Text exists - white background to match the white canvas
+                rightPoly.set({ fill: 'rgba(255, 255, 255, 1.0)', stroke: '#0066ff' });
+
+                // Add text inside the right polygon if text exists
+                this.updatePolygonText(rightPoly, text);
             } else {
-                // No text - original blue
+                // No text - blue transparent background to show the image underneath
                 rightPoly.set({ fill: 'rgba(0, 0, 255, 0.2)', stroke: 'blue' });
+
+                // Remove text if it exists
+                this.updatePolygonText(rightPoly, '');
             }
         }
 
