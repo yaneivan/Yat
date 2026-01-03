@@ -882,6 +882,9 @@ class TextEditor {
 
         this.leftCanvas.requestRenderAll();
         this.rightCanvas.requestRenderAll();
+
+        // Trigger auto-save after saving text
+        this.autoSave();
     }
 
     goImage(dir) {
@@ -895,8 +898,8 @@ class TextEditor {
     }
 
     async saveData() {
-        const statusEl = document.getElementById('status');
-        if (statusEl) statusEl.textContent = 'Сохранение...';
+        const saveStatusEl = document.getElementById('save-status');
+        if (saveStatusEl) saveStatusEl.textContent = 'Сохранение...';
 
         try {
             // Prepare data to save
@@ -907,13 +910,93 @@ class TextEditor {
                 status: 'texted' // New status for text input completed
             };
 
-            await API.saveAnnotation(this.filename, saveData.regions, saveData.texts);
-            
-            if (statusEl) statusEl.textContent = 'Сохранено';
+            await API.saveAnnotationWithTexts(this.filename, saveData.regions, saveData.texts);
+
+            if (saveStatusEl) saveStatusEl.textContent = 'Сохранено';
         } catch (error) {
             console.error('Save error:', error);
-            if (statusEl) statusEl.textContent = 'Ошибка сохранения';
+            if (saveStatusEl) saveStatusEl.textContent = 'Ошибка сохранения';
         }
+    }
+
+    // Auto-save functionality
+    autoSave() {
+        // Save data automatically after a delay to avoid excessive requests
+        if (this.autoSaveTimeout) {
+            clearTimeout(this.autoSaveTimeout);
+        }
+
+        this.autoSaveTimeout = setTimeout(() => {
+            this.saveData();
+        }, 2000); // Auto-save after 2 seconds of inactivity
+    }
+
+    async recognizeText() {
+        const recognitionStatusEl = document.getElementById('recognition-status');
+        if (recognitionStatusEl) recognitionStatusEl.textContent = 'Распознавание... (0%)';
+
+        try {
+            const response = await fetch('/api/recognize_text', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    image_name: this.filename,
+                    regions: this.regions
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                // Poll for completion with progress updates
+                this.pollForRecognitionResults(recognitionStatusEl);
+            } else {
+                console.error('Recognition error:', data.msg);
+                if (recognitionStatusEl) recognitionStatusEl.textContent = 'Ошибка распознавания';
+            }
+        } catch (error) {
+            console.error('Recognition API error:', error);
+            if (recognitionStatusEl) recognitionStatusEl.textContent = 'Ошибка распознавания';
+        }
+    }
+
+    pollForRecognitionResults(recognitionStatusEl) {
+        // Check recognition progress using the new endpoint
+        const checkStatus = async () => {
+            try {
+                const progressData = await fetch(`/api/recognize_progress/${encodeURIComponent(this.filename)}`);
+                const progress = await progressData.json();
+
+                if (progress.status === 'completed') {
+                    // Recognition complete, update UI
+                    if (recognitionStatusEl) recognitionStatusEl.textContent = 'Распознано (100%)';
+
+                    // Update the local texts data
+                    const data = await API.loadAnnotation(this.filename);
+                    this.texts = data.texts;
+
+                    // Update the UI to reflect the recognized text
+                    this.loadTextData();
+
+                    // Auto-save after recognition is complete
+                    this.autoSave();
+                } else {
+                    // Update progress indicator
+                    if (recognitionStatusEl) recognitionStatusEl.textContent = `Распознавание... (${progress.percentage}%)`;
+
+                    // Continue polling
+                    setTimeout(checkStatus, 1000); // Check every second
+                }
+            } catch (error) {
+                console.error('Error checking recognition status:', error);
+                // Continue polling even if there's an error
+                setTimeout(checkStatus, 1000);
+            }
+        };
+
+        checkStatus();
     }
 }
 

@@ -3,6 +3,14 @@ import storage
 import logic
 import threading
 
+# Initialize TROCR model at startup
+if logic.TROCR_AVAILABLE:
+    try:
+        device = logic.initialize_trocr_model("raxtemur/trocr-base-ru")  # Russian-specific model
+        print(f"TROCR model initialized successfully on {device}")
+    except Exception as e:
+        print(f"Error initializing TROCR model: {e}")
+
 app = Flask(__name__)
 
 # --- Pages ---
@@ -116,6 +124,53 @@ def detect_lines():
         return jsonify({'status': 'success', 'regions': regions})
     except Exception as e:
         return jsonify({'status': 'error', 'msg': str(e)}), 500
+
+# Global dictionary to track recognition progress
+recognition_progress = {}
+
+@app.route('/api/recognize_text', methods=['POST'])
+def recognize_text():
+    data = request.json
+    filename = data.get('image_name')
+    regions = data.get('regions', None)  # Optional - if not provided, process all regions
+
+    if not filename:
+        return jsonify({'status': 'error', 'msg': 'No image name provided'}), 400
+
+    # Initialize progress tracking
+    total_regions = len(regions) if regions else len(storage.load_json(filename).get('regions', []))
+    recognition_progress[filename] = {'processed': 0, 'total': total_regions, 'status': 'processing'}
+
+        # Async background processing
+    def task():
+        from logic import recognize_text_with_trocr
+
+        def update_progress(processed, total):
+            recognition_progress[filename] = {'processed': processed, 'total': total, 'status': 'processing'}
+
+        recognize_text_with_trocr(filename, regions, progress_callback=update_progress)
+        # Mark as complete when done
+        recognition_progress[filename] = {'processed': total_regions, 'total': total_regions, 'status': 'completed'}
+
+    thread = threading.Thread(target=task)
+    thread.start()
+
+    return jsonify({'status': 'success', 'msg': 'Background processing started'})
+
+@app.route('/api/recognize_progress/<filename>')
+def recognize_progress(filename):
+    progress_data = recognition_progress.get(filename, {'processed': 0, 'total': 0, 'status': 'not_started'})
+    if progress_data['total'] > 0:
+        percentage = int((progress_data['processed'] / progress_data['total']) * 100)
+    else:
+        percentage = 0
+
+    return jsonify({
+        'status': progress_data['status'],
+        'processed': progress_data['processed'],
+        'total': progress_data['total'],
+        'percentage': percentage
+    })
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

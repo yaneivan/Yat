@@ -16,6 +16,18 @@ except ImportError:
     YOLO_AVAILABLE = False
     print("YOLOv9 not available. Install ultralytics and torch to enable text-line detection.")
 
+# TROCR imports
+try:
+    from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+    TROCR_AVAILABLE = True
+except ImportError:
+    TROCR_AVAILABLE = False
+    print("Transformers not available. Install transformers to enable text recognition.")
+
+# Global variables to store TROCR model and processor
+trocr_model = None
+trocr_processor = None
+
 # --- Математика ---
 
 def rotate_point(x, y, cx, cy, angle_deg):
@@ -542,3 +554,130 @@ def detect_text_lines_yolo(filename, settings=None):
         regions = merge_overlapping_regions(regions, overlap_threshold)
 
     return regions
+
+def initialize_trocr_model(model_name="raxtemur/trocr-base-ru"):
+    """
+    Initialize the TROCR model at application startup
+    """
+    global trocr_model, trocr_processor
+
+    if not TROCR_AVAILABLE:
+        raise Exception("Transformers not available. Install transformers to enable text recognition.")
+
+    # Check for available device
+    import torch
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
+    print("Loading TROCR model...")
+    trocr_processor = TrOCRProcessor.from_pretrained(model_name)
+    trocr_model = VisionEncoderDecoderModel.from_pretrained(model_name)
+
+    # Move model to device
+    trocr_model = trocr_model.to(device)
+    print("TROCR model loaded successfully")
+
+    return device
+
+
+def recognize_text_in_region(image, bbox, padding=10):
+    """
+    Recognize text in a specific region of the image using TROCR
+    """
+    global trocr_model, trocr_processor
+
+    if trocr_model is None or trocr_processor is None:
+        initialize_trocr_model()
+
+    # Extract the region from the image with some padding
+    left, top, right, bottom = bbox
+    left = max(0, left - padding)
+    top = max(0, top - padding)
+    right = min(image.width, right + padding)
+    bottom = min(image.height, bottom + padding)
+
+    cropped_image = image.crop((left, top, right, bottom))
+    print(f"  Cropped region with size: {cropped_image.size}")
+
+    # Preprocess the cropped image
+    pixel_values = trocr_processor(cropped_image, return_tensors="pt").pixel_values
+
+    # Move pixel values to the appropriate device
+    import torch
+    device = next(trocr_model.parameters()).device  # Get the device the model is on
+    pixel_values = pixel_values.to(device)
+
+    # Generate text with TROCR
+    print(f"  Processing with TROCR model...")
+    generated_ids = trocr_model.generate(pixel_values)
+    text = trocr_processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+    print(f"  Recognition result: '{text}'")
+
+    return text
+
+
+def recognize_text_with_trocr(filename, regions=None, progress_callback=None):
+    """
+    Process image regions with TROCR to recognize text
+    """
+    global trocr_model, trocr_processor
+
+    if not TROCR_AVAILABLE:
+        raise Exception("Transformers not available. Install transformers to enable text recognition.")
+
+    if trocr_model is None or trocr_processor is None:
+        initialize_trocr_model()
+
+    print(f"Starting text recognition for file: {filename}")
+
+    # Load the image
+    image_path = os.path.join(storage.IMAGE_FOLDER, filename)
+    image = Image.open(image_path).convert("RGB")
+    print(f"Loaded image: {image_path} with size {image.size}")
+
+    # Load existing annotation data
+    annotation_data = storage.load_json(filename)
+
+    # If no regions specified, process all regions in the annotation
+    if regions is None:
+        regions = annotation_data.get('regions', [])
+
+    print(f"Processing {len(regions)} regions for text recognition")
+
+    # Process all regions
+    recognized_texts = {}
+    total_regions = len(regions)
+
+    for idx, region in enumerate(regions):
+        try:
+            # Calculate bounding box for the region
+            xs = [p['x'] for p in region['points']]
+            ys = [p['y'] for p in region['points']]
+            bbox = (min(xs), min(ys), max(xs), max(ys))
+
+            print(f"Processing region {idx + 1}/{total_regions}: bbox={bbox}")
+
+            # Recognize text in the region
+            text = recognize_text_in_region(image, bbox)
+            print(f"Recognized text for region {idx + 1}: '{text[:50]}{'...' if len(text) > 50 else ''}'")
+
+            # Store the recognized text
+            recognized_texts[idx] = text
+
+            # Update progress if callback is provided
+            if progress_callback:
+                progress_callback(idx + 1, total_regions)
+                print(f"Progress update: {idx + 1}/{total_regions} regions processed")
+        except Exception as e:
+            print(f"Error processing region {idx + 1}: {e}")
+            recognized_texts[idx] = ""  # Store empty string in case of error
+
+    print(f"Completed text recognition for {filename}, recognized text for {len([t for t in recognized_texts.values() if t])} out of {total_regions} regions")
+
+    # Update the annotation data with recognized texts
+    annotation_data['texts'] = recognized_texts
+
+    # Save the updated annotation
+    storage.save_json(annotation_data)
+
+    return recognized_texts

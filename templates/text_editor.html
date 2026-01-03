@@ -170,18 +170,18 @@
 <body>
     <div id="toolbar">
         <button class="btn" onclick="window.location.href='/'" title="Home">🏠</button>
+        <button class="btn" onclick="window.location.href='/editor?image={{ filename }}'" title="Редактор сегментов">📋 Сегменты</button>
         <div class="sep"></div>
         <button class="btn" onclick="editor.goImage(-1)">&lt;</button>
         <button class="btn" onclick="editor.goImage(1)">&gt;</button>
         <span class="file-info" style="font-size:0.9em; color:#aaa; max-width:200px; overflow:hidden; white-space:nowrap;">{{ filename }}</span>
-        
+
         <div style="flex:1"></div>
-        
-        <button class="btn" id="btn-prev-region" onclick="editor.previousRegion()">← Пред. регион</button>
-        <button class="btn" id="btn-next-region" onclick="editor.nextRegion()">След. регион →</button>
+
+        <button class="btn" id="btn-recognize" onclick="editor.recognizeText()">Распознать текст</button>
         <div class="sep"></div>
-        <button class="btn" id="btn-save" onclick="editor.saveData()">💾 Сохранить</button>
-        <span id="status" style="font-size:0.8em; color:#888; min-width:80px; text-align:right;"></span>
+        <div id="save-status" style="font-size:0.8em; color:#888; min-width:80px; text-align:right; margin-right:10px; display:inline-block;">&nbsp;</div>
+        <div id="recognition-status" style="font-size:0.8em; color:#888; min-width:80px; text-align:right; display:inline-block;">&nbsp;</div>
     </div>
 
     <div id="workspace">

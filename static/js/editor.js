@@ -612,6 +612,7 @@ class HTREditor {
         }
     }
 
+
     async detectTextLines() {
         const statusEl = document.getElementById('status');
         if (statusEl) statusEl.textContent = 'Обнаружение строк...';

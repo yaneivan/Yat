@@ -1,4 +1,5 @@
-flask  
-pillow  
-ultralytics  
-torch 
+flask
+pillow
+ultralytics
+torch
+transformers
