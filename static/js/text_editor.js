@@ -139,7 +139,10 @@ class TextEditor {
                 fontWeight: 'bold',
                 // Add text wrapping if needed
                 width: polygonWidth * 0.8, // Use 80% of polygon width for text wrapping
-                textAlign: 'center'
+                textAlign: 'center',
+                // Make text non-interactive to prevent direct dragging on canvas
+                selectable: false,
+                evented: false
             });
 
             // Position the text in the center of the polygon
@@ -172,7 +175,10 @@ class TextEditor {
                 rx: 8, // More rounded corners
                 ry: 8,
                 originX: 'left',
-                originY: 'top'
+                originY: 'top',
+                // Make background non-interactive to prevent direct dragging on canvas
+                selectable: false,
+                evented: false
             });
 
             // Remove the text temporarily to add the background first
