@@ -323,7 +323,13 @@ class TextEditor {
     async loadRegions() {
         try {
             const data = await API.loadAnnotation(this.filename);
-            this.regions = data.regions || [];
+            let originalRegions = data.regions || [];
+
+            // Create a mapping from sorted indices back to original indices
+            let sortedRegions = this.sortRegionsTopToBottom([...originalRegions]); // Create a copy to sort
+
+            // Store the sorted regions
+            this.regions = sortedRegions;
 
             // Add regions to both canvases
             this.regions.forEach((region, index) => {
@@ -349,18 +355,64 @@ class TextEditor {
             this.leftCanvas.requestRenderAll();
             this.rightCanvas.requestRenderAll();
 
-            // Load existing text data if available
-            this.loadTextData();
+            // Load existing text data if available, with mapping to sorted order
+            this.loadTextData(originalRegions);
         } catch (error) {
             console.error('Error loading regions:', error);
         }
     }
 
-    async loadTextData() {
+    // Function to sort regions from top to bottom based on their vertical position
+    sortRegionsTopToBottom(regions) {
+        return regions.sort((a, b) => {
+            // Calculate the top position (minimum Y coordinate) of each region
+            const aTop = Math.min(...a.points.map(p => p.y));
+            const bTop = Math.min(...b.points.map(p => p.y));
+
+            // If top positions are similar (within 10 pixels), sort by left position
+            if (Math.abs(aTop - bTop) < 10) {
+                const aLeft = Math.min(...a.points.map(p => p.x));
+                const bLeft = Math.min(...b.points.map(p => p.x));
+                return aLeft - bLeft;
+            }
+
+            return aTop - bTop;
+        });
+    }
+
+    async loadTextData(originalRegions = null) {
         try {
             const data = await API.loadAnnotation(this.filename);
             if (data.texts) {
-                this.texts = data.texts;
+                // If originalRegions is provided, we need to map the texts from original indices to sorted indices
+                if (originalRegions) {
+                    // Create a mapping from sorted regions back to original indices
+                    this.texts = {};
+
+                    // For each region in the sorted order, find its original index and get the corresponding text
+                    for (let sortedIndex = 0; sortedIndex < this.regions.length; sortedIndex++) {
+                        // Find the original index of this region in the originalRegions array
+                        const sortedRegion = this.regions[sortedIndex];
+
+                        // Find the original index by comparing the region points
+                        let originalIndex = -1;
+                        for (let origIndex = 0; origIndex < originalRegions.length; origIndex++) {
+                            const origRegion = originalRegions[origIndex];
+
+                            // Compare if the regions are the same by checking if they have the same points
+                            if (this.regionsAreEqual(sortedRegion, origRegion)) {
+                                originalIndex = origIndex;
+                                break;
+                            }
+                        }
+
+                        // Get the text for the original index and assign it to the sorted index
+                        this.texts[sortedIndex] = data.texts[originalIndex] || '';
+                    }
+                } else {
+                    // Fallback: just copy the texts as they are (for backward compatibility)
+                    this.texts = data.texts;
+                }
 
                 // Update regions with text content
                 this.regions.forEach((region, index) => {
@@ -405,6 +457,21 @@ class TextEditor {
         } catch (error) {
             console.error('Error loading text data:', error);
         }
+    }
+
+    // Helper function to compare if two regions are equal based on their points
+    regionsAreEqual(region1, region2) {
+        if (!region1.points || !region2.points || region1.points.length !== region2.points.length) {
+            return false;
+        }
+
+        for (let i = 0; i < region1.points.length; i++) {
+            if (region1.points[i].x !== region2.points[i].x || region1.points[i].y !== region2.points[i].y) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     setupCanvasEvents() {
@@ -902,11 +969,37 @@ class TextEditor {
         if (saveStatusEl) saveStatusEl.textContent = 'Сохранение...';
 
         try {
+            // Prepare data to save - we need to map the texts back to the original region order
+            // Get the original regions to create the mapping
+            const originalData = await API.loadAnnotation(this.filename);
+            const originalRegions = originalData.regions || [];
+
+            // Create a mapping of texts in the original region order
+            const textsInOriginalOrder = {};
+
+            for (let sortedIndex = 0; sortedIndex < this.regions.length; sortedIndex++) {
+                const sortedRegion = this.regions[sortedIndex];
+
+                // Find the original index of this region
+                let originalIndex = -1;
+                for (let origIndex = 0; origIndex < originalRegions.length; origIndex++) {
+                    if (this.regionsAreEqual(sortedRegion, originalRegions[origIndex])) {
+                        originalIndex = origIndex;
+                        break;
+                    }
+                }
+
+                // Map the text from sorted index to original index
+                if (originalIndex !== -1) {
+                    textsInOriginalOrder[originalIndex] = this.texts[sortedIndex] || '';
+                }
+            }
+
             // Prepare data to save
             const saveData = {
                 image_name: this.filename,
-                regions: this.regions,
-                texts: this.texts,
+                regions: originalRegions, // Use original regions order
+                texts: textsInOriginalOrder,
                 status: 'texted' // New status for text input completed
             };
 
@@ -936,6 +1029,10 @@ class TextEditor {
         if (recognitionStatusEl) recognitionStatusEl.textContent = 'Распознавание... (0%)';
 
         try {
+            // Get the original unsorted regions to send to the backend
+            const originalData = await API.loadAnnotation(this.filename);
+            const originalRegions = originalData.regions || [];
+
             const response = await fetch('/api/recognize_text', {
                 method: 'POST',
                 headers: {
@@ -943,7 +1040,7 @@ class TextEditor {
                 },
                 body: JSON.stringify({
                     image_name: this.filename,
-                    regions: this.regions
+                    regions: originalRegions  // Send original unsorted regions
                 })
             });
 
@@ -975,10 +1072,10 @@ class TextEditor {
 
                     // Update the local texts data
                     const data = await API.loadAnnotation(this.filename);
-                    this.texts = data.texts;
-
-                    // Update the UI to reflect the recognized text
-                    this.loadTextData();
+                    // Load the text data with the original regions to map correctly to sorted order
+                    const originalData = await API.loadAnnotation(this.filename);
+                    const originalRegions = originalData.regions || [];
+                    this.loadTextData(originalRegions);
 
                     // Auto-save after recognition is complete
                     this.autoSave();
