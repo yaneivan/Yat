@@ -199,21 +199,23 @@ class ProjectManager {
             const basicProjects = await ProjectAPI.getProjects();
 
             // Fetch detailed information for each project to get image statuses
-            this.projects = [];
-            for (const basicProject of basicProjects) {
+            // Use Promise.all to make API calls in parallel for better performance
+            const projectPromises = basicProjects.map(async (basicProject) => {
                 try {
-                    const detailedProject = await ProjectAPI.getProject(basicProject.name);
-                    // Also get the images with their statuses
-                    const imagesResponse = await ProjectAPI.getProjectImages(basicProject.name);
-                    detailedProject.images = imagesResponse.images;
-                    this.projects.push(detailedProject);
+                    const [detailedProject, imagesResponse] = await Promise.all([
+                        ProjectAPI.getProject(basicProject.name),
+                        ProjectAPI.getProjectImages(basicProject.name)
+                    ]);
+                    detailedProject.images = imagesResponse; // imagesResponse is already an array of image objects
+                    return detailedProject;
                 } catch (error) {
                     console.error(`Error loading details for project ${basicProject.name}:`, error);
                     // Add the basic project info if detailed load fails
-                    this.projects.push(basicProject);
+                    return basicProject;
                 }
-            }
+            });
 
+            this.projects = await Promise.all(projectPromises);
             this.renderProjects();
         } catch (error) {
             console.error('Error loading projects:', error);
@@ -264,7 +266,7 @@ class ProjectManager {
         // Count annotated images by checking their status ('segment', 'cropped', or 'texted')
         let annotatedImages = 0;
         if (project.images && Array.isArray(project.images)) {
-            annotatedImages = project.images.filter(img => img.status === 'segment' || img.status === 'cropped' || img.status === 'texted').length;
+            annotatedImages = project.images.filter(img => ['segment', 'cropped', 'texted'].includes(img.status)).length;
         }
 
         projectCard.innerHTML = `
@@ -631,7 +633,7 @@ class ProjectManager {
         // Count annotated images by checking their status ('segment', 'cropped', or 'texted')
         let annotatedImages = 0;
         if (project.images && Array.isArray(project.images)) {
-            annotatedImages = project.images.filter(img => img.status === 'segment' || img.status === 'cropped' || img.status === 'texted').length;
+            annotatedImages = project.images.filter(img => ['segment', 'cropped', 'texted'].includes(img.status)).length;
         }
 
         projectItem.innerHTML = `

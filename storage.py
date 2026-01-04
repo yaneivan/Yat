@@ -28,18 +28,7 @@ def get_images_with_status():
     files = get_sorted_images()
     result = []
     for f in files:
-        json_path = os.path.join(ANNOTATION_FOLDER, os.path.splitext(f)[0] + '.json')
-        # Читаем JSON, чтобы узнать, был ли файл уже обрезан (есть ли crop_params)
-        status = 'crop'
-        if os.path.exists(json_path):
-            try:
-                with open(json_path, 'r') as jf:
-                    data = json.load(jf)
-                    # Если есть регионы или явный статус - готово к сегментации
-                    if data.get('regions') or data.get('status') == 'cropped':
-                        status = 'segment'
-            except: pass
-        
+        status = get_image_status(f)
         result.append({'name': f, 'status': status})
     return result
 
@@ -243,6 +232,25 @@ def delete_project(project_name):
     return True, "Project deleted successfully"
 
 
+def get_image_status(image_name):
+    """Get the status of a single image"""
+    json_path = os.path.join(ANNOTATION_FOLDER, os.path.splitext(image_name)[0] + '.json')
+    status = 'crop'  # Default status is crop (needs to be cropped)
+    if os.path.exists(json_path):
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            # If there are regions, the image has been segmented
+            if data.get('regions'):
+                status = 'segment'
+            # If there's a crop status, the image has been cropped but not yet segmented
+            elif data.get('status') == 'cropped':
+                status = 'cropped'
+            # If there's a texted status, the image has been fully processed with text
+            elif data.get('status') == 'texted':
+                status = 'texted'
+    return status
+
+
 def get_project_status(project_name):
     """Get the status of a project based on its images"""
     images = get_project_images(project_name)
@@ -252,12 +260,8 @@ def get_project_status(project_name):
     # Count how many images have annotations
     annotated_count = 0
     for image_name in images:
-        json_path = os.path.join(ANNOTATION_FOLDER, os.path.splitext(image_name)[0] + '.json')
-        if os.path.exists(json_path):
-            with open(json_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                if data.get('regions') or data.get('status') == 'cropped' or data.get('status') == 'texted':
-                    annotated_count += 1
+        if get_image_status(image_name) in ['cropped', 'segment', 'texted']:
+            annotated_count += 1
 
     if annotated_count == 0:
         return 'crop'

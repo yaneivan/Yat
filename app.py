@@ -279,20 +279,7 @@ def project_images(project_name):
         # Add status information for each image
         image_list = []
         for img in images:
-            json_path = os.path.join(storage.ANNOTATION_FOLDER, os.path.splitext(img)[0] + '.json')
-            status = 'crop'  # Default status is crop (needs to be cropped)
-            if os.path.exists(json_path):
-                with open(json_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    # If there are regions, the image has been segmented
-                    if data.get('regions'):
-                        status = 'segment'
-                    # If there's a crop status, the image has been cropped but not yet segmented
-                    elif data.get('status') == 'cropped':
-                        status = 'cropped'
-                    # If there's a texted status, the image has been fully processed with text
-                    elif data.get('status') == 'texted':
-                        status = 'texted'
+            status = storage.get_image_status(img)
             image_list.append({'name': img, 'status': status})
         return jsonify({'images': image_list})
 
@@ -401,10 +388,7 @@ def project_page(project_name):
     images_data = images_response.get_json()
     project['images'] = images_data['images']
 
-    # Count annotated images (cropped, segmented, and texted)
-    annotated_count = len([img for img in project['images'] if img['status'] == 'segment' or img['status'] == 'cropped' or img['status'] == 'texted'])
-
-    return render_template('project.html', project=project, annotated_count=annotated_count)
+    return render_template('project.html', project=project)
 
 
 @app.route('/api/projects/<project_name>/upload_images', methods=['POST'])
