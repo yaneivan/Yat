@@ -280,12 +280,16 @@ def project_images(project_name):
         image_list = []
         for img in images:
             json_path = os.path.join(storage.ANNOTATION_FOLDER, os.path.splitext(img)[0] + '.json')
-            status = 'crop'
+            status = 'crop'  # Default status is crop (needs to be cropped)
             if os.path.exists(json_path):
                 with open(json_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    if data.get('regions') or data.get('status') == 'cropped':
+                    # If there are regions, the image has been segmented
+                    if data.get('regions'):
                         status = 'segment'
+                    # If there's a crop status, the image has been cropped but not yet segmented
+                    elif data.get('status') == 'cropped':
+                        status = 'cropped'
             image_list.append({'name': img, 'status': status})
         return jsonify({'images': image_list})
 

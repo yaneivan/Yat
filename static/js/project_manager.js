@@ -184,27 +184,14 @@ class ProjectManager {
     }
 
     restoreViewPreference() {
-        const savedView = localStorage.getItem('projectView');
         const container = document.getElementById('projects-container');
-        const toggleBtn = document.getElementById('view-toggle');
 
-        if (savedView === 'list') {
-            // Switch to list view
-            container.classList.remove('projects-grid');
-            container.classList.add('projects-container-list');
-            if (toggleBtn) toggleBtn.textContent = 'Плитка';
+        // Always use list view
+        container.classList.remove('projects-grid');
+        container.classList.add('projects-container-list');
 
-            // Re-render projects in list view
-            this.renderProjectsAsList();
-        } else {
-            // Default to grid view (or if no preference saved)
-            container.classList.remove('projects-container-list');
-            container.classList.add('projects-grid');
-            if (toggleBtn) toggleBtn.textContent = 'Список';
-
-            // Re-render projects in grid view
-            this.renderProjects();
-        }
+        // Re-render projects in list view
+        this.renderProjectsAsList();
     }
 
     async loadProjects() {
@@ -343,7 +330,7 @@ class ProjectManager {
             <div class="card-actions">
                 <a href="/cropper?image=${image}" class="action-btn action-crop" title="Кадрировать">✂️ Crop</a>
                 <a href="/editor?image=${image}" class="action-btn action-segment" title="Размечать">✏️ Seg</a>
-                <a href="/text_editor?image=${image}" class="action-btn" title="Ввод текста">📝 Txt</a>
+                <a href="/text_editor?image=${image}" class="action-btn" title="Распознавание текста">📝 Расп</a>
             </div>
         `;
 
@@ -359,9 +346,13 @@ class ProjectManager {
         if (projectsCount) projectsCount.textContent = this.projects.length;
         if (imagesCount) imagesCount.textContent = this.images.length;
 
-        // Calculate annotated images (placeholder logic)
+        // Calculate annotated images (images with status 'segment')
         const annotated = this.projects.reduce((count, project) => {
-            return count + (project.images ? project.images.length : 0);
+            if (project.images) {
+                const annotatedInProject = project.images.filter(img => img.status === 'segment').length;
+                return count + annotatedInProject;
+            }
+            return count;
         }, 0);
         if (annotatedCount) annotatedCount.textContent = annotated;
         if (tasksCount) tasksCount.textContent = this.tasks.length;
@@ -612,35 +603,6 @@ class ProjectManager {
         }
     }
 
-    // Toggle between grid and list view for projects
-    toggleView() {
-        const container = document.getElementById('projects-container');
-        const toggleBtn = document.getElementById('view-toggle');
-
-        if (container.classList.contains('projects-grid')) {
-            // Switch to list view
-            container.classList.remove('projects-grid');
-            container.classList.add('projects-container-list'); // Use different class to avoid conflicts
-            toggleBtn.textContent = 'Плитка';
-
-            // Re-render projects in list view
-            this.renderProjectsAsList();
-
-            // Save view preference to localStorage
-            localStorage.setItem('projectView', 'list');
-        } else {
-            // Switch to grid view
-            container.classList.remove('projects-container-list');
-            container.classList.add('projects-grid');
-            toggleBtn.textContent = 'Список';
-
-            // Re-render projects in grid view
-            this.renderProjects();
-
-            // Save view preference to localStorage
-            localStorage.setItem('projectView', 'grid');
-        }
-    }
 
     renderProjectsAsList() {
         const container = document.getElementById('projects-container');
@@ -839,9 +801,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Global function for view toggle
-function toggleView() {
-    window.projectManager.toggleView();
-}
 
 // Global function for editing project info (for use in HTML onclick)
 function editProjectInfo() {

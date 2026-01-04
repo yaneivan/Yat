@@ -17,10 +17,10 @@
     <button class="btn" onclick="window.location.href='/'" title="Home">🏠</button>
     {% if project %}
         <button class="btn" onclick="window.location.href='/editor?image={{ filename }}&project={{ project }}'" title="Редактор сегментов">📋 Сегменты</button>
-        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}&project={{ project }}'" title="Редактор текста">🔤 Текст</button>
+        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}&project={{ project }}'" title="Редактор распознавания">🔤 Распознавать</button>
     {% else %}
         <button class="btn" onclick="window.location.href='/editor?image={{ filename }}'" title="Редактор сегментов">📋 Сегменты</button>
-        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}'" title="Редактор текста">🔤 Текст</button>
+        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}'" title="Редактор распознавания">🔤 Распознавать</button>
     {% endif %}
     <div class="sep"></div>
     <button class="btn" onclick="goImage(-1)">&lt;</button>

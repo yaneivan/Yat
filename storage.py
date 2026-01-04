@@ -188,6 +188,15 @@ def add_image_to_project(project_name, image_name):
     return True, project_data
 
 
+def is_image_used_in_other_projects(current_project_name, image_name):
+    """Check if an image is used in any other project besides the current one"""
+    projects = get_projects_list()
+    for project in projects:
+        if project['name'] != current_project_name and image_name in project.get('images', []):
+            return True
+    return False
+
+
 def remove_image_from_project(project_name, image_name):
     """Remove an image from a project"""
     # Sanitize project name to match directory name
@@ -207,6 +216,13 @@ def remove_image_from_project(project_name, image_name):
 
         with open(project_json_path, 'w', encoding='utf-8') as f:
             json.dump(project_data, f, indent=4, ensure_ascii=False)
+
+        # Check if image is used in any other project
+        if not is_image_used_in_other_projects(project_name, image_name):
+            # If not used in other projects, delete the image completely
+            deleted_count = delete_file_set([image_name])
+            if deleted_count > 0:
+                print(f"Deleted image file and annotation for {image_name}")
 
         return True, project_data
 
