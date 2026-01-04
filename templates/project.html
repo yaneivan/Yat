@@ -41,6 +41,20 @@
             color: #333;
         }
 
+        .btn-icon {
+            background: none;
+            border: 1px solid transparent;
+            color: #6c757d;
+            padding: 2px 6px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+
+        .btn-icon:hover {
+            background: #e9ecef;
+            border-color: #adb5bd;
+        }
+
         .project-stats {
             display: flex;
             gap: 20px;
@@ -116,6 +130,7 @@
         .image-actions {
             display: flex;
             gap: 5px;
+            padding: 10px;
         }
         
         .image-action-btn {
@@ -162,14 +177,13 @@
         <div class="project-header">
             <div class="project-info">
                 <div>
-                    <h1 class="project-title" id="project-title">{{ project.name }}</h1>
+                    <h1 class="project-title" id="project-title">{{ project.name }} <button class="btn btn-icon" onclick="editProjectInfo()" title="Редактировать проект" style="vertical-align: middle; margin-left: 10px; font-size: 0.8em;">✏️</button></h1>
                     <p id="project-description">{{ project.description or 'Без описания' }}</p>
                     <div class="project-stats">
                         <span><strong>{{ project.images|length }}</strong> изображений</span>
                         <span><strong>{{ annotated_count }}</strong> размечено</span>
                     </div>
                 </div>
-                <button class="btn btn-secondary" onclick="editProjectInfo()">Редактировать</button>
                 <div class="project-actions">
                     <a href="/api/projects/{{ project.name }}/export_zip" class="btn">Экспорт проекта</a>
                 </div>
@@ -412,6 +426,7 @@
                 showNotification('Ошибка при удалении изображений', 'error');
             }
         }
+
     </script>
 
     <!-- Import Modal -->

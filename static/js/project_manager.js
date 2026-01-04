@@ -379,9 +379,9 @@ class ProjectManager {
             console.log('Project creation result:', result); // Debug log
 
             if (result.status === 'success') {
-                await this.loadProjects();
-                this.updateStats();
                 this.showSuccess('Проект создан успешно');
+                // Reload the page to maintain view state
+                location.reload();
                 return true;
             } else {
                 this.showError('Ошибка: ' + result.msg);
@@ -402,9 +402,9 @@ class ProjectManager {
         try {
             const result = await ProjectAPI.deleteProject(projectName);
             if (result.status === 'success') {
-                await this.loadProjects();
-                this.updateStats();
                 this.showSuccess('Проект удален успешно');
+                // Reload the page to maintain view state
+                location.reload();
                 return true;
             } else {
                 this.showError('Ошибка: ' + result.msg);
@@ -847,5 +847,19 @@ function toggleView() {
 function editProjectInfo() {
     if (window.projectManager) {
         window.projectManager.editProjectInfo();
+    }
+}
+
+// Global function for creating project (for use in HTML onclick)
+function openCreateProjectModal() {
+    if (window.projectManager) {
+        window.projectManager.openCreateProjectModal();
+    }
+}
+
+// Global function for closing create project modal (for use in HTML onclick)
+function closeCreateProjectModal() {
+    if (window.projectManager) {
+        window.projectManager.closeCreateProjectModal();
     }
 }
