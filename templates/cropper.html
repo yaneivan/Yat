@@ -16,6 +16,7 @@
 <div id="toolbar">
     <button class="btn" onclick="window.location.href='/'" title="Home">🏠</button>
     {% if project %}
+        <button class="btn" onclick="window.location.href='/project/{{ project }}'" title="Назад к проекту">📋 Проект</button>
         <button class="btn" onclick="window.location.href='/editor?image={{ filename }}&project={{ project }}'" title="Редактор сегментов">📋 Сегменты</button>
         <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}&project={{ project }}'" title="Редактор распознавания">🔤 Распознавать</button>
     {% else %}
