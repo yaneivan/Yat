@@ -170,7 +170,11 @@
 <body>
     <div id="toolbar">
         <button class="btn" onclick="window.location.href='/'" title="Home">🏠</button>
-        <button class="btn" onclick="window.location.href='/editor?image={{ filename }}'" title="Редактор сегментов">📋 Сегменты</button>
+        {% if project %}
+            <button class="btn" onclick="window.location.href='/editor?image={{ filename }}&project={{ project }}'" title="Редактор сегментов">📋 Сегменты</button>
+        {% else %}
+            <button class="btn" onclick="window.location.href='/editor?image={{ filename }}'" title="Редактор сегментов">📋 Сегменты</button>
+        {% endif %}
         <div class="sep"></div>
         <button class="btn" onclick="editor.goImage(-1)">&lt;</button>
         <button class="btn" onclick="editor.goImage(1)">&gt;</button>

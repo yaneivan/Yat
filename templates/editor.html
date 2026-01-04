@@ -10,7 +10,11 @@
 
 <div id="toolbar">
     <button class="btn" onclick="window.location.href='/'" title="Home">🏠</button>
-    <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}'" title="Редактор текста">🔤 Текст</button>
+    {% if project %}
+        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}&project={{ project }}'" title="Редактор текста">🔤 Текст</button>
+    {% else %}
+        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}'" title="Редактор текста">🔤 Текст</button>
+    {% endif %}
     <div class="sep"></div>
     <button class="btn" onclick="editor.goImage(-1)">&lt;</button>
     <button class="btn" onclick="editor.goImage(1)">&gt;</button>

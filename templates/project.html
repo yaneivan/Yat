@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Проект: {{ project.name }}</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="dashboard">
+    <div class="nav-header">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="/">Yat</a>
+            </div>
+            <div class="nav-links">
+                <a href="/">Проекты</a>
+                <a href="/project/{{ project.name }}" class="active">Текущий проект</a>
+            </div>
+            <div class="nav-actions">
+                <a href="#" onclick="openImportModal()">Импорт</a>
+                <a href="/api/projects/{{ project.name }}/export_zip">Экспорт</a>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .project-header {
+            background: #f8f9fa;
+            padding: 20px;
+            border-bottom: 1px solid #dee2e6;
+            margin-bottom: 20px;
+        }
+
+        .project-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .project-title {
+            margin: 0;
+            color: #333;
+        }
+
+        .project-stats {
+            display: flex;
+            gap: 20px;
+            margin-top: 10px;
+            color: #6c757d;
+        }
+
+        .project-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .image-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+            background: white;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .image-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        }
+        
+        .image-thumb {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+            display: block;
+        }
+        
+        .image-meta {
+            padding: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 1px solid #eee;
+        }
+        
+        .image-name {
+            font-size: 0.9em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 120px;
+        }
+        
+        .image-status {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+        
+        .status-crop {
+            background: #ffc107;
+            color: #212529;
+        }
+        
+        .status-segment {
+            background: #28a745;
+            color: white;
+        }
+        
+        .image-actions {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .image-action-btn {
+            padding: 4px 8px;
+            font-size: 0.8em;
+        }
+        
+        .drop-area {
+            border: 2px dashed #ccc;
+            padding: 30px;
+            text-align: center;
+            border-radius: 8px;
+            background: #fafafa;
+            cursor: pointer;
+            transition: 0.2s;
+            margin-bottom: 20px;
+        }
+        
+        .drop-area.highlight {
+            border-color: #007bff;
+            background: #e9f5ff;
+        }
+        
+        .batch-actions {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .batch-actions h3 {
+            margin-top: 0;
+        }
+        
+        .batch-controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+    </style>
+</head>
+<body class="dashboard">
+    <div class="container">
+        <div class="project-header">
+            <div class="project-info">
+                <div>
+                    <h1 class="project-title" id="project-title">{{ project.name }}</h1>
+                    <p id="project-description">{{ project.description or 'Без описания' }}</p>
+                    <div class="project-stats">
+                        <span><strong>{{ project.images|length }}</strong> изображений</span>
+                        <span><strong>{{ annotated_count }}</strong> размечено</span>
+                    </div>
+                </div>
+                <button class="btn btn-secondary" onclick="editProjectInfo()">Редактировать</button>
+                <div class="project-actions">
+                    <a href="/api/projects/{{ project.name }}/export_zip" class="btn">Экспорт проекта</a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="batch-actions">
+            <h3>Пакетная обработка</h3>
+            <div class="batch-controls">
+                <button class="btn" onclick="startBatchDetection()">Запустить детекцию полигонов</button>
+                <button class="btn" onclick="startBatchRecognition()">Запустить распознавание текста</button>
+                <button class="btn btn-primary" onclick="toggleSelectAll()">Выбрать все</button>
+                <button class="btn" onclick="deleteSelected()">Удалить выбранные</button>
+            </div>
+        </div>
+        
+        <div class="drop-area" id="dropArea">
+            <p>Перетащите изображения сюда или нажмите для выбора</p>
+            <input type="file" id="fileInput" multiple style="display: none;" accept="image/*">
+        </div>
+        
+        <div class="image-grid" id="imageGrid">
+            {% for image in project.images %}
+            <div class="image-card">
+                <img src="/data/images/{{ image.name }}" class="image-thumb" alt="{{ image.name }}">
+                <div class="image-meta">
+                    <div class="image-name" title="{{ image.name }}">{{ image.name }}</div>
+                    <div class="image-status status-{{ image.status }}">{{ 'Размечено' if image.status == 'segment' else 'Кадрировано' if image.status == 'cropped' else 'Нет' }}</div>
+                </div>
+                <div class="image-actions">
+                    <input type="checkbox" class="select-checkbox" data-image="{{ image.name }}">
+                    <a href="/editor?project={{ project.name }}&image={{ image.name }}" class="btn image-action-btn">Редактор</a>
+                    <a href="/text_editor?project={{ project.name }}&image={{ image.name }}" class="btn image-action-btn">Текст</a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <script>
+        // File upload functionality
+        const dropArea = document.getElementById('dropArea');
+        const fileInput = document.getElementById('fileInput');
+        
+        dropArea.addEventListener('click', () => {
+            fileInput.click();
+        });
+        
+        fileInput.addEventListener('change', handleFileSelect);
+        
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+        });
+        
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, highlight, false);
+        });
+        
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, unhighlight, false);
+        });
+        
+        function highlight() {
+            dropArea.classList.add('highlight');
+        }
+        
+        function unhighlight() {
+            dropArea.classList.remove('highlight');
+        }
+        
+        dropArea.addEventListener('drop', handleDrop, false);
+        
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }
+        
+        function handleFileSelect(e) {
+            const files = e.target.files;
+            handleFiles(files);
+        }
+        
+        function handleFiles(files) {
+            const formData = new FormData();
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                if (file.type.startsWith('image/')) {
+                    formData.append('images', file);
+                }
+            }
+            
+            if (formData.has('images')) {
+                uploadImages(formData);
+            }
+        }
+        
+        async function uploadImages(formData) {
+            try {
+                const projectName = "{{ project.name }}";
+                const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/upload_images`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    showNotification('Изображения успешно загружены', 'success');
+                    // Reload the page to show new images
+                    location.reload();
+                } else {
+                    showNotification('Ошибка: ' + result.msg, 'error');
+                }
+            } catch (error) {
+                console.error('Error uploading images:', error);
+                showNotification('Ошибка при загрузке изображений', 'error');
+            }
+        }
+        
+        function showNotification(message, type) {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+        
+        // Batch processing functions
+        async function startBatchDetection() {
+            if (!confirm('Запустить детекцию полигонов для всех изображений в проекте?')) {
+                return;
+            }
+            
+            try {
+                const projectName = "{{ project.name }}";
+                const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/batch_detect`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    showNotification(result.msg, 'success');
+                } else {
+                    showNotification('Ошибка: ' + result.msg, 'error');
+                }
+            } catch (error) {
+                console.error('Error starting batch detection:', error);
+                showNotification('Ошибка при запуске детекции', 'error');
+            }
+        }
+        
+        async function startBatchRecognition() {
+            if (!confirm('Запустить распознавание текста для всех изображений в проекте?')) {
+                return;
+            }
+            
+            try {
+                const projectName = "{{ project.name }}";
+                const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/batch_recognize`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    showNotification(result.msg, 'success');
+                } else {
+                    showNotification('Ошибка: ' + result.msg, 'error');
+                }
+            } catch (error) {
+                console.error('Error starting batch recognition:', error);
+                showNotification('Ошибка при запуске распознавания', 'error');
+            }
+        }
+        
+        // Selection functionality
+        function toggleSelectAll() {
+            const checkboxes = document.querySelectorAll('.select-checkbox');
+            const allSelected = Array.from(checkboxes).every(cb => cb.checked);
+            
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = !allSelected;
+            });
+        }
+        
+        function deleteSelected() {
+            const selectedCheckboxes = document.querySelectorAll('.select-checkbox:checked');
+            if (selectedCheckboxes.length === 0) {
+                showNotification('Нет выбранных изображений', 'error');
+                return;
+            }
+            
+            const selectedImages = Array.from(selectedCheckboxes).map(cb => cb.dataset.image);
+            if (!confirm(`Удалить ${selectedImages.length} изображений из проекта?`)) {
+                return;
+            }
+            
+            deleteImages(selectedImages);
+        }
+        
+        async function deleteImages(imageNames) {
+            try {
+                const projectName = "{{ project.name }}";
+                for (const imageName of imageNames) {
+                    const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/images`, {
+                        method: 'DELETE',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({image_name: imageName})
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.status !== 'success') {
+                        showNotification(`Ошибка при удалении ${imageName}: ${result.msg}`, 'error');
+                        return;
+                    }
+                }
+                
+                showNotification(`Успешно удалено ${imageNames.length} изображений`, 'success');
+                // Reload the page to reflect changes
+                location.reload();
+            } catch (error) {
+                console.error('Error deleting images:', error);
+                showNotification('Ошибка при удалении изображений', 'error');
+            }
+        }
+    </script>
+
+    <!-- Import Modal -->
+    <div id="importModal" class="modal">
+        <div class="modal-content">
+            <h3>Импорт проекта из ZIP</h3>
+            <div class="form-group">
+                <label for="zipFile">Выберите ZIP файл:</label>
+                <input type="file" id="zipFile" accept=".zip">
+            </div>
+            <div class="form-group">
+                <label for="simplifyInput">Упрощение (px):</label>
+                <input type="number" id="simplifyInput" value="5" min="0">
+            </div>
+            <div class="form-actions">
+                <div class="btn-group">
+                    <button class="btn" onclick="closeImportModal()">Отмена</button>
+                    <button class="btn btn-primary" onclick="submitZipImport()">Импортировать</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Import modal functions
+        function openImportModal() {
+            document.getElementById('importModal').style.display = 'flex';
+        }
+
+        function closeImportModal() {
+            document.getElementById('importModal').style.display = 'none';
+        }
+
+        async function submitZipImport() {
+            const fileInput = document.getElementById('zipFile');
+            const simplifyInput = document.getElementById('simplifyInput');
+
+            if (!fileInput.files[0]) {
+                showNotification('Пожалуйста, выберите ZIP файл', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('zip_file', fileInput.files[0]);
+            formData.append('simplify', simplifyInput.value);
+
+            try {
+                const response = await fetch('/api/import_zip', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    showNotification('Проект успешно импортирован', 'success');
+                    closeImportModal();
+                    // Reload the page to show new projects
+                    location.reload();
+                } else {
+                    showNotification('Ошибка: ' + result.msg, 'error');
+                }
+            } catch (error) {
+                console.error('Error importing project:', error);
+                showNotification('Ошибка при импорте проекта', 'error');
+            }
+        }
+    </script>
+</body>
+</html>

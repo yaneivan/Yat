@@ -2,153 +2,394 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>HTR Dashboard</title>
+    <title>HTR Project Manager</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
-        .tabs { display: flex; border-bottom: 2px solid #ddd; margin-bottom: 20px; }
-        .tab { padding: 10px 20px; cursor: pointer; color: #666; font-weight: 600; border-bottom: 2px solid transparent; margin-bottom: -2px; }
-        .tab:hover { color: #333; background: #f9f9f9; }
-        .tab.active { color: #007bff; border-bottom: 2px solid #007bff; background: white; }
-        
-        .badge { position: absolute; top: 5px; right: 5px; padding: 3px 6px; border-radius: 4px; font-size: 0.7em; color: white; font-weight: bold; }
-        .badge-new { background: #ffc107; color: #333; }
-        .badge-ready { background: #28a745; }
-        
-        .card-actions { display: flex; border-top: 1px solid #ddd; }
-        .action-btn { flex: 1; padding: 8px 0; text-align: center; background: #f9f9f9; color: #333; text-decoration: none; font-size: 0.85em; transition: 0.2s; }
-        .action-btn:hover { background: #e0e0e0; }
-        .action-btn:first-child { border-right: 1px solid #ddd; }
-        .action-crop:hover { color: #d39e00; }
-        .action-segment:hover { color: #28a745; }
+        .dashboard-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 30px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            margin: 0;
+            color: #333;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .sidebar {
+            width: 250px;
+            background: #f8f9fa;
+            border-right: 1px solid #dee2e6;
+            padding: 20px;
+            height: calc(100vh - 100px);
+            position: fixed;
+        }
+
+        .sidebar-nav {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .sidebar-nav li {
+            margin-bottom: 5px;
+        }
+
+        .sidebar-nav a {
+            display: block;
+            padding: 10px 15px;
+            text-decoration: none;
+            color: #495057;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        .sidebar-nav a:hover, .sidebar-nav a.active {
+            background: #e9ecef;
+            color: #007bff;
+        }
+
+        .main-content {
+            margin-left: 290px;
+            padding: 20px 0;
+        }
+
+        .section {
+            display: none;
+        }
+
+        .section.active {
+            display: block;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #007bff;
+            margin: 10px 0;
+        }
+
+        .stat-label {
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+
+        .projects-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .project-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+            background: white;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .project-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        }
+
+        .project-header {
+            padding: 15px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .project-title {
+            margin: 0;
+            font-size: 1.1em;
+            color: #333;
+        }
+
+        .project-description {
+            padding: 15px;
+            color: #666;
+            font-size: 0.9em;
+            border-bottom: 1px solid #eee;
+        }
+
+        .project-stats {
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            background: #f8f9fa;
+            border-top: 1px solid #eee;
+            font-size: 0.85em;
+            color: #666;
+        }
+
+        .project-actions {
+            padding: 10px 15px;
+            display: flex;
+            gap: 10px;
+            border-top: 1px solid #eee;
+        }
+
+        .action-btn {
+            flex: 1;
+            padding: 8px 0;
+            text-align: center;
+            background: #f8f9fa;
+            color: #333;
+            text-decoration: none;
+            font-size: 0.85em;
+            transition: 0.2s;
+            border-radius: 4px;
+        }
+
+        .action-btn:hover {
+            background: #e0e0e0;
+        }
+
+        .create-project-btn {
+            background: #28a745;
+            color: white !important;
+            font-weight: 600;
+        }
+
+        .create-project-btn:hover {
+            background: #218838;
+        }
+
+        .batch-actions {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .task-list {
+            margin-top: 20px;
+        }
+
+        .task-item {
+            padding: 10px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            background: white;
+        }
+
+        .task-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+
+        .task-progress-bar {
+            height: 10px;
+            background: #e9ecef;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+
+        .task-progress {
+            height: 100%;
+            background: #007bff;
+            width: 0%;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            width: 400px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.3);
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        .form-actions {
+            text-align: right;
+            margin-top: 20px;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
     </style>
 </head>
 <body class="dashboard">
+    <div class="nav-header">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="/">Yat</a>
+            </div>
+            <div class="nav-links">
+                <a href="/" class="active">Проекты</a>
+            </div>
+            <div class="nav-actions">
+                <a href="#" onclick="openImportModal()">Импорт</a>
+            </div>
+        </div>
+    </div>
 
-<div class="container">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-        <h1 style="margin:0">Проекты</h1>
-        <div style="display:flex; gap:10px;">
-            <button class="btn btn-primary" onclick="openImportModal()">Импорт ZIP</button>
-            <button class="btn btn-success" onclick="window.location.href='/api/export_zip'">Экспорт</button>
-            <button id="btn-delete" class="btn danger" style="display:none" onclick="deleteSelected()">Удалить</button>
+    <div class="main-content">
+
+        <div class="dashboard-container">
+            <div class="header">
+                <h1>Менеджер проектов HTR</h1>
+            </div>
+
+            <div id="projects-section" class="section active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="projects-count">0</div>
+                        <div class="stat-label">Проекты</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="images-count">0</div>
+                        <div class="stat-label">Изображения</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="annotated-count">0</div>
+                        <div class="stat-label">Размечено</div>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin: 20px 0;">
+                    <h2>Проекты</h2>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn" id="view-toggle" onclick="toggleView()">Список</button>
+                        <button class="btn create-project-btn" onclick="openCreateProjectModal()">+ Создать проект</button>
+                    </div>
+                </div>
+
+                <div id="projects-container" class="projects-container">
+                    <!-- Projects will be loaded here -->
+                </div>
+            </div>
         </div>
     </div>
 
-    <div class="tabs">
-        <div class="tab active" onclick="filterTabs('all', this)">Все ({{ files|length }})</div>
-        <div class="tab" onclick="filterTabs('crop', this)">To Crop</div>
-        <div class="tab" onclick="filterTabs('segment', this)">To Segment</div>
-    </div>
-
-    <div id="drop-area">
-        <p style="pointer-events:none; color:#666;">Перетащите картинки сюда</p>
-        <input type="file" id="fileElem" multiple accept="image/*" style="display:none">
-        <div id="upload-status" style="display:none; margin-top:10px; color:#007bff; font-weight:bold;"></div>
-    </div>
-
-    <div class="file-list">
-        {% for file in files %}
-        <div class="file-card" data-status="{{ file.status }}">
-            <div style="position:relative;">
-                <!-- ИСПРАВЛЕНИЕ: Вызов функции JS вместо сложной Jinja логики в атрибуте -->
-                <img src="/data/images/{{ file.name }}" class="thumb" 
-                     onclick="openEditor('{{ file.name }}', '{{ file.status }}')"
-                     loading="lazy" style="cursor:pointer">
-                
-                {% if file.status == 'segment' %}
-                    <span class="badge badge-ready">Seg</span>
-                {% else %}
-                    <span class="badge badge-new">Crop</span>
-                {% endif %}
+    <!-- Create Project Modal -->
+    <div id="createProjectModal" class="modal">
+        <div class="modal-content">
+            <h3>Создать новый проект</h3>
+            <div class="form-group">
+                <label for="project-name">Название проекта:</label>
+                <input type="text" id="project-name" placeholder="Введите название проекта">
             </div>
-            
-            <div class="meta">
-                <span title="{{ file.name }}" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:80px;">{{ file.name }}</span>
-                <input type="checkbox" class="select-chk" value="{{ file.name }}" onchange="toggleDeleteBtn()">
+            <div class="form-group">
+                <label for="project-description">Описание:</label>
+                <textarea id="project-description" rows="3" placeholder="Введите описание проекта"></textarea>
             </div>
-
-            <div class="card-actions">
-                <a href="/cropper?image={{ file.name }}" class="action-btn action-crop" title="Кадрировать">✂️ Crop</a>
-                <a href="/editor?image={{ file.name }}" class="action-btn action-segment" title="Размечать">✏️ Seg</a>
-                <a href="/text_editor?image={{ file.name }}" class="action-btn" title="Ввод текста">📝 Txt</a>
+            <div class="form-actions">
+                <div class="btn-group">
+                    <button class="btn" onclick="projectManager.closeCreateProjectModal()">Отмена</button>
+                    <button class="btn btn-primary" onclick="projectManager.createProjectFromModal()">Создать</button>
+                </div>
             </div>
         </div>
-        {% endfor %}
     </div>
-</div>
 
-<!-- Модалка Импорта -->
-<div id="importModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); align-items:center; justify-content:center; z-index:999;">
-    <div style="background:white; padding:20px; border-radius:8px; width:400px; box-shadow:0 0 10px rgba(0,0,0,0.3);">
-        <h3 style="margin-top:0">Импорт проекта</h3>
-        <input type="file" id="zipInput" accept=".zip" style="width:100%; margin-bottom:15px; border:1px solid #ddd; padding:5px; border-radius:4px;">
-        <label style="display:block; margin-bottom:5px;">Упрощение (px):</label>
-        <input type="number" id="simplifyInput" value="5" min="0" style="width:60px; padding:5px; border:1px solid #ddd; border-radius:4px; margin-bottom:20px;">
-        <div style="text-align:right;">
-            <button class="btn" onclick="closeImportModal()" style="margin-right:10px;">Отмена</button>
-            <button class="btn btn-primary" onclick="submitZipImport()">Импортировать</button>
+    <!-- Import Modal -->
+    <div id="importModal" class="modal">
+        <div class="modal-content">
+            <h3>Импорт проекта</h3>
+            <div class="form-group">
+                <label for="zipInput">ZIP файл:</label>
+                <input type="file" id="zipInput" accept=".zip">
+            </div>
+            <div class="form-group">
+                <label for="simplifyInput">Упрощение (px):</label>
+                <input type="number" id="simplifyInput" value="5" min="0">
+            </div>
+            <div class="form-actions">
+                <div class="btn-group">
+                    <button class="btn" onclick="closeImportModal()">Отмена</button>
+                    <button class="btn btn-primary" onclick="submitZipImport()">Импортировать</button>
+                </div>
+            </div>
         </div>
     </div>
-</div>
 
-<script src="/static/js/api.js"></script>
-<script src="/static/js/dashboard.js"></script>
-<script>
-    // JS функция для перехода (решает проблему VSCode)
-    function openEditor(name, status) {
-        if (status === 'segment') {
-            window.location.href = '/editor?image=' + name;
-        } else {
-            window.location.href = '/cropper?image=' + name;
-        }
-    }
+    <!-- Add Images to Project Modal -->
+    <div id="addImagesModal" class="modal">
+        <div class="modal-content" style="width: 80%; max-width: 1200px; height: 80vh; max-height: 700px;">
+            <div class="modal-header">
+                <h2>Добавить изображения в проект</h2>
+                <span class="close" onclick="projectManager.closeAddImagesModal()">&times;</span>
+            </div>
+            <div class="modal-body" style="overflow-y: auto; height: calc(100% - 100px);">
+                <div id="available-images-container" class="files-grid">
+                    <!-- Available images will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
 
-    function filterTabs(type, tabEl) {
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        tabEl.classList.add('active');
-        
-        const cards = document.querySelectorAll('.file-card');
-        cards.forEach(card => {
-            const status = card.getAttribute('data-status');
-            if (type === 'all') {
-                card.style.display = 'block';
-            } else if (type === 'crop') {
-                card.style.display = (status === 'crop') ? 'block' : 'none';
-            } else if (type === 'segment') {
-                card.style.display = (status === 'segment') ? 'block' : 'none';
-            }
-        });
-    }
-
-    const modal = document.getElementById('importModal');
-    function openImportModal() { modal.style.display = 'flex'; document.getElementById('zipInput').value = ''; }
-    function closeImportModal() { modal.style.display = 'none'; }
-    modal.addEventListener('click', e => { if(e.target === modal) closeImportModal(); });
-    
-    async function submitZipImport() {
-        const fileInput = document.getElementById('zipInput');
-        const simplifyInput = document.getElementById('simplifyInput');
-        if (!fileInput.files.length) return alert('Выберите файл');
-        
-        const fd = new FormData();
-        fd.append('file', fileInput.files[0]);
-        fd.append('simplify', simplifyInput.value);
-        closeImportModal();
-        
-        const st = document.getElementById('upload-status');
-        if(st) { st.style.display='block'; st.textContent = 'Импорт...'; }
-        
-        try {
-            const resp = await fetch('/api/import_zip', {method:'POST', body:fd});
-            const d = await resp.json();
-            if(d.status === 'success') {
-                window.location.reload();
-            } else {
-                alert('Ошибка: ' + d.msg);
-                if(st) st.style.display='none';
-            }
-        } catch(e) { alert('Ошибка сети'); }
-    }
-</script>
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/project_manager.js"></script>
 </body>
 </html>

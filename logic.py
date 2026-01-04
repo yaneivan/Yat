@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from PIL import Image, ImageOps # Added ImageOps
 import storage
+import json
 
 # YOLOv9 imports
 try:
@@ -681,3 +682,187 @@ def recognize_text_with_trocr(filename, regions=None, progress_callback=None):
     storage.save_json(annotation_data)
 
     return recognized_texts
+
+
+# --- Task Management System ---
+class TaskManager:
+    def __init__(self):
+        self.tasks = {}
+
+    def create_task(self, task_id, task_type, project_name, images, description=""):
+        """Create a new background task"""
+        self.tasks[task_id] = {
+            'id': task_id,
+            'type': task_type,
+            'project_name': project_name,
+            'images': images,
+            'description': description,
+            'status': 'pending',  # pending, running, completed, failed
+            'progress': 0,
+            'total': len(images),
+            'completed': 0,
+            'created_at': datetime.now().isoformat(),
+            'updated_at': datetime.now().isoformat()
+        }
+        return task_id
+
+    def update_task_progress(self, task_id, completed, status=None):
+        """Update the progress of a task"""
+        if task_id in self.tasks:
+            task = self.tasks[task_id]
+            task['completed'] = completed
+            task['progress'] = int((completed / task['total']) * 100) if task['total'] > 0 else 0
+            task['updated_at'] = datetime.now().isoformat()
+            if status:
+                task['status'] = status
+            return task
+        return None
+
+    def get_task(self, task_id):
+        """Get a specific task"""
+        return self.tasks.get(task_id)
+
+    def get_all_tasks(self):
+        """Get all tasks"""
+        return list(self.tasks.values())
+
+    def delete_task(self, task_id):
+        """Delete a task"""
+        if task_id in self.tasks:
+            del self.tasks[task_id]
+            return True
+        return False
+
+# Initialize the task manager
+task_manager = TaskManager()
+
+
+def run_batch_detection_for_project(project_name, settings=None):
+    """
+    Run batch detection for all images in a project
+    """
+    if settings is None:
+        settings = {}
+
+    # Get all images in the project
+    from storage import get_project_images
+    images = get_project_images(project_name)
+
+    if not images:
+        print(f"No images found in project {project_name}")
+        return
+
+    # Create a task for this batch operation
+    import uuid
+    task_id = str(uuid.uuid4())
+    task_manager.create_task(
+        task_id=task_id,
+        task_type="batch_detection",
+        project_name=project_name,
+        images=images,
+        description=f"Batch detection for project {project_name}"
+    )
+
+    # Update task status to running
+    task_manager.update_task_progress(task_id, 0, "running")
+
+    try:
+        # Process each image
+        for idx, image_name in enumerate(images):
+            # Check if the image already has regions
+            json_path = os.path.join(storage.ANNOTATION_FOLDER, os.path.splitext(image_name)[0] + '.json')
+            if os.path.exists(json_path):
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if data.get('regions'):
+                        # Skip if regions already exist, but update progress
+                        task_manager.update_task_progress(task_id, idx + 1)
+                        continue
+
+            # Run detection on the image
+            try:
+                regions = detect_text_lines_yolo(image_name, settings)
+
+                # Load existing annotation data or create new
+                annotation_data = storage.load_json(image_name)
+                annotation_data['regions'] = regions
+                annotation_data['status'] = 'cropped'  # Mark as segmented
+
+                # Save the updated annotation
+                storage.save_json(annotation_data)
+
+                # Update task progress
+                task_manager.update_task_progress(task_id, idx + 1)
+
+            except Exception as e:
+                print(f"Error detecting lines in {image_name}: {e}")
+                # Still update progress even if there's an error
+                task_manager.update_task_progress(task_id, idx + 1)
+
+        # Mark task as completed
+        task_manager.update_task_progress(task_id, len(images), "completed")
+        print(f"Batch detection completed for project {project_name}")
+
+    except Exception as e:
+        print(f"Error in batch detection for project {project_name}: {e}")
+        task_manager.update_task_progress(task_id, 0, "failed")
+
+
+def run_batch_recognition_for_project(project_name):
+    """
+    Run batch recognition for all images in a project
+    """
+    # Get all images in the project
+    from storage import get_project_images
+    images = get_project_images(project_name)
+
+    if not images:
+        print(f"No images found in project {project_name}")
+        return
+
+    # Create a task for this batch operation
+    import uuid
+    task_id = str(uuid.uuid4())
+    task_manager.create_task(
+        task_id=task_id,
+        task_type="batch_recognition",
+        project_name=project_name,
+        images=images,
+        description=f"Batch recognition for project {project_name}"
+    )
+
+    # Update task status to running
+    task_manager.update_task_progress(task_id, 0, "running")
+
+    try:
+        # Process each image
+        for idx, image_name in enumerate(images):
+            # Check if the image already has recognized text
+            json_path = os.path.join(storage.ANNOTATION_FOLDER, os.path.splitext(image_name)[0] + '.json')
+            if os.path.exists(json_path):
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if data.get('texts'):
+                        # Skip if texts already exist, but update progress
+                        task_manager.update_task_progress(task_id, idx + 1)
+                        continue
+
+            # Run recognition on the image
+            try:
+                recognize_text_with_trocr(image_name, None)  # Process all regions
+
+                # Update task progress
+                task_manager.update_task_progress(task_id, idx + 1)
+
+            except Exception as e:
+                print(f"Error recognizing text in {image_name}: {e}")
+                # Still update progress even if there's an error
+                task_manager.update_task_progress(task_id, idx + 1)
+
+        # Mark task as completed
+        task_manager.update_task_progress(task_id, len(images), "completed")
+        print(f"Batch recognition completed for project {project_name}")
+
+    except Exception as e:
+        print(f"Error in batch recognition for project {project_name}: {e}")
+        task_manager.update_task_progress(task_id, 0, "failed")
