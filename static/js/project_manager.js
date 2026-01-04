@@ -196,7 +196,24 @@ class ProjectManager {
 
     async loadProjects() {
         try {
-            this.projects = await ProjectAPI.getProjects();
+            const basicProjects = await ProjectAPI.getProjects();
+
+            // Fetch detailed information for each project to get image statuses
+            this.projects = [];
+            for (const basicProject of basicProjects) {
+                try {
+                    const detailedProject = await ProjectAPI.getProject(basicProject.name);
+                    // Also get the images with their statuses
+                    const imagesResponse = await ProjectAPI.getProjectImages(basicProject.name);
+                    detailedProject.images = imagesResponse.images;
+                    this.projects.push(detailedProject);
+                } catch (error) {
+                    console.error(`Error loading details for project ${basicProject.name}:`, error);
+                    // Add the basic project info if detailed load fails
+                    this.projects.push(basicProject);
+                }
+            }
+
             this.renderProjects();
         } catch (error) {
             console.error('Error loading projects:', error);
@@ -244,10 +261,10 @@ class ProjectManager {
         // Calculate stats for the project
         const totalImages = project.images ? project.images.length : 0;
 
-        // Count annotated images by checking their status
+        // Count annotated images by checking their status ('segment', 'cropped', or 'texted')
         let annotatedImages = 0;
         if (project.images && Array.isArray(project.images)) {
-            annotatedImages = project.images.filter(img => img.status === 'segment').length;
+            annotatedImages = project.images.filter(img => img.status === 'segment' || img.status === 'cropped' || img.status === 'texted').length;
         }
 
         projectCard.innerHTML = `
@@ -259,7 +276,6 @@ class ProjectManager {
             </div>
             <div class="project-stats">
                 <span>${totalImages} изображений</span>
-                <span>${annotatedImages} размечено</span>
             </div>
             <div class="project-actions">
                 <a href="/project/${encodeURIComponent(project.name)}" class="action-btn">Открыть</a>
@@ -340,21 +356,10 @@ class ProjectManager {
     updateStats() {
         const projectsCount = document.getElementById('projects-count');
         const imagesCount = document.getElementById('images-count');
-        const annotatedCount = document.getElementById('annotated-count');
         const tasksCount = document.getElementById('tasks-count');
 
         if (projectsCount) projectsCount.textContent = this.projects.length;
         if (imagesCount) imagesCount.textContent = this.images.length;
-
-        // Calculate annotated images (images with status 'segment')
-        const annotated = this.projects.reduce((count, project) => {
-            if (project.images) {
-                const annotatedInProject = project.images.filter(img => img.status === 'segment').length;
-                return count + annotatedInProject;
-            }
-            return count;
-        }, 0);
-        if (annotatedCount) annotatedCount.textContent = annotated;
         if (tasksCount) tasksCount.textContent = this.tasks.length;
     }
 
@@ -623,10 +628,10 @@ class ProjectManager {
         // Calculate stats for the project
         const totalImages = project.images ? project.images.length : 0;
 
-        // Count annotated images by checking their status
+        // Count annotated images by checking their status ('segment', 'cropped', or 'texted')
         let annotatedImages = 0;
         if (project.images && Array.isArray(project.images)) {
-            annotatedImages = project.images.filter(img => img.status === 'segment').length;
+            annotatedImages = project.images.filter(img => img.status === 'segment' || img.status === 'cropped' || img.status === 'texted').length;
         }
 
         projectItem.innerHTML = `
@@ -635,7 +640,6 @@ class ProjectManager {
                 <p class="project-description">${project.description || 'Без описания'}</p>
                 <div class="project-stats">
                     <span>${totalImages} изображений</span>
-                    <span>${annotatedImages} размечено</span>
                 </div>
             </div>
             <div class="project-actions">

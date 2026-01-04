@@ -716,7 +716,6 @@
                     <p id="project-description">{{ project.description or 'Без описания' }}</p>
                     <div class="project-stats">
                         <span><strong>{{ project.images|length }}</strong> изображений</span>
-                        <span><strong>{{ annotated_count }}</strong> размечено</span>
                     </div>
                 </div>
             </div>
@@ -743,7 +742,7 @@
                 <img src="/data/images/{{ image.name }}" class="image-thumb" alt="{{ image.name }}">
                 <div class="image-meta">
                     <div class="image-name" title="{{ image.name }}">{{ image.name }}</div>
-                    <div class="image-status status-{{ image.status }}">{{ 'Размечено' if image.status == 'segment' else 'Кадрировано' if image.status == 'cropped' else 'Нужно кадрировать' }}</div>
+                    <div class="image-status status-{{ image.status }}">{{ 'Размечено' if image.status == 'segment' else 'Кадрировано' if image.status == 'cropped' else 'Текст добавлен' if image.status == 'texted' else 'Нужно кадрировать' }}</div>
                 </div>
                 <div class="image-actions">
                     <input type="checkbox" class="select-checkbox" data-image="{{ image.name }}">

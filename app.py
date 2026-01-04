@@ -290,6 +290,9 @@ def project_images(project_name):
                     # If there's a crop status, the image has been cropped but not yet segmented
                     elif data.get('status') == 'cropped':
                         status = 'cropped'
+                    # If there's a texted status, the image has been fully processed with text
+                    elif data.get('status') == 'texted':
+                        status = 'texted'
             image_list.append({'name': img, 'status': status})
         return jsonify({'images': image_list})
 
@@ -398,8 +401,8 @@ def project_page(project_name):
     images_data = images_response.get_json()
     project['images'] = images_data['images']
 
-    # Count annotated images
-    annotated_count = len([img for img in project['images'] if img['status'] == 'segment'])
+    # Count annotated images (cropped, segmented, and texted)
+    annotated_count = len([img for img in project['images'] if img['status'] == 'segment' or img['status'] == 'cropped' or img['status'] == 'texted'])
 
     return render_template('project.html', project=project, annotated_count=annotated_count)
 

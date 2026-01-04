@@ -256,7 +256,7 @@ def get_project_status(project_name):
         if os.path.exists(json_path):
             with open(json_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                if data.get('regions') or data.get('status') == 'cropped':
+                if data.get('regions') or data.get('status') == 'cropped' or data.get('status') == 'texted':
                     annotated_count += 1
 
     if annotated_count == 0:
