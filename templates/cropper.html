@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>HTR Cropper</title>
+    <title>Редактор обрезки</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
     <style>
@@ -15,11 +15,18 @@
 
 <div id="toolbar">
     <button class="btn" onclick="window.location.href='/'" title="Home">🏠</button>
+    {% if project %}
+        <button class="btn" onclick="window.location.href='/editor?image={{ filename }}&project={{ project }}'" title="Редактор сегментов">📋 Сегменты</button>
+        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}&project={{ project }}'" title="Редактор текста">🔤 Текст</button>
+    {% else %}
+        <button class="btn" onclick="window.location.href='/editor?image={{ filename }}'" title="Редактор сегментов">📋 Сегменты</button>
+        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}'" title="Редактор текста">🔤 Текст</button>
+    {% endif %}
     <div class="sep"></div>
     <button class="btn" onclick="goImage(-1)">&lt;</button>
     <button class="btn" onclick="goImage(1)">&gt;</button>
     <span style="font-size:0.9em; max-width:200px; white-space:nowrap; overflow:hidden; color:#aaa;">{{ filename }}</span>
-    
+
     <div style="flex:1"></div>
     <div style="font-size:0.8em; color:#888; margin-right:15px;">
         Shift: Пропорции | ПКМ: Обзор

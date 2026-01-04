@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>HTR Editor</title>
+    <title>Редактор сегментов</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
 </head>
@@ -11,8 +11,10 @@
 <div id="toolbar">
     <button class="btn" onclick="window.location.href='/'" title="Home">🏠</button>
     {% if project %}
+        <button class="btn" onclick="window.location.href='/cropper?image={{ filename }}&project={{ project }}'" title="Редактор обрезки">✂️ Обрезка</button>
         <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}&project={{ project }}'" title="Редактор текста">🔤 Текст</button>
     {% else %}
+        <button class="btn" onclick="window.location.href='/cropper?image={{ filename }}'" title="Редактор обрезки">✂️ Обрезка</button>
         <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}'" title="Редактор текста">🔤 Текст</button>
     {% endif %}
     <div class="sep"></div>
