@@ -80,8 +80,8 @@
     }
 
     function fitImageHeight(img) {
-        const effectiveWidth = (imageRotation % 180 === 90) ? img.height : img.width;
-        const effectiveHeight = (imageRotation % 180 === 90) ? img.width : img.height;
+        const effectiveWidth = (imageRotation % 180 !== 0) ? img.height : img.width;
+        const effectiveHeight = (imageRotation % 180 !== 0) ? img.width : img.height;
         const scale = (canvas.height / effectiveHeight) * 0.9;
         canvas.setZoom(scale);
         
@@ -222,8 +222,7 @@
         }
         
         // Update cumulative rotation
-        imageRotation = (imageRotation + degrees) % 360;
-        if (imageRotation < 0) imageRotation += 360;
+        imageRotation = ((imageRotation + degrees) % 360 + 360) % 360;
         
         // Get original image dimensions
         const origWidth = imgObj.width;
@@ -241,24 +240,30 @@
                 let newLeft, newTop, newWidth, newHeight;
                 
                 if (degrees === 90) {
-                    // Clockwise rotation: (x, y) -> (height - y - height, x)
+                    // Clockwise rotation: (x, y) -> (origHeight - y - cropHeight, x)
                     newLeft = origHeight - savedCropTop - savedCropHeight;
                     newTop = savedCropLeft;
                     newWidth = savedCropHeight;
                     newHeight = savedCropWidth;
                 } else if (degrees === -90) {
-                    // Counter-clockwise rotation: (x, y) -> (y, width - x - width)
+                    // Counter-clockwise rotation: (x, y) -> (y, origWidth - x - cropWidth)
                     newLeft = savedCropTop;
                     newTop = origWidth - savedCropLeft - savedCropWidth;
                     newWidth = savedCropHeight;
                     newHeight = savedCropWidth;
+                } else {
+                    // For other angles, use the saved values (no transformation)
+                    newLeft = savedCropLeft;
+                    newTop = savedCropTop;
+                    newWidth = savedCropWidth;
+                    newHeight = savedCropHeight;
                 }
                 
                 addCropRect(newLeft, newTop, newWidth, newHeight, 0);
             } else {
                 // Create default crop rectangle
-                const effectiveWidth = (imageRotation % 180 === 90) ? origHeight : origWidth;
-                const effectiveHeight = (imageRotation % 180 === 90) ? origWidth : origHeight;
+                const effectiveWidth = (imageRotation % 180 !== 0) ? origHeight : origWidth;
+                const effectiveHeight = (imageRotation % 180 !== 0) ? origWidth : origHeight;
                 addCropRect(effectiveWidth * 0.05, effectiveHeight * 0.05, effectiveWidth * 0.9, effectiveHeight * 0.9, 0);
             }
         });
