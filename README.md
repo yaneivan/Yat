@@ -75,7 +75,7 @@ htr_tool/
 1. Убедитесь, что у вас установлен Python 3.10+
 2. Установите зависимости:
    ```bash
-   pip install flask pillow
+   pip install -r requirements.txt
    ```
 3. Запустите приложение:
    ```bash
