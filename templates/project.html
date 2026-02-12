@@ -705,6 +705,11 @@
             gap: 10px;
             flex-wrap: wrap;
         }
+        
+        .project-title-container {
+            display: flex;
+            align-items: center;
+        }
     </style>
 </head>
 <body class="dashboard">
@@ -712,7 +717,10 @@
         <div class="project-header">
             <div class="project-info">
                 <div>
-                    <h1 class="project-title" id="project-title">{{ project.name }} <button class="btn btn-icon" onclick="editProjectInfo()" title="Редактировать проект" style="vertical-align: middle; margin-left: 10px; font-size: 0.8em;">✏️</button></h1>
+                    <div class="project-title-container">
+                        <h1 class="project-title" id="project-title" data-original-name="{{ project.name }}">{{ project.name }}</h1>
+                        <button class="btn btn-icon" onclick="editProjectInfo()" title="Редактировать проект" style="vertical-align: middle; margin-left: 10px; font-size: 0.8em;">✏️</button>
+                    </div>
                     <p id="project-description">{{ project.description or 'Без описания' }}</p>
                     <div class="project-stats">
                         <span><strong>{{ project.images|length }}</strong> изображений</span>
@@ -1026,5 +1034,9 @@
             }
         }
     </script>
+    
+    <!-- Подключаем файлы с логикой управления проектами -->
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/project_manager.js"></script>
 </body>
 </html>

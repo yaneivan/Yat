@@ -721,62 +721,97 @@ class ProjectManager {
             return;
         }
 
-        const currentName = projectNameElement.textContent;
-        const currentDescription = projectDescriptionElement.textContent;
+        // Находим кнопку редактирования (теперь она вне элемента названия)
+        const projectTitleContainer = projectNameElement.parentElement;
+        const editButton = projectTitleContainer.querySelector('button[onclick*="editProjectInfo"]');
+        if (editButton) {
+            editButton.style.display = 'none';
+        }
 
-        // Create input fields for editing
+        // Получаем текущие значения
+        // Теперь название проекта хранится в атрибуте data-original-name
+        const currentName = projectNameElement.getAttribute('data-original-name') || projectNameElement.textContent.trim();
+        const currentDescription = projectDescriptionElement.dataset.originalDescription || projectDescriptionElement.textContent;
+
+        // Сохраняем оригинальные значения как атрибуты данных
+        projectNameElement.dataset.originalName = currentName;
+        projectDescriptionElement.dataset.originalDescription = currentDescription;
+
+        // Создаём поля ввода для редактирования
         const nameInput = document.createElement('input');
         nameInput.type = 'text';
         nameInput.value = currentName;
-        nameInput.id = 'edit-project-name';
         nameInput.className = 'form-control';
+        nameInput.style.marginRight = '10px';
+        nameInput.style.verticalAlign = 'middle';
 
         const descriptionInput = document.createElement('textarea');
         descriptionInput.value = currentDescription;
-        descriptionInput.id = 'edit-project-description';
         descriptionInput.className = 'form-control';
 
-        // Replace content with inputs
+        // Заменяем текст названия на поле ввода
         projectNameElement.innerHTML = '';
         projectNameElement.appendChild(nameInput);
 
+        // Заменяем текст описания на поле ввода
         projectDescriptionElement.innerHTML = '';
         projectDescriptionElement.appendChild(descriptionInput);
 
-        // Create save button
+        // Создаём кнопку "Сохранить"
         const saveButton = document.createElement('button');
         saveButton.className = 'btn btn-primary';
         saveButton.textContent = 'Сохранить';
+        saveButton.style.marginRight = '10px';
         saveButton.onclick = async () => {
             await this.saveProjectInfo(nameInput.value, descriptionInput.value);
         };
 
-        // Create cancel button
+        // Создаём кнопку "Отмена"
         const cancelButton = document.createElement('button');
         cancelButton.className = 'btn btn-secondary';
         cancelButton.textContent = 'Отмена';
         cancelButton.onclick = () => {
-            projectNameElement.textContent = currentName;
-            projectDescriptionElement.textContent = currentDescription;
-
-            // Restore the edit button
-            const buttonContainer = document.querySelector('.project-info button');
-            if (buttonContainer) {
-                buttonContainer.innerHTML = '';
-                const editButton = document.createElement('button');
-                editButton.className = 'btn btn-secondary';
-                editButton.textContent = 'Редактировать';
-                editButton.onclick = () => this.editProjectInfo();
-                buttonContainer.appendChild(editButton);
-            }
+            this.cancelEdit();
         };
 
-        // Clear the button area and add new buttons
-        const buttonContainer = document.querySelector('.project-info button');
-        if (buttonContainer) {
-            buttonContainer.innerHTML = '';
-            buttonContainer.appendChild(saveButton);
-            buttonContainer.appendChild(cancelButton);
+        // Добавляем кнопки под заголовком проекта
+        const projectInfoDiv = projectNameElement.parentElement;
+        const buttonContainer = document.createElement('div');
+        buttonContainer.id = 'edit-buttons-container';
+        buttonContainer.style.marginTop = '10px';
+        buttonContainer.appendChild(saveButton);
+        buttonContainer.appendChild(cancelButton);
+        projectInfoDiv.appendChild(buttonContainer);
+    }
+
+    cancelEdit() {
+        const projectNameElement = document.getElementById('project-title');
+        const projectDescriptionElement = document.getElementById('project-description');
+
+        if (!projectNameElement || !projectDescriptionElement) {
+            this.showError('Элементы проекта не найдены');
+            return;
+        }
+
+        // Восстанавливаем оригинальные значения
+        const originalName = projectNameElement.dataset.originalName || '';
+        const originalDescription = projectDescriptionElement.dataset.originalDescription || '';
+
+        projectNameElement.textContent = originalName;
+
+        // Восстанавливаем кнопку редактирования
+        const projectTitleContainer = projectNameElement.parentElement;
+        const editButton = projectTitleContainer.querySelector('button[onclick*="editProjectInfo"]');
+        if (editButton) {
+            editButton.style.display = 'inline-block'; // Показываем кнопку редактирования
+        }
+
+        projectDescriptionElement.textContent = originalDescription;
+
+        // Удаляем контейнер с кнопками "Сохранить" и "Отмена"
+        const buttonContainer = document.getElementById('edit-buttons-container');
+        if (buttonContainer && buttonContainer.parentNode) {
+            buttonContainer.parentNode.removeChild(buttonContainer);
         }
     }
 
@@ -788,12 +823,20 @@ class ProjectManager {
         try {
             const result = await ProjectAPI.updateProject(currentProjectName, newName, newDescription);
             if (result.status === 'success') {
-                // Reload the page to reflect changes
+                // Update the URL to reflect the new project name
+                const newUrl = `/project/${encodeURIComponent(newName)}`;
+                window.history.pushState({}, '', newUrl);
+                
+                // Reload the page to reflect changes with the new URL
                 location.reload();
             } else {
+                // В случае ошибки восстанавливаем исходное состояние
+                this.cancelEdit();
                 this.showError('Ошибка при сохранении: ' + result.msg);
             }
         } catch (error) {
+            // В случае ошибки восстанавливаем исходное состояние
+            this.cancelEdit();
             console.error('Error saving project info:', error);
             this.showError('Ошибка при сохранении изменений');
         }
