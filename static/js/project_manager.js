@@ -626,6 +626,7 @@ class ProjectManager {
     createProjectListItem(project) {
         const projectItem = document.createElement('div');
         projectItem.className = 'project-item';
+        projectItem.style.cursor = 'pointer';
 
         // Calculate stats for the project
         const totalImages = project.images ? project.images.length : 0;
@@ -646,9 +647,14 @@ class ProjectManager {
             </div>
             <div class="project-actions">
                 <a href="/project/${encodeURIComponent(project.name)}" class="btn">Открыть</a>
-                <button class="btn danger" onclick="projectManager.deleteProject('${project.name.replace(/'/g, "\\'")}')">Удалить</button>
+                <button class="btn danger" onclick="event.stopPropagation(); projectManager.deleteProject('${project.name.replace(/'/g, "\\'")}')">Удалить</button>
             </div>
         `;
+
+        // Make the entire card clickable
+        projectItem.addEventListener('click', function() {
+            window.location.href = `/project/${encodeURIComponent(project.name)}`;
+        });
 
         return projectItem;
     }
