@@ -646,13 +646,20 @@ class ProjectManager {
             </div>
             <div class="project-actions">
                 <a href="/project/${encodeURIComponent(project.name)}" class="btn">Открыть</a>
-                <button class="btn danger" onclick="event.stopPropagation(); projectManager.deleteProject('${project.name.replace(/'/g, "\\'")}')">Удалить</button>
+                <button class="btn danger delete-project-btn">Удалить</button>
             </div>
         `;
 
         // Make the entire card clickable
         projectItem.addEventListener('click', function() {
             window.location.href = `/project/${encodeURIComponent(project.name)}`;
+        });
+
+        // Add delete button handler with stopPropagation
+        const deleteBtn = projectItem.querySelector('.delete-project-btn');
+        deleteBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            this.deleteProject(project.name);
         });
 
         return projectItem;
