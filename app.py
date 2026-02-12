@@ -6,6 +6,7 @@ import os
 import json
 import re
 from datetime import datetime
+import config
 
 # Initialize TROCR model at startup
 if logic.TROCR_AVAILABLE:

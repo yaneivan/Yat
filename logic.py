@@ -7,6 +7,7 @@ from datetime import datetime
 from PIL import Image, ImageOps # Added ImageOps
 import storage
 import json
+import config
 
 # YOLOv9 imports
 try:
@@ -553,6 +554,9 @@ def detect_text_lines_yolo(filename, settings=None):
     # Load the specific model for text-line detection within regions
     model = YOLO(model_path)
 
+    # Move model to the configured device
+    model.to(config.DEVICE)
+
     # Get the image path
     image_path = os.path.join(storage.IMAGE_FOLDER, filename)
     if not os.path.exists(image_path):
@@ -623,9 +627,8 @@ def initialize_trocr_model(model_name="raxtemur/trocr-base-ru"):
     if not TROCR_AVAILABLE:
         raise Exception("Transformers not available. Install transformers to enable text recognition.")
 
-    # Check for available device
-    import torch
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Use device from configuration
+    device = torch.device(config.DEVICE)
     print(f"Using device: {device}")
 
     print("Loading TROCR model...")
