@@ -626,7 +626,6 @@ class ProjectManager {
     createProjectListItem(project) {
         const projectItem = document.createElement('div');
         projectItem.className = 'project-item';
-        projectItem.style.cursor = 'pointer';
 
         // Calculate stats for the project
         const totalImages = project.images ? project.images.length : 0;
