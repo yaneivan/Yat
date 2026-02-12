@@ -32,6 +32,8 @@
     <div style="font-size:0.8em; color:#888; margin-right:15px;">
         Shift: Пропорции | ПКМ: Обзор
     </div>
+    <button class="btn" onclick="rotateImage(-90)" title="Повернуть влево">↶</button>
+    <button class="btn" onclick="rotateImage(90)" title="Повернуть вправо">↷</button>
     <button class="btn btn-primary" onclick="applyCrop()">✂️ Сохранить</button>
 </div>
 
@@ -54,6 +56,7 @@
     let cropRect = null;
     let imgObj = null;
     let imageList = [];
+    let imageRotation = 0; // Track 90-degree rotations
 
     (async () => {
         resize();
@@ -77,12 +80,14 @@
     }
 
     function fitImageHeight(img) {
-        const scale = (canvas.height / img.height) * 0.9;
+        const effectiveWidth = (imageRotation % 180 === 90) ? img.height : img.width;
+        const effectiveHeight = (imageRotation % 180 === 90) ? img.width : img.height;
+        const scale = (canvas.height / effectiveHeight) * 0.9;
         canvas.setZoom(scale);
         
         const vpt = canvas.viewportTransform;
-        vpt[4] = (canvas.width - img.width * scale) / 2;
-        vpt[5] = (canvas.height - img.height * scale) / 2;
+        vpt[4] = (canvas.width - effectiveWidth * scale) / 2;
+        vpt[5] = (canvas.height - effectiveHeight * scale) / 2;
     }
 
     async function loadExistingCropData() {
@@ -186,7 +191,7 @@
             y: cropRect.top,
             w: cropRect.getScaledWidth(),
             h: cropRect.getScaledHeight(),
-            angle: cropRect.angle
+            angle: cropRect.angle + imageRotation
         };
         
         const resp = await fetch('/api/crop', {
@@ -200,6 +205,63 @@
         } else {
             alert('Ошибка (см. консоль)');
         }
+    }
+
+    function rotateImage(degrees) {
+        if (!imgObj) return;
+        
+        // Save current crop rectangle if it exists
+        let savedCropLeft, savedCropTop, savedCropWidth, savedCropHeight;
+        if (cropRect) {
+            savedCropLeft = cropRect.left;
+            savedCropTop = cropRect.top;
+            savedCropWidth = cropRect.getScaledWidth();
+            savedCropHeight = cropRect.getScaledHeight();
+            canvas.remove(cropRect);
+            cropRect = null;
+        }
+        
+        // Update cumulative rotation
+        imageRotation = (imageRotation + degrees) % 360;
+        if (imageRotation < 0) imageRotation += 360;
+        
+        // Get original image dimensions
+        const origWidth = imgObj.width;
+        const origHeight = imgObj.height;
+        
+        // Reload image with rotation
+        fabric.Image.fromURL(`/data/originals/${filename}`, img => {
+            img.set('angle', imageRotation);
+            imgObj = img;
+            canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
+            fitImageHeight(img);
+            
+            // Transform crop rectangle coordinates if it existed
+            if (savedCropLeft !== undefined) {
+                let newLeft, newTop, newWidth, newHeight;
+                
+                if (degrees === 90) {
+                    // Clockwise rotation: (x, y) -> (height - y - height, x)
+                    newLeft = origHeight - savedCropTop - savedCropHeight;
+                    newTop = savedCropLeft;
+                    newWidth = savedCropHeight;
+                    newHeight = savedCropWidth;
+                } else if (degrees === -90) {
+                    // Counter-clockwise rotation: (x, y) -> (y, width - x - width)
+                    newLeft = savedCropTop;
+                    newTop = origWidth - savedCropLeft - savedCropWidth;
+                    newWidth = savedCropHeight;
+                    newHeight = savedCropWidth;
+                }
+                
+                addCropRect(newLeft, newTop, newWidth, newHeight, 0);
+            } else {
+                // Create default crop rectangle
+                const effectiveWidth = (imageRotation % 180 === 90) ? origHeight : origWidth;
+                const effectiveHeight = (imageRotation % 180 === 90) ? origWidth : origHeight;
+                addCropRect(effectiveWidth * 0.05, effectiveHeight * 0.05, effectiveWidth * 0.9, effectiveHeight * 0.9, 0);
+            }
+        });
     }
 
     function goImage(dir) {
