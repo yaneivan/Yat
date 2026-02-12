@@ -103,10 +103,32 @@ def crop():
 @app.route('/api/import_zip', methods=['POST'])
 def import_zip_route():
     try:
+        # Добавим логирование для отладки
+        print("Form data:", request.form)
+        print("Files:", request.files.keys())
+        
         simp = int(request.form.get('simplify', 0))
-    except: simp = 0
-    count = logic.process_zip_import(request.files['file'], simp)
-    return jsonify({'status': 'success', 'count': count})
+        print("Simplify value:", simp)
+        
+        # Получаем необязательное имя проекта
+        project_name = request.form.get('project_name', None)
+        
+        # Проверим, есть ли файл в запросе
+        if 'file' not in request.files:
+            print("No file in request")
+            return jsonify({'status': 'error', 'msg': 'No file in request'}), 400
+            
+        uploaded_file = request.files['file']
+        if uploaded_file.filename == '':
+            print("No file selected")
+            return jsonify({'status': 'error', 'msg': 'No file selected'}), 400
+            
+        # Вызываем универсальную функцию импорта
+        count, final_project_name = logic.process_zip_import(uploaded_file, simp, project_name)
+        return jsonify({'status': 'success', 'count': count, 'project_name': final_project_name})
+    except Exception as e:
+        print(f"Error in import_zip_route: {str(e)}")
+        return jsonify({'status': 'error', 'msg': str(e)}), 500
 
 @app.route('/api/export_zip')
 def export_zip_route():
@@ -279,8 +301,14 @@ def project_images(project_name):
         # Add status information for each image
         image_list = []
         for img in images:
-            status = storage.get_image_status(img)
-            image_list.append({'name': img, 'status': status})
+            # Check if img is a dictionary (has name and status fields) or just a string
+            if isinstance(img, dict):
+                # If img is already a dictionary with name and status, use it directly
+                image_list.append(img)
+            else:
+                # If img is just a string (filename), get its status
+                status = storage.get_image_status(img)
+                image_list.append({'name': img, 'status': status})
         return jsonify({'images': image_list})
 
     elif request.method == 'POST':
@@ -419,6 +447,8 @@ def export_project_zip(project_name):
     import zipfile
     import io
     from flask import send_file
+    from PIL import Image
+    import xml.etree.ElementTree as ET
 
     # Get project details
     projects = storage.get_projects_list()
@@ -433,16 +463,55 @@ def export_project_zip(project_name):
     memory_file = io.BytesIO()
     with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zipf:
         # Add images to zip
-        for image_name in images:
+        for image_item in images:
+            # Check if image_item is a dictionary (has name field) or just a string
+            image_name = image_item['name'] if isinstance(image_item, dict) else image_item
+
             image_path = os.path.join(storage.IMAGE_FOLDER, image_name)
             if os.path.exists(image_path):
-                zipf.write(image_path, f'images/{image_name}')
+                # Add image to the root of the archive (not in subfolder)
+                zipf.write(image_path, image_name)
 
-            # Add corresponding annotation if it exists
-            annotation_name = os.path.splitext(image_name)[0] + '.json'
-            annotation_path = os.path.join(storage.ANNOTATION_FOLDER, annotation_name)
-            if os.path.exists(annotation_path):
-                zipf.write(annotation_path, f'annotations/{annotation_name}')
+                # Create corresponding PAGE XML annotation file
+                annotation_name = os.path.splitext(image_name)[0] + '.xml'
+                
+                # Load annotation data from JSON
+                json_annotation_path = os.path.join(storage.ANNOTATION_FOLDER, os.path.splitext(image_name)[0] + '.json')
+                annotation_data = {}
+                if os.path.exists(json_annotation_path):
+                    with open(json_annotation_path, 'r', encoding='utf-8') as f:
+                        annotation_data = json.load(f)
+
+                # Create PAGE XML structure
+                root = ET.Element('PcGts', xmlns="http://schema.primaresearch.org/PAGE/gts/pagecontent/2013-07-15")
+                page = ET.SubElement(root, 'Page', imageFilename=image_name)
+                
+                # Get image dimensions
+                try:
+                    with Image.open(image_path) as img:
+                        w, h = img.size
+                except:
+                    w, h = 0, 0
+                
+                page.set('imageWidth', str(w))
+                page.set('imageHeight', str(h))
+                
+                # Add text regions and lines
+                text_region = ET.SubElement(page, 'TextRegion', id='r1')
+                
+                regions = annotation_data.get('regions', [])
+                for i, reg in enumerate(regions):
+                    points = reg.get('points', [])
+                    if points:
+                        # Format points as required by PAGE XML
+                        pts_str = " ".join([f"{p['x']},{p['y']}" for p in points])
+                        
+                        text_line = ET.SubElement(text_region, 'TextLine', id=f'l{i}')
+                        coords = ET.SubElement(text_line, 'Coords', points=pts_str)
+                
+                # Write XML to archive
+                xml_content = ET.tostring(root, encoding='utf-8')
+                zipf.writestr(annotation_name, xml_content)
 
         # Add project metadata
         project_json_path = os.path.join(storage.PROJECTS_FOLDER, project_name, 'project.json')
@@ -450,13 +519,7 @@ def export_project_zip(project_name):
             zipf.write(project_json_path, 'project.json')
 
     memory_file.seek(0)
-
-    return send_file(
-        memory_file,
-        mimetype='application/zip',
-        as_attachment=True,
-        download_name=f'{project_name}.zip'
-    )
+    return send_file(memory_file, as_attachment=True, download_name=f'{project_name}_export.zip')
 
 
 if __name__ == '__main__':

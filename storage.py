@@ -200,9 +200,19 @@ def remove_image_from_project(project_name, image_name):
         project_data = json.load(f)
 
     # Remove image from project
-    if image_name in project_data['images']:
-        project_data['images'].remove(image_name)
+    # Check if image_name exists in project_data['images'] considering the new format (dict with 'name' field)
+    image_found = False
+    for img in project_data['images']:
+        if isinstance(img, dict) and img.get('name') == image_name:
+            project_data['images'].remove(img)
+            image_found = True
+            break
+        elif isinstance(img, str) and img == image_name:
+            project_data['images'].remove(img)
+            image_found = True
+            break
 
+    if image_found:
         with open(project_json_path, 'w', encoding='utf-8') as f:
             json.dump(project_data, f, indent=4, ensure_ascii=False)
 

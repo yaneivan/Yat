@@ -179,8 +179,10 @@ class ProjectManager {
         this.updateStats();
         this.setupEventListeners();
 
-        // Restore view preference from localStorage
-        this.restoreViewPreference();
+        // Restore view preference from localStorage only on the main projects page
+        if (window.location.pathname === '/') {
+            this.restoreViewPreference();
+        }
     }
 
     restoreViewPreference() {
@@ -684,6 +686,73 @@ class ProjectManager {
         document.getElementById('importModal').style.display = 'none';
     }
 
+    async submitZipImport() {
+        // Попробуем найти элементы с разными возможными ID
+        let fileInput = document.getElementById('zipInput');
+        if (!fileInput) {
+            fileInput = document.getElementById('zipFile');
+        }
+        
+        let simplifyInput = document.getElementById('simplifyInput');
+        if (!simplifyInput) {
+            // Если не найден, пробуем другой возможный ID
+            simplifyInput = document.getElementById('simplify');
+        }
+        
+        const submitButton = document.querySelector('#importModal .btn-primary'); // Кнопка "Импортировать" в модальном окне
+
+        if (!fileInput || !fileInput.files[0]) {
+            this.showError('Пожалуйста, выберите ZIP файл');
+            return;
+        }
+
+        // Сделать кнопку неактивной и изменить текст для индикации загрузки
+        submitButton.disabled = true;
+        const originalButtonText = submitButton.textContent;
+        submitButton.textContent = 'Импортируется...';
+
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+        formData.append('simplify', simplifyInput ? simplifyInput.value : 5); // Используем 5 как значение по умолчанию
+
+        // Проверяем, находимся ли мы на странице проекта
+        const pathParts = window.location.pathname.split('/');
+        const isProjectPage = pathParts.length >= 3 && pathParts[1] === 'project';
+        if (isProjectPage) {
+            const projectName = pathParts[2];
+            formData.append('project_name', projectName);
+        }
+
+        try {
+            const response = await fetch('/api/import_zip', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (result.status === 'success') {
+                if (isProjectPage) {
+                    this.showSuccess(`Изображения успешно добавлены в проект (${result.count} файлов)`);
+                } else {
+                    this.showSuccess(`Проект успешно импортирован (${result.count} файлов)`);
+                }
+                this.closeImportModal();
+                // Reload the page to show new projects or images
+                location.reload();
+            } else {
+                this.showError('Ошибка: ' + result.msg);
+            }
+        } catch (error) {
+            console.error('Error importing project:', error);
+            this.showError('Ошибка при импорте проекта');
+        } finally {
+            // Восстановить первоначальное состояние кнопки
+            submitButton.disabled = false;
+            submitButton.textContent = originalButtonText;
+        }
+    }
+
     showError(message) {
         // Create a simple error notification
         this.createNotification(message, 'error');
@@ -881,5 +950,26 @@ function openCreateProjectModal() {
 function closeCreateProjectModal() {
     if (window.projectManager) {
         window.projectManager.closeCreateProjectModal();
+    }
+}
+
+// Global function for opening import modal (for use in HTML onclick)
+function openImportModal() {
+    if (window.projectManager) {
+        window.projectManager.openImportModal();
+    }
+}
+
+// Global function for closing import modal (for use in HTML onclick)
+function closeImportModal() {
+    if (window.projectManager) {
+        window.projectManager.closeImportModal();
+    }
+}
+
+// Global function for submitting ZIP import (for use in HTML onclick)
+async function submitZipImport() {
+    if (window.projectManager) {
+        await window.projectManager.submitZipImport();
     }
 }

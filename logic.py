@@ -203,31 +203,89 @@ def parse_page_xml(xml_path, simplify_val):
     except Exception as e: print(f"XML Error: {e}")
     return regions
 
-def process_zip_import(file, simplify_val=0):
+def process_zip_import(file, simplify_val=0, project_name=None):
+    """
+    Импортирует ZIP-архив в проект
+    Если project_name не указан, создается новый проект
+    """
+    import tempfile
+    import uuid
+    import shutil
+    import zipfile
+    import json
+    import os
+    
+    # Если имя проекта не указано, создаем новое
+    if project_name is None:
+        original_filename = file.filename
+        project_name = os.path.splitext(original_filename)[0] + "_" + str(uuid.uuid4())[:8]
+        
+        # Создаем новый проект
+        success, result = storage.create_project(project_name)
+        if not success:
+            raise Exception(f"Failed to create project: {result}")
+    
+    # Проверяем, существует ли проект
+    project_path = os.path.join(storage.PROJECTS_FOLDER, project_name)
+    if not os.path.exists(project_path):
+        raise Exception(f"Project {project_name} does not exist")
+    
+    # Создаем временный каталог для извлечения ZIP
     zip_path = os.path.join(storage.TEMP_FOLDER, 'import.zip')
     file.save(zip_path)
     extract_path = os.path.join(storage.TEMP_FOLDER, 'ext')
     if os.path.exists(extract_path): shutil.rmtree(extract_path)
     os.makedirs(extract_path)
+    
     count = 0
     try:
-        with zipfile.ZipFile(zip_path, 'r') as z: z.extractall(extract_path)
+        # Извлекаем ZIP-архив
+        with zipfile.ZipFile(zip_path, 'r') as z:
+            z.extractall(extract_path)
+            
+        # Обрабатываем извлеченные файлы
         for root, _, files in os.walk(extract_path):
             for f in files:
                 if f.lower().endswith(tuple(storage.ALLOWED_EXTENSIONS)):
                     src = os.path.join(root, f)
-                    storage.save_image(type('obj', (object,), {'filename': f, 'save': lambda p: shutil.move(src, p)}))
+                    
+                    # Сохраняем изображение в общую папку
+                    dest_path = os.path.join(storage.IMAGE_FOLDER, f)
+                    shutil.move(src, dest_path)
+                    
+                    # Проверяем наличие XML-файла с аннотациями
                     xml_cands = [os.path.splitext(src)[0]+'.xml', src+'.xml']
                     for xc in xml_cands:
                         if os.path.exists(xc):
                             regs = parse_page_xml(xc, simplify_val)
-                            storage.save_json({'image_name': f, 'regions': regs})
+                            
+                            # Сохраняем аннотации в общую папку
+                            json_data = {'image_name': f, 'regions': regs}
+                            json_path = os.path.join(storage.ANNOTATION_FOLDER, os.path.splitext(f)[0] + '.json')
+                            with open(json_path, 'w', encoding='utf-8') as jf:
+                                json.dump(json_data, jf, indent=4)
+                            
+                            # Обновляем информацию о проекте
+                            project_json_path = os.path.join(project_path, 'project.json')
+                            with open(project_json_path, 'r', encoding='utf-8') as pj:
+                                project_data = json.load(pj)
+                            
+                            # Добавляем изображение в список проекта
+                            project_data['images'].append({
+                                'name': f,
+                                'status': 'segment' if regs else 'original'  # Если есть регионы, значит размечено
+                            })
+                            
+                            with open(project_json_path, 'w', encoding='utf-8') as pj:
+                                json.dump(project_data, pj, indent=4, ensure_ascii=False)
                             break
                     count += 1
     finally:
         if os.path.exists(zip_path): os.remove(zip_path)
         if os.path.exists(extract_path): shutil.rmtree(extract_path)
-    return count
+    
+    # Возвращаем количество обработанных файлов и имя проекта
+    return count, project_name
 
 def generate_export_zip():
     if os.path.exists(storage.EXPORT_FOLDER): shutil.rmtree(storage.EXPORT_FOLDER)

@@ -1002,15 +1002,25 @@
         async function submitZipImport() {
             const fileInput = document.getElementById('zipFile');
             const simplifyInput = document.getElementById('simplifyInput');
+            const submitButton = document.querySelector('#importModal .btn-primary'); // Кнопка "Импортировать" в модальном окне
 
             if (!fileInput.files[0]) {
                 showNotification('Пожалуйста, выберите ZIP файл', 'error');
                 return;
             }
 
+            // Сделать кнопку неактивной и изменить текст для индикации загрузки
+            submitButton.disabled = true;
+            const originalButtonText = submitButton.textContent;
+            submitButton.textContent = 'Импортируется...';
+
             const formData = new FormData();
-            formData.append('zip_file', fileInput.files[0]);
+            formData.append('file', fileInput.files[0]);  // Изменено с 'zip_file' на 'file' для соответствия серверному коду
             formData.append('simplify', simplifyInput.value);
+
+            // Добавляем имя текущего проекта, чтобы импортировать в существующий проект
+            const currentProjectName = "{{ project.name }}";
+            formData.append('project_name', currentProjectName);
 
             try {
                 const response = await fetch('/api/import_zip', {
@@ -1021,9 +1031,9 @@
                 const result = await response.json();
 
                 if (result.status === 'success') {
-                    showNotification('Проект успешно импортирован', 'success');
+                    showNotification(`Изображения успешно добавлены в проект (${result.count} файлов)`, 'success');
                     closeImportModal();
-                    // Reload the page to show new projects
+                    // Reload the page to show new images in the project
                     location.reload();
                 } else {
                     showNotification('Ошибка: ' + result.msg, 'error');
@@ -1031,6 +1041,10 @@
             } catch (error) {
                 console.error('Error importing project:', error);
                 showNotification('Ошибка при импорте проекта', 'error');
+            } finally {
+                // Восстановить первоначальное состояние кнопки
+                submitButton.disabled = false;
+                submitButton.textContent = originalButtonText;
             }
         }
     </script>
