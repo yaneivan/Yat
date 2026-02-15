@@ -121,39 +121,75 @@ def perform_crop(filename, box):
             # ВАЖНО: Учитываем EXIF поворот (телефоны часто сохраняют перевернуто)
             # Иначе координаты браузера и Pillow не совпадут.
             img = ImageOps.exif_transpose(img)
-            
-            img_w, img_h = img.size
-            
-            # Clamping
-            safe_x = int(round(max(0, min(box['x'], img_w - 1))))
-            safe_y = int(round(max(0, min(box['y'], img_h - 1))))
-            
-            safe_w = int(round(box['w']))
-            if safe_x + safe_w > img_w: safe_w = img_w - safe_x
-            
-            safe_h = int(round(box['h']))
-            if safe_y + safe_h > img_h: safe_h = img_h - safe_y
-            
-            real_box = {
-                'x': safe_x, 'y': safe_y, 'w': safe_w, 'h': safe_h, 
-                'angle': box.get('angle', 0)
-            }
 
-            # Pillow Processing
-            cx = real_box['x'] + real_box['w'] / 2.0
-            cy = real_box['y'] + real_box['h'] / 2.0
-            angle = real_box['angle']
-            
+            img_w, img_h = img.size
+
+            # Получаем параметры рамки
+            x = box['x']
+            y = box['y']
+            w = box['w']
+            h = box['h']
+            angle = box.get('angle', 0)
+
+            # Pillow Processing - используем expand=True для учета поворота
+            cx = x + w / 2.0
+            cy = y + h / 2.0
+
             # rotate(-angle) = CW visual rotation
-            rotated_img = img.rotate(-angle, center=(cx, cy), resample=Image.BICUBIC, expand=False)
-            
-            left = real_box['x']
-            top = real_box['y']
-            right = left + real_box['w']
-            bottom = top + real_box['h']
-            
+            # expand=True увеличивает размер изображения, чтобы вместить весь поворот
+            # fillcolor=(0, 0, 0) устанавливает черный цвет для дополненных областей
+            rotated_img = img.rotate(-angle, center=(cx, cy), resample=Image.BICUBIC, expand=True, fillcolor=(0, 0, 0))
+
+            # Вычисляем смещение центра вращения на новом изображении
+            new_img_w, new_img_h = rotated_img.size
+            new_cx = new_img_w / 2.0
+            new_cy = new_img_h / 2.0
+
+            # Вычисляем смещение центра
+            offset_x = new_cx - cx
+            offset_y = new_cy - cy
+
+            # Углы до поворота
+            corners_before_rotation = [
+                (x, y),           # верхний левый
+                (x + w, y),       # верхний правый
+                (x + w, y + h),   # нижний правый
+                (x, y + h)        # нижний левый
+            ]
+
+            # Поворачиваем углы рамки относительно центра
+            rotated_corners = [
+                rotate_point(corner_x, corner_y, cx, cy, -angle)  # Используем противоположный угол для обратного преобразования
+                for corner_x, corner_y in corners_before_rotation
+            ]
+
+            # Смещаем углы рамки с учетом смещения центра
+            adjusted_corners = [
+                (corner[0] + offset_x, corner[1] + offset_y)
+                for corner in rotated_corners
+            ]
+
+            # Находим границы повернутой рамки
+            min_x = min(corner[0] for corner in adjusted_corners)
+            max_x = max(corner[0] for corner in adjusted_corners)
+            min_y = min(corner[1] for corner in adjusted_corners)
+            max_y = max(corner[1] for corner in adjusted_corners)
+
+            # Корректируем координаты для обрезки на повернутом изображении
+            left = min_x
+            top = min_y
+            right = max_x
+            bottom = max_y
+
+            # Обрезаем изображение
             cropped_img = rotated_img.crop((left, top, right, bottom))
             cropped_img.save(src_path)
+
+            # Обновляем реальные параметры для сохранения
+            real_box = {
+                'x': min_x, 'y': min_y, 'w': right - left, 'h': bottom - top,
+                'angle': 0  # Угол теперь учтен в повороте
+            }
 
         # Пересчет
         new_regions = recalculate_regions(old_regions, old_crop_params, real_box)
@@ -165,7 +201,7 @@ def perform_crop(filename, box):
             'crop_params': real_box,
             'status': 'cropped'
         })
-            
+
         return True
     except Exception as e:
         print(f"Crop Error: {e}")

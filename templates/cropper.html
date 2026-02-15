@@ -42,13 +42,17 @@
 <script src="/static/js/api.js"></script>
 <script>
     const filename = "{{ filename }}";
-    const canvas = new fabric.Canvas('c', { 
-        selection: false, 
+    const canvas = new fabric.Canvas('c', {
+        selection: false,
         backgroundColor: "#111",
         uniScaleKey: 'shiftKey',
         uniformScaling: false,
         fireRightClick: true,
-        stopContextMenu: true
+        stopContextMenu: true,
+        // Убираем "магнитный" эффект Retina-дисплеев
+        enableRetinaScaling: false, 
+        // Точность поиска цели (уменьшаем, чтобы не было прыжков при захвате)
+        targetFindTolerance: 1 
     });
 
     let cropRect = null;
@@ -79,10 +83,12 @@
     function fitImageHeight(img) {
         const scale = (canvas.height / img.height) * 0.9;
         canvas.setZoom(scale);
-        
+
         const vpt = canvas.viewportTransform;
-        vpt[4] = (canvas.width - img.width * scale) / 2;
-        vpt[5] = (canvas.height - img.height * scale) / 2;
+        // Используем Math.floor или Math.round, чтобы избежать субпиксельного рендеринга
+        vpt[4] = Math.floor((canvas.width - img.width * scale) / 2);
+        vpt[5] = Math.floor((canvas.height - img.height * scale) / 2);
+        canvas.requestRenderAll();
     }
 
     async function loadExistingCropData() {
@@ -108,37 +114,44 @@
     function addCropRect(left, top, width, height, angle) {
         const z = canvas.getZoom();
         
+        // Пересчитываем в центр, чтобы избежать математических перекосов
+        const centerX = left + width / 2;
+        const centerY = top + height / 2;
+
         cropRect = new fabric.Rect({
-            left: left, top: top, width: width, height: height, angle: angle,
-            fill: 'rgba(0,0,0,0)',
+            left: centerX, 
+            top: centerY, 
+            width: width, 
+            height: height, 
+            angle: angle,
+            
+            originX: 'center',
+            originY: 'center',
+            
+            fill: 'rgba(255, 255, 255, 0.0001)',
             stroke: 'yellow',
             strokeWidth: 2 / z,
-            strokeDashArray: [10, 5],
+            strokeUniform: true,
             
-            cornerColor: 'white',
-            cornerSize: 4 / z, 
+            objectCaching: false,
+            
             transparentCorners: false,
-            
-            lockRotation: false,
-            hasRotatingPoint: true
+            cornerColor: 'white',
+            cornerStyle: 'circle',
+            cornerSize: 3 / z
         });
 
-        cropRect.on('moving', () => constrainRect(cropRect));
-        cropRect.on('scaling', () => constrainRect(cropRect));
-        
         canvas.add(cropRect);
         canvas.setActiveObject(cropRect);
+        
+        cropRect.on('moving', function(e) {
+            // Это гарантирует, что координаты рамки обновляются синхронно с каждым кадром
+            this.setCoords();
+            canvas.requestRenderAll();
+        });
     }
+    
 
-    function constrainRect(obj) {
-        if (obj.angle !== 0) return;
-
-        const br = obj.getBoundingRect(true); 
-        if (br.left < 0) obj.left = 0;
-        if (br.top < 0) obj.top = 0;
-        if (br.left + br.width > imgObj.width) obj.left = imgObj.width - br.width;
-        if (br.top + br.height > imgObj.height) obj.top = imgObj.height - br.height;
-    }
 
     canvas.on('mouse:wheel', (opt) => {
         let zoom = canvas.getZoom();
@@ -166,6 +179,9 @@
         if(isPanning) {
             canvas.relativePan(new fabric.Point(opt.e.clientX-lastMouse.x, opt.e.clientY-lastMouse.y));
             lastMouse={x:opt.e.clientX, y:opt.e.clientY};
+            if(cropRect) {
+                cropRect.setCoords(); // Обновляем позицию границ
+            }
         }
     });
     canvas.on('mouse:up', () => { 
@@ -180,25 +196,28 @@
 
     async function applyCrop() {
         if (!cropRect) return;
-        
+
+        // Получаем реальные координаты левого верхнего угла независимо от угла поворота и origin
+        const rectPoint = cropRect.getPointByOrigin('left', 'top');
+
         const cropData = {
-            x: cropRect.left,
-            y: cropRect.top,
+            x: rectPoint.x,
+            y: rectPoint.y,
             w: cropRect.getScaledWidth(),
             h: cropRect.getScaledHeight(),
             angle: cropRect.angle
         };
-        
+
         const resp = await fetch('/api/crop', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ image_name: filename, box: cropData })
         });
-        
+
         if (resp.ok) {
             goImage(1);
         } else {
-            alert('Ошибка (см. консоль)');
+            alert('Ошибка при сохранении');
         }
     }
 
