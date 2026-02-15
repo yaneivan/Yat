@@ -630,10 +630,13 @@ def initialize_trocr_model(model_name="raxtemur/trocr-base-ru"):
     # Use device from configuration
     device = torch.device(config.DEVICE)
     print(f"Using device: {device}")
+    
+    # Указываем папку для кэширования моделей
+    cache_dir = './models'
 
     print("Loading TROCR model...")
-    trocr_processor = TrOCRProcessor.from_pretrained(model_name)
-    trocr_model = VisionEncoderDecoderModel.from_pretrained(model_name)
+    trocr_processor = TrOCRProcessor.from_pretrained(model_name, cache_dir=cache_dir)
+    trocr_model = VisionEncoderDecoderModel.from_pretrained(model_name, cache_dir=cache_dir)
 
     # Move model to device
     trocr_model = trocr_model.to(device)
