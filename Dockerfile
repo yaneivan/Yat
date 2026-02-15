@@ -24,9 +24,6 @@ RUN pip install -r requirements.txt
 
 # Копируем остальные файлы
 COPY app.py config.py logic.py storage.py ./
-COPY static ./static
-COPY templates ./templates
-COPY docs ./docs
 
 EXPOSE 5000
 
