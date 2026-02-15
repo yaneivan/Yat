@@ -11,7 +11,10 @@ const API = {
         return fetch('/api/save', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ image_name: filename, regions })
+            body: JSON.stringify({ 
+                image_name: filename, 
+                regions 
+            })
         });
     },
     async saveAnnotationWithTexts(filename, regions, texts = {}) {

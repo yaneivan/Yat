@@ -59,16 +59,27 @@
     let imgObj = null;
     let imageList = [];
 
+    // Функция для поворота точки вокруг центра
+    function rotate_pointJS(x, y, cx, cy, angle_deg) {
+        const rad = angle_deg * Math.PI / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+
+        const nx = cx + (x - cx) * cos - (y - cy) * sin;
+        const ny = cy + (x - cx) * sin + (y - cy) * cos;
+        return [nx, ny];
+    }
+
     (async () => {
         resize();
         window.addEventListener('resize', resize);
-        
+
         imageList = await API.listImages();
-        
+
         fabric.Image.fromURL(`/data/originals/${filename}`, img => {
             imgObj = img;
             canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
-            
+
             fitImageHeight(img);
             loadExistingCropData();
         });
@@ -93,48 +104,87 @@
 
     async function loadExistingCropData() {
         const data = await API.loadAnnotation(filename);
-        let left, top, width, height, angle = 0;
+        let corners = [];
 
-        if (data.crop_params) {
-            left = data.crop_params.x;
-            top = data.crop_params.y;
-            width = data.crop_params.w;
-            height = data.crop_params.h;
-            angle = data.crop_params.angle || 0;
+        if (data.crop_params && data.crop_params.corners) {
+            // Если есть углы в crop_params, используем их напрямую
+            corners = data.crop_params.corners;
+        } else if (data.processing_params) {
+            // Если параметры обработки существуют, восстанавливаем углы
+            const procParams = data.processing_params;
+            
+            // Используем координаты четырехугольника для получения углов
+            const quad_coords = procParams.quad_coords;
+            
+            // quad_coords содержит координаты в порядке, требуемом Pillow: TL, BL, BR, TR
+            // Восстанавливаем их в порядке: TL, TR, BR, BL
+            corners = [
+                {x: quad_coords[0], y: quad_coords[1]},  // верхний левый (TL)
+                {x: quad_coords[6], y: quad_coords[7]},  // верхний правый (TR)
+                {x: quad_coords[4], y: quad_coords[5]},  // нижний правый (BR)
+                {x: quad_coords[2], y: quad_coords[3]}   // нижний левый (BL)
+            ];
+        } else if (data.crop_params) {
+            // Если есть только базовые параметры, вычисляем углы
+            const cropParams = data.crop_params;
+            const centerX = cropParams.x + cropParams.w / 2;
+            const centerY = cropParams.y + cropParams.h / 2;
+            const angle = cropParams.angle || 0;
+            
+            // Вычисляем углы до поворота
+            const unrotatedCorners = [
+                {x: cropParams.x, y: cropParams.y},                           // верхний левый
+                {x: cropParams.x + cropParams.w, y: cropParams.y},            // верхний правый
+                {x: cropParams.x + cropParams.w, y: cropParams.y + cropParams.h}, // нижний правый
+                {x: cropParams.x, y: cropParams.y + cropParams.h}             // нижний левый
+            ];
+            
+            // Поворачиваем углы на угол поворота, чтобы получить углы в оригинальной системе координат
+            corners = unrotatedCorners.map(corner => {
+                const rotatedCorner = rotate_pointJS(corner.x, corner.y, centerX, centerY, angle);
+                return {x: rotatedCorner[0], y: rotatedCorner[1]};
+            });
         } else {
-            left = imgObj.width * 0.05;
-            top = imgObj.height * 0.05;
-            width = imgObj.width * 0.9;
-            height = imgObj.height * 0.9;
+            // Если нет сохраненных параметров, создаем стандартный прямоугольник
+            const margin = 0.05; // 5% от размера изображения
+            const width = imgObj.width * (1 - 2 * margin);
+            const height = imgObj.height * (1 - 2 * margin);
+            
+            corners = [
+                {x: imgObj.width * margin, y: imgObj.height * margin},                    // верхний левый
+                {x: imgObj.width * margin + width, y: imgObj.height * margin},            // верхний правый
+                {x: imgObj.width * margin + width, y: imgObj.height * margin + height},   // нижний правый
+                {x: imgObj.width * margin, y: imgObj.height * margin + height}            // нижний левый
+            ];
         }
 
-        addCropRect(left, top, width, height, angle);
+        addCropRectFromCorners(corners);
     }
 
     function addCropRect(left, top, width, height, angle) {
         const z = canvas.getZoom();
-        
+
         // Пересчитываем в центр, чтобы избежать математических перекосов
         const centerX = left + width / 2;
         const centerY = top + height / 2;
 
         cropRect = new fabric.Rect({
-            left: centerX, 
-            top: centerY, 
-            width: width, 
-            height: height, 
+            left: centerX,
+            top: centerY,
+            width: width,
+            height: height,
             angle: angle,
-            
+
             originX: 'center',
             originY: 'center',
-            
+
             fill: 'rgba(255, 255, 255, 0.0001)',
             stroke: 'yellow',
             strokeWidth: 2 / z,
             strokeUniform: true,
-            
+
             objectCaching: false,
-            
+
             transparentCorners: false,
             cornerColor: 'white',
             cornerStyle: 'circle',
@@ -143,12 +193,52 @@
 
         canvas.add(cropRect);
         canvas.setActiveObject(cropRect);
-        
+
         cropRect.on('moving', function(e) {
             // Это гарантирует, что координаты рамки обновляются синхронно с каждым кадром
             this.setCoords();
             canvas.requestRenderAll();
         });
+    }
+
+    function addCropRectFromCorners(corners) {
+        // Очищаем канвас от старых рамок
+        if (cropRect) canvas.remove(cropRect);
+
+        // Параметры для Fabric (координаты "мира" изображения)
+        const centerX = corners.reduce((sum, c) => sum + c.x, 0) / 4;
+        const centerY = corners.reduce((sum, c) => sum + c.y, 0) / 4;
+        
+        const width = Math.sqrt(Math.pow(corners[0].x - corners[1].x, 2) + Math.pow(corners[0].y - corners[1].y, 2));
+        const height = Math.sqrt(Math.pow(corners[1].x - corners[2].x, 2) + Math.pow(corners[1].y - corners[2].y, 2));
+        
+        const dx = corners[1].x - corners[0].x;
+        const dy = corners[1].y - corners[0].y;
+        const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+
+        const z = canvas.getZoom();
+
+        cropRect = new fabric.Rect({
+            left: centerX,
+            top: centerY,
+            width: width,
+            height: height,
+            angle: angle,
+            originX: 'center',
+            originY: 'center',
+            fill: 'rgba(255, 255, 0, 0.1)',
+            stroke: 'yellow',
+            strokeWidth: 2 / z,
+            strokeUniform: true,
+            cornerSize: 8 / z,
+            transparentCorners: false,
+            cornerColor: 'white',
+            cornerStyle: 'circle'
+        });
+
+        canvas.add(cropRect);
+        canvas.setActiveObject(cropRect);
+        canvas.requestRenderAll();
     }
     
 
@@ -197,15 +287,28 @@
     async function applyCrop() {
         if (!cropRect) return;
 
-        // Получаем реальные координаты левого верхнего угла независимо от угла поворота и origin
-        const rectPoint = cropRect.getPointByOrigin('left', 'top');
+        // 1. Получаем текущую матрицу трансформации канваса
+        const vpt = canvas.viewportTransform;
+        // 2. Инвертируем её, чтобы переводить из "экранных" координат в "координаты изображения"
+        const invVpt = fabric.util.invertTransform(vpt);
+
+        // 3. Берем экранные координаты углов рамки (oCoords содержит tl, tr, br, bl)
+        // Важно: oCoords - это текущие координаты на экране после всех перемещений
+        const coords = cropRect.oCoords;
+
+        const getImgPoint = (pt) => {
+            const p = fabric.util.transformPoint({ x: pt.x, y: pt.y }, invVpt);
+            return { x: Math.round(p.x), y: Math.round(p.y) };
+        };
 
         const cropData = {
-            x: rectPoint.x,
-            y: rectPoint.y,
-            w: cropRect.getScaledWidth(),
-            h: cropRect.getScaledHeight(),
-            angle: cropRect.angle
+            // Строгий порядок: Top-Left, Top-Right, Bottom-Right, Bottom-Left
+            corners: [
+                getImgPoint(coords.tl),
+                getImgPoint(coords.tr),
+                getImgPoint(coords.br),
+                getImgPoint(coords.bl)
+            ]
         };
 
         const resp = await fetch('/api/crop', {

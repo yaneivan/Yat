@@ -66,11 +66,25 @@ def load_data(filename):
 
 @app.route('/api/save', methods=['POST'])
 def save_data():
-    data = request.json
-    # Ensure texts field exists in the data
-    if 'texts' not in data:
-        data['texts'] = {}
-    if storage.save_json(data): return jsonify({'status': 'success'})
+    incoming_data = request.json
+    filename = incoming_data.get('image_name')
+    if not filename:
+        return jsonify({'status': 'error', 'msg': 'No filename'}), 400
+
+    # 1. Загружаем то, что уже лежит на диске
+    existing_data = storage.load_json(filename)
+    
+    # 2. Обновляем поля (regions, texts и т.д.), но сохраняем crop_params
+    for key in ['regions', 'texts', 'status', 'processing_params']:
+        if key in incoming_data:
+            existing_data[key] = incoming_data[key]
+            
+    # Не трогаем crop_params, если они уже есть в файле, а в новых данных их нет
+    if 'crop_params' in incoming_data:
+        existing_data['crop_params'] = incoming_data['crop_params']
+
+    if storage.save_json(existing_data): 
+        return jsonify({'status': 'success'})
     return jsonify({'status': 'error'}), 400
 
 @app.route('/api/upload', methods=['POST'])

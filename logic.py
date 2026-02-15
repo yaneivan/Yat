@@ -45,168 +45,108 @@ def rotate_point(x, y, cx, cy, angle_deg):
     ny = cy + (x - cx) * s + (y - cy) * c
     return nx, ny
 
-def recalculate_regions(regions, old_crop, new_crop):
+def recalculate_regions(regions, old_crop, new_crop_params, new_w, new_h):
     """
-    Пересчитывает координаты регионов:
-    Local (Old) -> Global (Original) -> Local (New)
+    Масштабирует регионы: Локальные(старые) -> Глобальные -> Локальные(новые).
     """
-    if not regions: return []
-    
-    # 1. Параметры СТАРОГО кропа
-    ox = old_crop['x'] if old_crop else 0
-    oy = old_crop['y'] if old_crop else 0
-    ow = old_crop['w'] if old_crop else 0
-    oh = old_crop['h'] if old_crop else 0
-    o_angle = old_crop.get('angle', 0) if old_crop else 0
-    
-    o_cx = ox + ow / 2.0
-    o_cy = oy + oh / 2.0
+    if not regions:
+        return []
 
-    # 2. Параметры НОВОГО кропа
-    nx = new_crop['x']
-    ny = new_crop['y']
-    nw = new_crop['w']
-    nh = new_crop['h']
-    n_angle = new_crop.get('angle', 0)
-    
-    n_cx = nx + nw / 2.0
-    n_cy = ny + nh / 2.0
+    # Вспомогательная функция: перевод из 0..1 в координаты четырехугольника (интерполяция)
+    def lerp_quad(u, v, c):
+        # c: [TL, TR, BR, BL]
+        x = (1-u)*(1-v)*c[0]['x'] + u*(1-v)*c[1]['x'] + u*v*c[2]['x'] + (1-u)*v*c[3]['x']
+        y = (1-u)*(1-v)*c[0]['y'] + u*(1-v)*c[1]['y'] + u*v*c[2]['y'] + (1-u)*v*c[3]['y']
+        return x, y
 
+    # Вспомогательная функция: проекция точки на четырехугольник (нахождение u, v)
+    def get_uv(px, py, c):
+        # Векторы сторон
+        v_top = (c[1]['x'] - c[0]['x'], c[1]['y'] - c[0]['y'])
+        v_left = (c[3]['x'] - c[0]['x'], c[3]['y'] - c[0]['y'])
+        v_p = (px - c[0]['x'], py - c[0]['y'])
+
+        def dot_ratio(v, p_v):
+            mag_sq = v[0]**2 + v[1]**2
+            if mag_sq == 0: return 0
+            return (p_v[0]*v[0] + p_v[1]*v[1]) / mag_sq
+
+        return dot_ratio(v_top, v_p), dot_ratio(v_left, v_p)
+
+    # 1. Определяем параметры старого кропа, если он был
+    has_old_crop = old_crop and 'corners' in old_crop
+    if has_old_crop:
+        oc = old_crop['corners']
+        # Вычисляем размеры картинки, на которой были нарисованы эти полигоны
+        ow = math.sqrt((oc[1]['x']-oc[0]['x'])**2 + (oc[1]['y']-oc[0]['y'])**2)
+        oh = math.sqrt((oc[3]['x']-oc[0]['x'])**2 + (oc[3]['y']-oc[0]['y'])**2)
+    
     final_regions = []
-    
     for reg in regions:
         new_points = []
         for p in reg['points']:
-            # --- Шаг 1: Восстановление на оригинале ---
-            p_rot_space_x = p['x'] + ox
-            p_rot_space_y = p['y'] + oy
+            # ШАГ 1: Получаем глобальные координаты на оригинале
+            if has_old_crop:
+                # Точка локальная -> переводим в u,v старого кропа -> в глобальные
+                u_old, v_old = p['x'] / ow, p['y'] / oh
+                gx, gy = lerp_quad(u_old, v_old, oc)
+            else:
+                # Если кропа не было, точка и так глобальная
+                gx, gy = p['x'], p['y']
+
+            # ШАГ 2: Переводим глобальные координаты в локальные нового кропа
+            # Глобальные -> в u,v нового кропа -> в пиксели нового изображения
+            u_new, v_new = get_uv(gx, gy, new_crop_params)
             
-            # ИСПРАВЛЕНО: Знак угла. 
-            # Кроп делал rotate(-o_angle). Чтобы вернуть, делаем rotate(+o_angle).
-            # rotate_point считает + как CCW.
-            # Если o_angle=5, Pillow крутил -5 (CW). Нам надо вернуть +5 (CCW).
-            # Значит передаем o_angle.
-            orig_x, orig_y = rotate_point(p_rot_space_x, p_rot_space_y, o_cx, o_cy, o_angle)
-            
-            # --- Шаг 2: Применение нового кропа ---
-            # Мы хотим координаты внутри картинки, которая будет повернута на -n_angle (CW).
-            # Значит точку надо повернуть туда же -> на -n_angle.
-            new_rot_x, new_rot_y = rotate_point(orig_x, orig_y, n_cx, n_cy, -n_angle)
-            
-            # Смещаем
-            final_x = new_rot_x - nx
-            final_y = new_rot_y - ny
-            
+            final_x = u_new * new_w
+            final_y = v_new * new_h
+
             new_points.append({'x': int(round(final_x)), 'y': int(round(final_y))})
-            
         final_regions.append({'points': new_points})
-            
+    
     return final_regions
 
-# --- Crop ---
-
 def perform_crop(filename, box):
-    if not storage.ensure_original_exists(filename):
-        return False
-
+    if not storage.ensure_original_exists(filename): return False
     src_path = os.path.join(storage.IMAGE_FOLDER, filename)
     backup_path = os.path.join(storage.ORIGINALS_FOLDER, filename)
 
     try:
+        # Загружаем текущие данные (чтобы взять старый кроп и регионы)
         json_data = storage.load_json(filename)
+        old_crop = json_data.get('crop_params')
         old_regions = json_data.get('regions', [])
-        old_crop_params = json_data.get('crop_params', None)
 
         with Image.open(backup_path) as img:
-            # ВАЖНО: Учитываем EXIF поворот (телефоны часто сохраняют перевернуто)
-            # Иначе координаты браузера и Pillow не совпадут.
             img = ImageOps.exif_transpose(img)
+            c = box['corners'] # Новые углы из редактора
+            
+            # Pillow QUAD: TL, BL, BR, TR
+            quad = [c[0]['x'], c[0]['y'], c[3]['x'], c[3]['y'], 
+                    c[2]['x'], c[2]['y'], c[1]['x'], c[1]['y']]
+            
+            def dist(p1, p2): return math.sqrt((p1['x']-p2['x'])**2 + (p1['y']-p2['y'])**2)
+            nw = int((dist(c[0], c[1]) + dist(c[3], c[2])) / 2)
+            nh = int((dist(c[0], c[3]) + dist(c[1], c[2])) / 2)
+            
+            img_cropped = img.transform((nw, nh), Image.QUAD, quad, Image.BICUBIC)
+            img_cropped.save(src_path)
 
-            img_w, img_h = img.size
+            # ПЕРЕСЧЕТ: передаем старый кроп, чтобы функция знала, как вернуть точки на оригинал
+            new_regions = recalculate_regions(old_regions, old_crop, c, nw, nh)
 
-            # Получаем параметры рамки
-            x = box['x']
-            y = box['y']
-            w = box['w']
-            h = box['h']
-            angle = box.get('angle', 0)
-
-            # Pillow Processing - используем expand=True для учета поворота
-            cx = x + w / 2.0
-            cy = y + h / 2.0
-
-            # rotate(-angle) = CW visual rotation
-            # expand=True увеличивает размер изображения, чтобы вместить весь поворот
-            # fillcolor=(0, 0, 0) устанавливает черный цвет для дополненных областей
-            rotated_img = img.rotate(-angle, center=(cx, cy), resample=Image.BICUBIC, expand=True, fillcolor=(0, 0, 0))
-
-            # Вычисляем смещение центра вращения на новом изображении
-            new_img_w, new_img_h = rotated_img.size
-            new_cx = new_img_w / 2.0
-            new_cy = new_img_h / 2.0
-
-            # Вычисляем смещение центра
-            offset_x = new_cx - cx
-            offset_y = new_cy - cy
-
-            # Углы до поворота
-            corners_before_rotation = [
-                (x, y),           # верхний левый
-                (x + w, y),       # верхний правый
-                (x + w, y + h),   # нижний правый
-                (x, y + h)        # нижний левый
-            ]
-
-            # Поворачиваем углы рамки относительно центра
-            rotated_corners = [
-                rotate_point(corner_x, corner_y, cx, cy, -angle)  # Используем противоположный угол для обратного преобразования
-                for corner_x, corner_y in corners_before_rotation
-            ]
-
-            # Смещаем углы рамки с учетом смещения центра
-            adjusted_corners = [
-                (corner[0] + offset_x, corner[1] + offset_y)
-                for corner in rotated_corners
-            ]
-
-            # Находим границы повернутой рамки
-            min_x = min(corner[0] for corner in adjusted_corners)
-            max_x = max(corner[0] for corner in adjusted_corners)
-            min_y = min(corner[1] for corner in adjusted_corners)
-            max_y = max(corner[1] for corner in adjusted_corners)
-
-            # Корректируем координаты для обрезки на повернутом изображении
-            left = min_x
-            top = min_y
-            right = max_x
-            bottom = max_y
-
-            # Обрезаем изображение
-            cropped_img = rotated_img.crop((left, top, right, bottom))
-            cropped_img.save(src_path)
-
-            # Обновляем реальные параметры для сохранения
-            real_box = {
-                'x': min_x, 'y': min_y, 'w': right - left, 'h': bottom - top,
-                'angle': 0  # Угол теперь учтен в повороте
-            }
-
-        # Пересчет
-        new_regions = recalculate_regions(old_regions, old_crop_params, real_box)
-
-        # Сохранение
-        storage.save_json({
-            'image_name': filename,
-            'regions': new_regions,
-            'crop_params': real_box,
-            'status': 'cropped'
-        })
-
+            # Обновляем JSON, сохраняя всё остальное
+            json_data['regions'] = new_regions
+            json_data['crop_params'] = box
+            json_data['status'] = 'cropped'
+            
+            storage.save_json(json_data)
         return True
     except Exception as e:
         print(f"Crop Error: {e}")
         return False
-
+    
+    
 # --- Helpers (Import/Export) ---
 
 def simplify_points(points, threshold):
@@ -886,7 +826,8 @@ def run_batch_detection_for_project(project_name, settings=None):
                 # Load existing annotation data or create new
                 annotation_data = storage.load_json(image_name)
                 annotation_data['regions'] = regions
-                annotation_data['status'] = 'cropped'  # Mark as segmented
+                if annotation_data.get('status') != 'cropped':
+                    annotation_data['status'] = 'segment'
 
                 # Save the updated annotation
                 storage.save_json(annotation_data)
