@@ -145,13 +145,6 @@ def import_zip_route():
         print(f"Error in import_zip_route: {str(e)}")
         return jsonify({'status': 'error', 'msg': str(e)}), 500
 
-@app.route('/api/export_zip')
-def export_zip_route():
-    try:
-        return send_file(logic.generate_export_zip(), as_attachment=True, download_name='export.zip')
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
 @app.route('/api/detect_lines', methods=['POST'])
 def detect_lines():
     data = request.json
@@ -309,7 +302,7 @@ def project(project_name):
             return jsonify({'status': 'error', 'msg': msg}), 400
 
 
-@app.route('/api/projects/<project_name>/images', methods=['GET', 'POST', 'DELETE'])
+@app.route('/api/projects/<project_name>/images', methods=['GET', 'DELETE'])
 def project_images(project_name):
     if request.method == 'GET':
         images = storage.get_project_images(project_name)
@@ -326,19 +319,6 @@ def project_images(project_name):
                 image_list.append({'name': img, 'status': status})
         return jsonify({'images': image_list})
 
-    elif request.method == 'POST':
-        data = request.json
-        image_name = data.get('image_name')
-
-        if not image_name:
-            return jsonify({'status': 'error', 'msg': 'Image name is required'}), 400
-
-        success, result = storage.add_image_to_project(project_name, image_name)
-        if success:
-            return jsonify({'status': 'success', 'project': result})
-        else:
-            return jsonify({'status': 'error', 'msg': result}), 400
-
     elif request.method == 'DELETE':
         data = request.json
         image_name = data.get('image_name')
@@ -351,12 +331,6 @@ def project_images(project_name):
             return jsonify({'status': 'success', 'project': result})
         else:
             return jsonify({'status': 'error', 'msg': result}), 400
-
-
-@app.route('/api/projects/<project_name>/status')
-def project_status(project_name):
-    status = storage.get_project_status(project_name)
-    return jsonify({'status': status})
 
 
 @app.route('/api/tasks', methods=['GET'])
