@@ -83,14 +83,9 @@ def save_data():
     if 'crop_params' in incoming_data:
         existing_data['crop_params'] = incoming_data['crop_params']
 
-    if storage.save_json(existing_data): 
+    if storage.save_json(existing_data):
         return jsonify({'status': 'success'})
     return jsonify({'status': 'error'}), 400
-
-@app.route('/api/upload', methods=['POST'])
-def upload():
-    count = sum(1 for f in request.files.getlist('files[]') if storage.save_image(f))
-    return jsonify({'status': 'success', 'count': count})
 
 @app.route('/api/delete', methods=['POST'])
 def delete():
