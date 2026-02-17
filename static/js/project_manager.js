@@ -709,7 +709,7 @@ class ProjectManager {
         const pathParts = window.location.pathname.split('/');
         const isProjectPage = pathParts.length >= 3 && pathParts[1] === 'project';
         if (isProjectPage) {
-            const projectName = pathParts[2];
+            const projectName = decodeURIComponent(pathParts[2]);
             formData.append('project_name', projectName);
         }
 
