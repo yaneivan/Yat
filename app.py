@@ -83,14 +83,9 @@ def save_data():
     if 'crop_params' in incoming_data:
         existing_data['crop_params'] = incoming_data['crop_params']
 
-    if storage.save_json(existing_data): 
+    if storage.save_json(existing_data):
         return jsonify({'status': 'success'})
     return jsonify({'status': 'error'}), 400
-
-@app.route('/api/upload', methods=['POST'])
-def upload():
-    count = sum(1 for f in request.files.getlist('files[]') if storage.save_image(f))
-    return jsonify({'status': 'success', 'count': count})
 
 @app.route('/api/delete', methods=['POST'])
 def delete():
@@ -144,13 +139,6 @@ def import_zip_route():
     except Exception as e:
         print(f"Error in import_zip_route: {str(e)}")
         return jsonify({'status': 'error', 'msg': str(e)}), 500
-
-@app.route('/api/export_zip')
-def export_zip_route():
-    try:
-        return send_file(logic.generate_export_zip(), as_attachment=True, download_name='export.zip')
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/detect_lines', methods=['POST'])
 def detect_lines():
@@ -309,7 +297,7 @@ def project(project_name):
             return jsonify({'status': 'error', 'msg': msg}), 400
 
 
-@app.route('/api/projects/<project_name>/images', methods=['GET', 'POST', 'DELETE'])
+@app.route('/api/projects/<project_name>/images', methods=['GET', 'DELETE'])
 def project_images(project_name):
     if request.method == 'GET':
         images = storage.get_project_images(project_name)
@@ -326,19 +314,6 @@ def project_images(project_name):
                 image_list.append({'name': img, 'status': status})
         return jsonify({'images': image_list})
 
-    elif request.method == 'POST':
-        data = request.json
-        image_name = data.get('image_name')
-
-        if not image_name:
-            return jsonify({'status': 'error', 'msg': 'Image name is required'}), 400
-
-        success, result = storage.add_image_to_project(project_name, image_name)
-        if success:
-            return jsonify({'status': 'success', 'project': result})
-        else:
-            return jsonify({'status': 'error', 'msg': result}), 400
-
     elif request.method == 'DELETE':
         data = request.json
         image_name = data.get('image_name')
@@ -351,12 +326,6 @@ def project_images(project_name):
             return jsonify({'status': 'success', 'project': result})
         else:
             return jsonify({'status': 'error', 'msg': result}), 400
-
-
-@app.route('/api/projects/<project_name>/status')
-def project_status(project_name):
-    status = storage.get_project_status(project_name)
-    return jsonify({'status': status})
 
 
 @app.route('/api/tasks', methods=['GET'])
@@ -448,6 +417,10 @@ def upload_project_images(project_name):
             filename = file.filename
             filepath = os.path.join(storage.IMAGE_FOLDER, filename)
             file.save(filepath)
+            
+            # Copy to originals folder (for re-cropping)
+            import shutil
+            shutil.copy(filepath, os.path.join(storage.ORIGINALS_FOLDER, filename))
 
             # Add image to project
             success, result = storage.add_image_to_project(project_name, filename)

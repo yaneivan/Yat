@@ -13,6 +13,7 @@ services:
     environment:
       - FLASK_APP=app.py
       - FLASK_ENV=development
+    user: "${UID:-1000}:${GID:-1000}"
     networks:
       - default
     extra_hosts:

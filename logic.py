@@ -107,7 +107,8 @@ def recalculate_regions(regions, old_crop, new_crop_params, new_w, new_h):
     return final_regions
 
 def perform_crop(filename, box):
-    if not storage.ensure_original_exists(filename): return False
+    if not storage.ensure_original_exists(filename):
+        return False
     src_path = os.path.join(storage.IMAGE_FOLDER, filename)
     backup_path = os.path.join(storage.ORIGINALS_FOLDER, filename)
 
@@ -120,15 +121,15 @@ def perform_crop(filename, box):
         with Image.open(backup_path) as img:
             img = ImageOps.exif_transpose(img)
             c = box['corners'] # Новые углы из редактора
-            
+
             # Pillow QUAD: TL, BL, BR, TR
-            quad = [c[0]['x'], c[0]['y'], c[3]['x'], c[3]['y'], 
+            quad = [c[0]['x'], c[0]['y'], c[3]['x'], c[3]['y'],
                     c[2]['x'], c[2]['y'], c[1]['x'], c[1]['y']]
-            
+
             def dist(p1, p2): return math.sqrt((p1['x']-p2['x'])**2 + (p1['y']-p2['y'])**2)
             nw = int((dist(c[0], c[1]) + dist(c[3], c[2])) / 2)
             nh = int((dist(c[0], c[3]) + dist(c[1], c[2])) / 2)
-            
+
             img_cropped = img.transform((nw, nh), Image.QUAD, quad, Image.BICUBIC)
             img_cropped.save(src_path)
 
@@ -139,7 +140,8 @@ def perform_crop(filename, box):
             json_data['regions'] = new_regions
             json_data['crop_params'] = box
             json_data['status'] = 'cropped'
-            
+            json_data['image_name'] = filename  # Добавляем image_name для сохранения
+
             storage.save_json(json_data)
         return True
     except Exception as e:

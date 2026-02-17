@@ -99,16 +99,6 @@ const ProjectAPI = {
         return await response.json();
     },
 
-    // Project Status
-    async getProjectStatus(projectName) {
-        const response = await fetch(`/api/projects/${projectName}/status`);
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-        return data.status;
-    },
-
     // Batch Processing
     async startBatchDetection(projectName, settings = {}) {
         const response = await fetch(`/api/projects/${projectName}/batch_detect`, {
