@@ -162,12 +162,13 @@ def simplify_points(points, threshold):
 
 def parse_page_xml(xml_path, simplify_val):
     regions = []
+    texts = {}
     try:
         tree = ET.parse(xml_path)
         root = tree.getroot()
         ns = {'p': root.tag.split('}')[0].strip('{')} if '}' in root.tag else {}
         prefix = 'p:' if ns else ''
-        for line in root.findall(f'.//{prefix}TextLine', ns):
+        for i, line in enumerate(root.findall(f'.//{prefix}TextLine', ns)):
             coords = line.find(f'{prefix}Coords', ns)
             if coords is not None and coords.get('points'):
                 pts = []
@@ -179,8 +180,17 @@ def parse_page_xml(xml_path, simplify_val):
                 if pts:
                     if simplify_val > 0: pts = simplify_points(pts, simplify_val)
                     regions.append({'points': pts})
+                    
+                    # Извлекаем текст из TextEquiv/Unicode
+                    text_equiv = line.find(f'{prefix}TextEquiv', ns)
+                    if text_equiv is not None:
+                        unicode_elem = text_equiv.find(f'{prefix}Unicode', ns)
+                        if unicode_elem is not None and unicode_elem.text:
+                            texts[str(i)] = unicode_elem.text
+                    else:
+                        texts[str(i)] = ''
     except Exception as e: print(f"XML Error: {e}")
-    return regions
+    return regions, texts
 
 def process_zip_import(file, simplify_val=0, project_name=None):
     """
@@ -236,10 +246,10 @@ def process_zip_import(file, simplify_val=0, project_name=None):
                     xml_cands = [os.path.splitext(src)[0]+'.xml', src+'.xml']
                     for xc in xml_cands:
                         if os.path.exists(xc):
-                            regs = parse_page_xml(xc, simplify_val)
-                            
-                            # Сохраняем аннотации в общую папку
-                            json_data = {'image_name': f, 'regions': regs}
+                            regs, texts = parse_page_xml(xc, simplify_val)
+
+                            # Сохраняем аннотации в общую папку с текстом
+                            json_data = {'image_name': f, 'regions': regs, 'texts': texts}
                             json_path = os.path.join(storage.ANNOTATION_FOLDER, os.path.splitext(f)[0] + '.json')
                             with open(json_path, 'w', encoding='utf-8') as jf:
                                 json.dump(json_data, jf, indent=4)
