@@ -10,9 +10,14 @@ services:
       - ./models:/app/models
       - ./static:/app/static
       - ./templates:/app/templates
+      - ./app.py:/app/app.py
+      - ./logic.py:/app/logic.py
+      - ./storage.py:/app/storage.py
+      - ./config.py:/app/config.py
     environment:
       - FLASK_APP=app.py
       - FLASK_ENV=development
+    command: flask run --host=0.0.0.0 --reload --debug
     user: "${UID:-1000}:${GID:-1000}"
     networks:
       - default
@@ -25,7 +30,6 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    command: python app.py
 
 networks:
   default:
