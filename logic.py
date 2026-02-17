@@ -139,7 +139,8 @@ def perform_crop(filename, box):
             json_data['regions'] = new_regions
             json_data['crop_params'] = box
             json_data['status'] = 'cropped'
-            
+            json_data['image_name'] = filename  # Добавляем image_name для сохранения
+
             storage.save_json(json_data)
         return True
     except Exception as e:

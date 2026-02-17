@@ -624,3 +624,69 @@ def test_export_project_zip(client):
     # Должен вернуть ZIP файл
     assert response.status_code == 200
     assert 'zip' in response.content_type.lower() or response.content_type == 'application/zip'
+
+
+def test_crop_image(client):
+    """
+    Тест: обрезка изображения через POST /api/crop
+    """
+    from io import BytesIO
+    from PIL import Image
+    import time
+    import os
+    from storage import ORIGINALS_FOLDER, IMAGE_FOLDER, ANNOTATION_FOLDER
+
+    # 1. Создаём проект с изображением
+    client.post('/api/projects', json={'name': 'CropProj', 'description': ''})
+
+    data = BytesIO()
+    img = Image.new('RGB', (100, 100), color='red')
+    img.save(data, format='PNG')
+    data.seek(0)
+
+    client.post(
+        '/api/projects/CropProj/upload_images',
+        data={'images': [(data, 'crop_test.png')]},
+        content_type='multipart/form-data'
+    )
+
+    # 2. Проверяем, что изображение есть в originals и images
+    print(f"Originals folder: {ORIGINALS_FOLDER}")
+    print(f"Images folder: {IMAGE_FOLDER}")
+    print(f"Original exists: {os.path.exists(os.path.join(ORIGINALS_FOLDER, 'crop_test.png'))}")
+    print(f"Image exists: {os.path.exists(os.path.join(IMAGE_FOLDER, 'crop_test.png'))}")
+
+    # 3. Отправляем запрос на обрезку (формат с corners)
+    response = client.post(
+        '/api/crop',
+        json={
+            'image_name': 'crop_test.png',
+            'box': {
+                'corners': [
+                    {'x': 10, 'y': 10},  # top-left
+                    {'x': 10, 'y': 60},  # bottom-left
+                    {'x': 60, 'y': 60},  # bottom-right
+                    {'x': 60, 'y': 10}   # top-right
+                ]
+            }
+        }
+    )
+    result = response.get_json()
+
+    assert response.status_code == 200
+    assert result['status'] == 'success'
+
+    # 4. Ждём завершения фоновой обработки (5 секунд)
+    time.sleep(5)
+
+    # 5. Проверяем аннотацию
+    response = client.get('/api/load/crop_test.png')
+    result = response.get_json()
+
+    print(f"Annotation folder: {ANNOTATION_FOLDER}")
+    print(f"Annotation file exists: {os.path.exists(os.path.join(ANNOTATION_FOLDER, 'crop_test.png.json'))}")
+    print(f"Load result: {result}")
+
+    assert response.status_code == 200
+    assert result['crop_params'] is not None
+    assert len(result['crop_params']['corners']) == 4

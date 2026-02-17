@@ -417,6 +417,10 @@ def upload_project_images(project_name):
             filename = file.filename
             filepath = os.path.join(storage.IMAGE_FOLDER, filename)
             file.save(filepath)
+            
+            # Copy to originals folder (for re-cropping)
+            import shutil
+            shutil.copy(filepath, os.path.join(storage.ORIGINALS_FOLDER, filename))
 
             # Add image to project
             success, result = storage.add_image_to_project(project_name, filename)
