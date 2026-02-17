@@ -266,56 +266,6 @@ def process_zip_import(file, simplify_val=0, project_name=None):
     # Возвращаем количество обработанных файлов и имя проекта
     return count, project_name
 
-def generate_export_zip():
-    if os.path.exists(storage.EXPORT_FOLDER): shutil.rmtree(storage.EXPORT_FOLDER)
-    os.makedirs(storage.EXPORT_FOLDER)
-    zname = f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
-    zpath = os.path.join(storage.EXPORT_FOLDER, zname)
-    images = storage.get_sorted_images()
-    if not images: raise Exception("Нет изображений")
-    manifest = []
-    with zipfile.ZipFile(zpath, 'w') as zf:
-        for idx, img in enumerate(images):
-            zf.write(os.path.join(storage.IMAGE_FOLDER, img), arcname=img)
-            json_data = storage.load_json(img)
-            xml_name = os.path.splitext(img)[0] + '.xml'
-            root = ET.Element('PcGts', xmlns="http://schema.primaresearch.org/PAGE/gts/pagecontent/2013-07-15")
-            page = ET.SubElement(root, 'Page', imageFilename=img)
-            try:
-                with Image.open(os.path.join(storage.IMAGE_FOLDER, img)) as i: w, h = i.size
-            except: w, h = 0, 0
-            page.set('imageWidth', str(w)); page.set('imageHeight', str(h))
-            tr = ET.SubElement(page, 'TextRegion', id='r1')
-            texts = json_data.get('texts', {})
-            for i, reg in enumerate(json_data.get('regions', [])):
-                pts = " ".join([f"{p['x']},{p['y']}" for p in reg['points']])
-                ln = ET.SubElement(tr, 'TextLine', id=f'l{i}')
-                ET.SubElement(ln, 'Coords', points=pts)
-                # Добавляем текст, если он есть
-                # Frontend stores text with keys '0', '1', '2' (not 'l0', 'l1', 'l2')
-                text_key = str(i)
-                if text_key in texts and texts[text_key]:
-                    text_elem = ET.SubElement(ln, 'TextEquiv')
-                    ET.SubElement(text_elem, 'Unicode').text = texts[text_key]
-            zf.writestr(xml_name, ET.tostring(root, encoding='utf-8'))
-            manifest.append({'id': f'f{idx}', 'img': img, 'xml': xml_name})
-        mets = ET.Element('mets', xmlns="http://www.loc.gov/METS/")
-        fsec = ET.SubElement(mets, 'fileSec')
-        fg_img = ET.SubElement(fsec, 'fileGrp', USE='image')
-        fg_xml = ET.SubElement(fsec, 'fileGrp', USE='transcription')
-        struct = ET.SubElement(mets, 'structMap', TYPE='physical')
-        doc = ET.SubElement(struct, 'div', TYPE='document')
-        for m in manifest:
-            fi = ET.SubElement(fg_img, 'file', ID=m['id']+'i', MIMETYPE='image/jpeg')
-            ET.SubElement(fi, 'FLocat', xmlns_xlink="http://www.w3.org/1999/xlink", href=m['img'], LOCTYPE="URL")
-            fx = ET.SubElement(fg_xml, 'file', ID=m['id']+'x', MIMETYPE='text/xml')
-            ET.SubElement(fx, 'FLocat', xmlns_xlink="http://www.w3.org/1999/xlink", href=m['xml'], LOCTYPE="URL")
-            dp = ET.SubElement(doc, 'div', TYPE='page')
-            ET.SubElement(dp, 'fptr', FILEID=m['id']+'i')
-            ET.SubElement(dp, 'fptr', FILEID=m['id']+'x')
-        zf.writestr('METS.xml', ET.tostring(mets, encoding='utf-8'))
-    return zpath
-
 def calculate_polygon_area(points):
     """
     Calculate the area of a polygon using the Shoelace formula.
