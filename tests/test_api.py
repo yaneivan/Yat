@@ -603,26 +603,41 @@ def test_export_project_zip(client):
     """
     from io import BytesIO
     from PIL import Image
-    
+    import zipfile
+
     # 1. Создаём проект с изображением
     client.post('/api/projects', json={'name': 'ExportProj', 'description': ''})
-    
+
     data = BytesIO()
     img = Image.new('RGB', (10, 10), color='blue')
     img.save(data, format='PNG')
     data.seek(0)
-    
-    client.post(
+
+    response = client.post(
         '/api/projects/ExportProj/upload_images',
         data={'images': [(data, 'export_test.png')]},
         content_type='multipart/form-data'
     )
-    
+
+    # 1.5. Сохраняем аннотацию с текстом (используем правильный endpoint /api/save)
+    # Frontend stores texts with keys '0', '1', '2' (not 'l0', 'l1', 'l2')
+    client.post('/api/save', json={
+        'image_name': 'export_test.png',
+        'regions': [{'points': [{'x': 1, 'y': 1}, {'x': 5, 'y': 1}, {'x': 5, 'y': 5}, {'x': 1, 'y': 5}]}],
+        'texts': {'0': 'Тестовый текст'}
+    })
+
     # 2. Экспортируем проект
     response = client.get('/api/projects/ExportProj/export_zip')
-    
+
     # Должен вернуть ZIP файл
     assert response.status_code == 200
+
+    # 3. Проверяем содержимое ZIP
+    with zipfile.ZipFile(BytesIO(response.data)) as zf:
+        # Проверяем, что XML содержит текст
+        xml_content = zf.read('export_test.xml').decode('utf-8')
+        assert '<Unicode>Тестовый текст</Unicode>' in xml_content
     assert 'zip' in response.content_type.lower() or response.content_type == 'application/zip'
 
 

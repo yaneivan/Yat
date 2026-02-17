@@ -286,10 +286,17 @@ def generate_export_zip():
             except: w, h = 0, 0
             page.set('imageWidth', str(w)); page.set('imageHeight', str(h))
             tr = ET.SubElement(page, 'TextRegion', id='r1')
+            texts = json_data.get('texts', {})
             for i, reg in enumerate(json_data.get('regions', [])):
                 pts = " ".join([f"{p['x']},{p['y']}" for p in reg['points']])
                 ln = ET.SubElement(tr, 'TextLine', id=f'l{i}')
                 ET.SubElement(ln, 'Coords', points=pts)
+                # Добавляем текст, если он есть
+                # Frontend stores text with keys '0', '1', '2' (not 'l0', 'l1', 'l2')
+                text_key = str(i)
+                if text_key in texts and texts[text_key]:
+                    text_elem = ET.SubElement(ln, 'TextEquiv')
+                    ET.SubElement(text_elem, 'Unicode').text = texts[text_key]
             zf.writestr(xml_name, ET.tostring(root, encoding='utf-8'))
             manifest.append({'id': f'f{idx}', 'img': img, 'xml': xml_name})
         mets = ET.Element('mets', xmlns="http://www.loc.gov/METS/")
