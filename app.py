@@ -73,15 +73,18 @@ def save_data():
 
     # 1. Загружаем то, что уже лежит на диске
     existing_data = storage.load_json(filename)
-    
+
     # 2. Обновляем поля (regions, texts и т.д.), но сохраняем crop_params
     for key in ['regions', 'texts', 'status', 'processing_params']:
         if key in incoming_data:
             existing_data[key] = incoming_data[key]
-            
+
     # Не трогаем crop_params, если они уже есть в файле, а в новых данных их нет
     if 'crop_params' in incoming_data:
         existing_data['crop_params'] = incoming_data['crop_params']
+    
+    # Сохраняем image_name из входящих данных (важно для новых аннотаций)
+    existing_data['image_name'] = filename
 
     if storage.save_json(existing_data):
         return jsonify({'status': 'success'})
@@ -486,17 +489,25 @@ def export_project_zip(project_name):
                 
                 # Add text regions and lines
                 text_region = ET.SubElement(page, 'TextRegion', id='r1')
-                
+
                 regions = annotation_data.get('regions', [])
+                texts = annotation_data.get('texts', {})
                 for i, reg in enumerate(regions):
                     points = reg.get('points', [])
                     if points:
                         # Format points as required by PAGE XML
                         pts_str = " ".join([f"{p['x']},{p['y']}" for p in points])
-                        
+
                         text_line = ET.SubElement(text_region, 'TextLine', id=f'l{i}')
                         coords = ET.SubElement(text_line, 'Coords', points=pts_str)
-                
+
+                        # Add text if available
+                        # Frontend stores text with keys '0', '1', '2' (not 'l0', 'l1', 'l2')
+                        text_key = str(i)
+                        if text_key in texts and texts[text_key]:
+                            text_elem = ET.SubElement(text_line, 'TextEquiv')
+                            ET.SubElement(text_elem, 'Unicode').text = texts[text_key]
+
                 # Write XML to archive
                 xml_content = ET.tostring(root, encoding='utf-8')
                 zipf.writestr(annotation_name, xml_content)

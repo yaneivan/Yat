@@ -603,26 +603,41 @@ def test_export_project_zip(client):
     """
     from io import BytesIO
     from PIL import Image
-    
+    import zipfile
+
     # 1. Создаём проект с изображением
     client.post('/api/projects', json={'name': 'ExportProj', 'description': ''})
-    
+
     data = BytesIO()
     img = Image.new('RGB', (10, 10), color='blue')
     img.save(data, format='PNG')
     data.seek(0)
-    
-    client.post(
+
+    response = client.post(
         '/api/projects/ExportProj/upload_images',
         data={'images': [(data, 'export_test.png')]},
         content_type='multipart/form-data'
     )
-    
+
+    # 1.5. Сохраняем аннотацию с текстом (используем правильный endpoint /api/save)
+    # Frontend stores texts with keys '0', '1', '2' (not 'l0', 'l1', 'l2')
+    client.post('/api/save', json={
+        'image_name': 'export_test.png',
+        'regions': [{'points': [{'x': 1, 'y': 1}, {'x': 5, 'y': 1}, {'x': 5, 'y': 5}, {'x': 1, 'y': 5}]}],
+        'texts': {'0': 'Тестовый текст'}
+    })
+
     # 2. Экспортируем проект
     response = client.get('/api/projects/ExportProj/export_zip')
-    
+
     # Должен вернуть ZIP файл
     assert response.status_code == 200
+
+    # 3. Проверяем содержимое ZIP
+    with zipfile.ZipFile(BytesIO(response.data)) as zf:
+        # Проверяем, что XML содержит текст
+        xml_content = zf.read('export_test.xml').decode('utf-8')
+        assert '<Unicode>Тестовый текст</Unicode>' in xml_content
     assert 'zip' in response.content_type.lower() or response.content_type == 'application/zip'
 
 
@@ -690,3 +705,248 @@ def test_crop_image(client):
     assert response.status_code == 200
     assert result['crop_params'] is not None
     assert len(result['crop_params']['corners']) == 4
+
+
+def test_export_and_import_zip(client):
+    """
+    Тест: экспорт проекта в ZIP и импорт обратно
+    """
+    from io import BytesIO
+    from PIL import Image
+    
+    # 1. Создаём проект
+    client.post('/api/projects', json={'name': 'ExportTest', 'description': 'Test export'})
+    
+    # 2. Создаём тестовое изображение
+    img_data = BytesIO()
+    img = Image.new('RGB', (100, 100), color='red')
+    img.save(img_data, format='PNG')
+    img_data.seek(0)
+    
+    # 3. Загружаем изображение
+    response = client.post(
+        '/api/projects/ExportTest/upload_images',
+        data={'images': [(img_data, 'test_export.png')]},
+        content_type='multipart/form-data'
+    )
+    assert response.status_code == 200
+    
+    # 4. Сохраняем аннотацию
+    client.post('/api/save', json={
+        'image_name': 'test_export.png',
+        'regions': [{'points': [{'x': 10, 'y': 10}, {'x': 50, 'y': 50}]}]
+    })
+    
+    # 5. Экспортируем проект
+    response = client.get('/api/projects/ExportTest/export_zip')
+    assert response.status_code == 200
+    assert response.mimetype == 'application/zip'
+    
+    # 6. Импортируем ZIP обратно (на главной странице - без project_name)
+    response = client.post(
+        '/api/import_zip',
+        data={
+            'file': (BytesIO(response.data), 'ExportTest.zip'),
+            'simplify': '5'
+        },
+        content_type='multipart/form-data'
+    )
+    result = response.get_json()
+    
+    # Импорт создаст новый проект с похожим именем
+    assert response.status_code == 200
+    assert result['status'] == 'success'
+    assert result['count'] >= 1
+
+
+def test_import_zip_to_project(client):
+    """
+    Тест: импорт ZIP в существующий проект (со страницы проекта)
+    """
+    from io import BytesIO
+    from PIL import Image
+    
+    # 1. Создаём проект
+    client.post('/api/projects', json={'name': 'ImportTarget', 'description': 'Target for import'})
+    
+    # 2. Создаём другой проект для экспорта
+    client.post('/api/projects', json={'name': 'ExportSource', 'description': 'Source for export'})
+    
+    # 3. Загружаем изображение в проект-источник
+    img_data = BytesIO()
+    img = Image.new('RGB', (100, 100), color='blue')
+    img.save(img_data, format='PNG')
+    img_data.seek(0)
+    
+    client.post(
+        '/api/projects/ExportSource/upload_images',
+        data={'images': [(img_data, 'test_import.png')]},
+        content_type='multipart/form-data'
+    )
+    
+    # 4. Экспортируем проект-источник
+    response = client.get('/api/projects/ExportSource/export_zip')
+    assert response.status_code == 200
+    
+    # 5. Импортируем ZIP в проект-цель (со страницы проекта)
+    response = client.post(
+        '/api/import_zip',
+        data={
+            'file': (BytesIO(response.data), 'ExportSource.zip'),
+            'simplify': '5',
+            'project_name': 'ImportTarget'
+        },
+        content_type='multipart/form-data'
+    )
+    result = response.get_json()
+    
+    assert response.status_code == 200
+    assert result['status'] == 'success'
+    assert result['count'] >= 1
+    assert result['project_name'] == 'ImportTarget'
+
+    # 6. Проверяем, что изображение добавлено в проект
+    response = client.get('/api/projects/ImportTarget/images')
+    result = response.get_json()
+
+    assert response.status_code == 200
+    assert len(result) >= 1
+
+
+def test_import_zip_to_project_with_cyrillic_name(client):
+    """
+    Тест: импорт ZIP в проект с кириллическим именем (со страницы проекта)
+    Проверяет корректную работу с URL-кодированием
+    """
+    from io import BytesIO
+    from PIL import Image
+    
+    # 1. Создаём проект с кириллическим именем
+    client.post('/api/projects', json={'name': 'Тест', 'description': 'Тестовый проект'})
+    
+    # 2. Создаём другой проект для экспорта
+    client.post('/api/projects', json={'name': 'ExportSource2', 'description': 'Source for export'})
+    
+    # 3. Загружаем изображение в проект-источник
+    img_data = BytesIO()
+    img = Image.new('RGB', (100, 100), color='green')
+    img.save(img_data, format='PNG')
+    img_data.seek(0)
+    
+    client.post(
+        '/api/projects/ExportSource2/upload_images',
+        data={'images': [(img_data, 'test_cyrillic.png')]},
+        content_type='multipart/form-data'
+    )
+    
+    # 4. Экспортируем проект-источник
+    response = client.get('/api/projects/ExportSource2/export_zip')
+    assert response.status_code == 200
+    
+    # 5. Импортируем ZIP в проект с кириллическим именем
+    # Эмулируем поведение фронтенда с decodeURIComponent
+    response = client.post(
+        '/api/import_zip',
+        data={
+            'file': (BytesIO(response.data), 'ExportSource2.zip'),
+            'simplify': '5',
+            'project_name': 'Тест'  # Фронтенд отправляет декодированное имя
+        },
+        content_type='multipart/form-data'
+    )
+    result = response.get_json()
+    
+    assert response.status_code == 200
+    assert result['status'] == 'success'
+    assert result['count'] >= 1
+    assert result['project_name'] == 'Тест'
+    
+    # 6. Проверяем, что изображение добавлено в проект
+    response = client.get('/api/projects/Тест/images')
+    result = response.get_json()
+
+    assert response.status_code == 200
+    assert len(result) >= 1
+
+
+def test_export_import_cycle_with_text(client):
+    """
+    Тест: полный цикл экспорт-импорт с проверкой сохранения текста
+    """
+    from io import BytesIO
+    from PIL import Image
+    import zipfile
+
+    # 1. Создаём проект
+    client.post('/api/projects', json={'name': 'CycleTest', 'description': 'Test export-import cycle'})
+
+    # 2. Создаём тестовое изображение
+    img_data = BytesIO()
+    img = Image.new('RGB', (100, 100), color='red')
+    img.save(img_data, format='PNG')
+    img_data.seek(0)
+
+    # 3. Загружаем изображение
+    response = client.post(
+        '/api/projects/CycleTest/upload_images',
+        data={'images': [(img_data, 'cycle_test.png')]},
+        content_type='multipart/form-data'
+    )
+    assert response.status_code == 200
+
+    # 4. Сохраняем аннотацию с текстом
+    test_text = 'Привет, мир! Это тестовый текст.'
+    client.post('/api/save', json={
+        'image_name': 'cycle_test.png',
+        'regions': [
+            {'points': [{'x': 10, 'y': 10}, {'x': 50, 'y': 10}, {'x': 50, 'y': 30}, {'x': 10, 'y': 30}]},
+            {'points': [{'x': 10, 'y': 40}, {'x': 50, 'y': 40}, {'x': 50, 'y': 60}, {'x': 10, 'y': 60}]}
+        ],
+        'texts': {
+            '0': test_text,
+            '1': 'Вторая строка'
+        }
+    })
+
+    # 5. Проверяем, что текст сохранился
+    response = client.get('/api/load/cycle_test.png')
+    result = response.get_json()
+    assert result['texts']['0'] == test_text
+    assert result['texts']['1'] == 'Вторая строка'
+
+    # 6. Экспортируем проект
+    response = client.get('/api/projects/CycleTest/export_zip')
+    assert response.status_code == 200
+    assert response.mimetype == 'application/zip'
+
+    # 7. Проверяем содержимое ZIP перед импортом
+    with zipfile.ZipFile(BytesIO(response.data)) as zf:
+        xml_content = zf.read('cycle_test.xml').decode('utf-8')
+        assert '<Unicode>Привет, мир! Это тестовый текст.</Unicode>' in xml_content
+        assert '<Unicode>Вторая строка</Unicode>' in xml_content
+
+    # 8. Импортируем ZIP обратно (создастся новый проект)
+    response = client.post(
+        '/api/import_zip',
+        data={
+            'file': (BytesIO(response.data), 'CycleTest.zip'),
+            'simplify': '0'
+        },
+        content_type='multipart/form-data'
+    )
+    result = response.get_json()
+    assert response.status_code == 200
+    assert result['status'] == 'success'
+    
+    # Получаем имя созданного проекта
+    imported_project_name = result['project_name']
+    assert imported_project_name.startswith('CycleTest')
+
+    # 9. Проверяем, что текст сохранился после импорта
+    response = client.get('/api/load/cycle_test.png')
+    result = response.get_json()
+    
+    assert response.status_code == 200
+    assert 'texts' in result
+    assert result['texts']['0'] == test_text, f"Expected '{test_text}', got '{result['texts'].get('0')}'"
+    assert result['texts']['1'] == 'Вторая строка', f"Expected 'Вторая строка', got '{result['texts'].get('1')}'"

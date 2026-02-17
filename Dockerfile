@@ -22,8 +22,7 @@ RUN mkdir -p /app/models
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-# Копируем остальные файлы
-COPY app.py config.py logic.py storage.py ./
+# Файлы приложения не копируем — монтируются через volume в docker-compose.yml
 
 EXPOSE 5000
 
