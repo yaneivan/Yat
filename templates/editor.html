@@ -12,18 +12,19 @@
     <button class="btn" onclick="window.location.href='/'" title="Home">🏠</button>
     {% if project %}
         <button class="btn" onclick="window.location.href='/project/{{ project }}'" title="Назад к проекту">📋 Проект</button>
-        <button class="btn" onclick="window.location.href='/cropper?image={{ filename }}&project={{ project }}'" title="Редактор обрезки">✂️ Обрезка</button>
-        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}&project={{ project }}'" title="Редактор распознавания">🔤 Распознавать</button>
+        <!-- Используем динамический переход -->
+        <button class="btn" onclick="editor.navigateTo('cropper')" title="Редактор обрезки">✂️ Обрезка</button>
+        <button class="btn" onclick="editor.navigateTo('text_editor')" title="Редактор распознавания">🔤 Распознавать</button>
     {% else %}
-        <button class="btn" onclick="window.location.href='/cropper?image={{ filename }}'" title="Редактор обрезки">✂️ Обрезка</button>
-        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}'" title="Редактор распознавания">🔤 Распознавать</button>
+        <button class="btn" onclick="editor.navigateTo('cropper')" title="Редактор обрезки">✂️ Обрезка</button>
+        <button class="btn" onclick="editor.navigateTo('text_editor')" title="Редактор распознавания">🔤 Распознавать</button>
     {% endif %}
     <div class="sep"></div>
     <button class="btn" onclick="editor.goImage(-1)">&lt;</button>
     <button class="btn" onclick="editor.goImage(1)">&gt;</button>
 
-    <!-- ИСПРАВЛЕНИЕ: Добавлен class="file-info" -->
-    <span class="file-info" style="font-size:0.9em; color:#aaa; max-width:200px; overflow:hidden; white-space:nowrap;">{{ filename }}</span>
+    <!-- Добавлен ID для обновления через JS -->
+    <span id="filename-display" class="file-info" style="font-size:0.9em; color:#aaa; max-width:200px; overflow:hidden; white-space:nowrap;">{{ filename }}</span>
 
     <div style="flex:1"></div>
     <button class="btn" id="btn-edit" onclick="editor.setMode('edit')">Выделение (V)</button>
@@ -46,8 +47,9 @@
 <script src="/static/js/api.js"></script>
 <script src="/static/js/editor.js"></script>
 <script>
-    // Инициализация
-    const editor = new HTREditor('c', "{{ filename }}");
+    // Передаем проект в редактор
+    const currentProject = "{{ project if project else '' }}";
+    const editor = new HTREditor('c', "{{ filename }}", currentProject);
 </script>
 </body>
 </html>

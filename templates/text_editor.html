@@ -172,16 +172,17 @@
         <button class="btn" onclick="window.location.href='/'" title="Home">🏠</button>
         {% if project %}
             <button class="btn" onclick="window.location.href='/project/{{ project }}'" title="Назад к проекту">📋 Проект</button>
-            <button class="btn" onclick="window.location.href='/cropper?image={{ filename }}&project={{ project }}'" title="Редактор обрезки">✂️ Обрезка</button>
-            <button class="btn" onclick="window.location.href='/editor?image={{ filename }}&project={{ project }}'" title="Редактор сегментов">📋 Сегменты</button>
+            <!-- Передаем тип инструмента строкой -->
+            <button class="btn" onclick="editor.navigateTo('cropper')" title="Редактор обрезки">✂️ Обрезка</button>
+            <button class="btn" onclick="editor.navigateTo('editor')" title="Редактор сегментов">📋 Сегменты</button>
         {% else %}
-            <button class="btn" onclick="window.location.href='/cropper?image={{ filename }}'" title="Редактор обрезки">✂️ Обрезка</button>
-            <button class="btn" onclick="window.location.href='/editor?image={{ filename }}'" title="Редактор сегментов">📋 Сегменты</button>
+            <button class="btn" onclick="editor.navigateTo('cropper')" title="Редактор обрезки">✂️ Обрезка</button>
+            <button class="btn" onclick="editor.navigateTo('editor')" title="Редактор сегментов">📋 Сегменты</button>
         {% endif %}
         <div class="sep"></div>
         <button class="btn" onclick="editor.goImage(-1)">&lt;</button>
         <button class="btn" onclick="editor.goImage(1)">&gt;</button>
-        <span class="file-info" style="font-size:0.9em; color:#aaa; max-width:200px; overflow:hidden; white-space:nowrap;">{{ filename }}</span>
+        <span id="filename-display" class="file-info" style="font-size:0.9em; color:#aaa; max-width:200px; overflow:hidden; white-space:nowrap;">{{ filename }}</span>
 
         <div style="flex:1"></div>
 
@@ -233,8 +234,17 @@
     <script src="/static/js/api.js"></script>
     <script src="/static/js/text_editor.js"></script>
     <script>
-        // Инициализация
-        const editor = new TextEditor('left-canvas', 'right-canvas', "{{ filename }}");
+        // Передаем также имя проекта, если оно есть, чтобы JS мог формировать ссылки
+        // Используем '{{ project }}' или null/пустую строку
+        const currentProject = "{{ project if project else '' }}";
+        
+        // Инициализация с безопасной передачей имени файла
+        const editor = new TextEditor(
+            'left-canvas', 
+            'right-canvas', 
+            "{{ filename }}", 
+            currentProject
+        );
     </script>
 </body>
 </html>

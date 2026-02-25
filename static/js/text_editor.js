@@ -2,8 +2,9 @@
  * Text Editor Class - Implements dual-panel interface for text input
  */
 class TextEditor {
-    constructor(leftCanvasId, rightCanvasId, filename, snapDist = 15) {
+    constructor(leftCanvasId, rightCanvasId, filename, project = null, snapDist = 15) {
         this.filename = filename;
+        this.project = project; 
         this.snapDist = snapDist;
         this.currentRegionIndex = -1;
         this.regions = [];
@@ -60,6 +61,15 @@ class TextEditor {
             this.rightCanvas.setWidth(panelWidth);
             this.rightCanvas.setHeight(panelHeight);
         }
+    }
+
+    // Метод для перехода к другим инструментам с сохранением контекста
+    navigateTo(toolName) {
+        let url = `/${toolName}?image=${this.filename}`;
+        if (this.project) {
+            url += `&project=${this.project}`;
+        }
+        window.location.href = url;
     }
 
     // Configure polygon for both canvases
@@ -963,10 +973,27 @@ class TextEditor {
     goImage(dir) {
         const idx = this.imageList.indexOf(this.filename);
         if (idx === -1) return;
+        
+        // Вычисляем новое имя файла
         const newFilename = this.imageList[(idx + dir + this.imageList.length) % this.imageList.length];
-        const newUrl = `${window.location.pathname}?image=${newFilename}`;
-        history.pushState({ filename: newFilename }, '', newUrl);
+        
+        // 1. Обновляем переменную класса
         this.filename = newFilename;
+        
+        // 2. Обновляем текст в тулбаре (визуально)
+        const display = document.getElementById('filename-display');
+        if (display) display.textContent = newFilename;
+
+        // 3. Формируем URL, сохраняя параметр project, если он есть
+        let newUrl = `${window.location.pathname}?image=${newFilename}`;
+        if (this.project) {
+            newUrl += `&project=${this.project}`;
+        }
+        
+        // 4. Обновляем адресную строку без перезагрузки
+        history.pushState({ filename: newFilename }, '', newUrl);
+        
+        // 5. Загружаем новые данные
         this.loadImageAndData();
     }
 

@@ -84,8 +84,9 @@ class HistoryManager {
  * Editor Class
  */
 class HTREditor {
-    constructor(canvasId, filename, snapDist = 15) {
+    constructor(canvasId, filename, project = null, snapDist = 15) {
         this.filename = filename;
+        this.project = project; 
         this.snapDist = snapDist;
         this.canvas = new fabric.Canvas(canvasId, {
             fireRightClick: true, 
@@ -196,6 +197,14 @@ class HTREditor {
         }
     }
 
+    navigateTo(toolName) {
+        let url = `/${toolName}?image=${this.filename}`;
+        if (this.project) {
+            url += `&project=${this.project}`;
+        }
+        window.location.href = url;
+    }
+
     preloadNeighbors() {
         const idx = this.imageList.indexOf(this.filename);
         if (idx === -1) return;
@@ -209,10 +218,26 @@ class HTREditor {
     goImage(dir) {
         const idx = this.imageList.indexOf(this.filename);
         if (idx === -1) return;
+        
         const newFilename = this.imageList[(idx + dir + this.imageList.length) % this.imageList.length];
-        const newUrl = `${window.location.pathname}?image=${newFilename}`;
-        history.pushState({ filename: newFilename }, '', newUrl);
+        
+        // 1. Обновляем имя в классе
         this.filename = newFilename;
+        
+        // 2. Обновляем визуальный заголовок по ID
+        const display = document.getElementById('filename-display');
+        if (display) display.textContent = newFilename;
+
+        // 3. Формируем новый URL с учетом проекта
+        let newUrl = `${window.location.pathname}?image=${newFilename}`;
+        if (this.project) {
+            newUrl += `&project=${this.project}`;
+        }
+        
+        // 4. Пишем в историю браузера
+        history.pushState({ filename: newFilename }, '', newUrl);
+        
+        // 5. Грузим данные
         this.loadImageAndData();
     }
 
