@@ -971,6 +971,11 @@ class TextEditor {
     }
 
     goImage(dir) {
+        if (this.autoSaveTimeout) {
+            clearTimeout(this.autoSaveTimeout);
+            this.saveData(); // Сохраняем введенный текст немедленно
+        }
+        
         const idx = this.imageList.indexOf(this.filename);
         if (idx === -1) return;
         

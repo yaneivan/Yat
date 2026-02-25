@@ -216,6 +216,11 @@ class HTREditor {
     }
 
     goImage(dir) {
+        if (this.autoSaveTimer) {
+            clearTimeout(this.autoSaveTimer);
+            this.saveData(); // Сохраняем текущие правки немедленно
+        }
+
         const idx = this.imageList.indexOf(this.filename);
         if (idx === -1) return;
         
