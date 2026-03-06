@@ -932,7 +932,7 @@
             }
             
             const selectedImages = Array.from(selectedCheckboxes).map(cb => cb.dataset.image);
-            if (!confirm(`Удалить ${selectedImages.length} изображений из проекта?`)) {
+            if (!confirm(`Удалить ${selectedImages.length} изображений? Файлы будут удалены безвозвратно.`)) {
                 return;
             }
             
@@ -946,17 +946,20 @@
                     const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/images`, {
                         method: 'DELETE',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({image_name: imageName})
+                        body: JSON.stringify({
+                            image_name: imageName,
+                            delete_file: true  // Полное удаление файлов
+                        })
                     });
-                    
+
                     const result = await response.json();
-                    
+
                     if (result.status !== 'success') {
                         showNotification(`Ошибка при удалении ${imageName}: ${result.msg}`, 'error');
                         return;
                     }
                 }
-                
+
                 showNotification(`Успешно удалено ${imageNames.length} изображений`, 'success');
                 // Reload the page to reflect changes
                 location.reload();

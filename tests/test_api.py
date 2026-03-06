@@ -315,42 +315,47 @@ def test_get_task_by_id(client):
 
 def test_delete_image(client):
     """
-    Тест: удаление изображения через POST /api/delete
+    Тест: удаление изображения через DELETE /api/projects/<name>/images
     """
     from io import BytesIO
     from PIL import Image
-    
+
     # 1. Создаём проект и загружаем изображение
     client.post('/api/projects', json={'name': 'DeleteProj', 'description': ''})
-    
+
     data = BytesIO()
     img = Image.new('RGB', (1, 1), color='yellow')
     img.save(data, format='PNG')
     data.seek(0)
-    
+
     client.post(
         '/api/projects/DeleteProj/upload_images',
         data={'images': [(data, 'to_delete.png')]},
         content_type='multipart/form-data'
     )
-    
+
     # 2. Проверяем, что изображение есть в images_list
     response = client.get('/api/images_list')
     result = response.get_json()
     assert 'to_delete.png' in result
-    
-    # 3. Удаляем изображение (передаём filenames массивом)
-    response = client.post(
-        '/api/delete',
-        json={'filenames': ['to_delete.png']}
+
+    # 3. Удаляем изображение из проекта (с удалением файлов)
+    response = client.delete(
+        '/api/projects/DeleteProj/images',
+        json={'image_name': 'to_delete.png', 'delete_file': True}
     )
     result = response.get_json()
-    
+
     assert response.status_code == 200
     assert result['status'] == 'success'
-    assert result['deleted'] == 1
+
+    # 4. Проверяем, что изображение удалено из проекта
+    response = client.get('/api/projects/DeleteProj/images')
+    result = response.get_json()
+    image_names = [img['name'] for img in result['images']]
+    assert 'to_delete.png' not in image_names
     
-    # 4. Проверяем, что изображение удалено
+    # 5. Проверяем что файл удалён
     response = client.get('/api/images_list')
     result = response.get_json()
     assert 'to_delete.png' not in result

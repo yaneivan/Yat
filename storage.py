@@ -24,11 +24,15 @@ def get_sorted_images():
     files.sort()
     return files
 
+
 def get_images_with_status():
+    """Get all images with their status using annotation_service"""
+    from services.annotation_service import annotation_service
+    
     files = get_sorted_images()
     result = []
     for f in files:
-        status = get_image_status(f)
+        status = annotation_service.get_status(f)
         result.append({'name': f, 'status': status})
     return result
 
@@ -41,16 +45,6 @@ def save_image(file_storage):
         return True
     return False
 
-def delete_file_set(filenames):
-    deleted = 0
-    for fname in filenames:
-        p1 = os.path.join(IMAGE_FOLDER, fname)
-        if os.path.exists(p1): os.remove(p1); deleted += 1
-        p2 = os.path.join(ANNOTATION_FOLDER, os.path.splitext(fname)[0] + '.json')
-        if os.path.exists(p2): os.remove(p2)
-        p3 = os.path.join(ORIGINALS_FOLDER, fname)
-        if os.path.exists(p3): os.remove(p3)
-    return deleted
 
 def load_json(filename):
     name = os.path.splitext(filename)[0] + '.json'
@@ -148,84 +142,9 @@ def get_project_images(project_name):
 
     with open(project_json_path, 'r', encoding='utf-8') as f:
         project_data = json.load(f)
-        return project_data.get('images', [])
-
-
-def add_image_to_project(project_name, image_name):
-    """Add an image to a project"""
-    # Sanitize project name to match directory name
-    sanitized_name = re.sub(r'[<>:"/\\|?*]', '_', project_name)
-    project_path = os.path.join(PROJECTS_FOLDER, sanitized_name)
-    project_json_path = os.path.join(project_path, 'project.json')
-
-    if not os.path.exists(project_json_path):
-        return False, "Project does not exist"
-
-    with open(project_json_path, 'r', encoding='utf-8') as f:
-        project_data = json.load(f)
-
-    # Check if image is already in the project
-    if image_name in project_data['images']:
-        return False, "Image already in project"
-
-    # Add image to project
-    project_data['images'].append(image_name)
-
-    with open(project_json_path, 'w', encoding='utf-8') as f:
-        json.dump(project_data, f, indent=4, ensure_ascii=False)
-
-    return True, project_data
-
-
-def is_image_used_in_other_projects(current_project_name, image_name):
-    """Check if an image is used in any other project besides the current one"""
-    projects = get_projects_list()
-    for project in projects:
-        if project['name'] != current_project_name and image_name in project.get('images', []):
-            return True
-    return False
-
-
-def remove_image_from_project(project_name, image_name):
-    """Remove an image from a project"""
-    # Sanitize project name to match directory name
-    sanitized_name = re.sub(r'[<>:"/\\|?*]', '_', project_name)
-    project_path = os.path.join(PROJECTS_FOLDER, sanitized_name)
-    project_json_path = os.path.join(project_path, 'project.json')
-
-    if not os.path.exists(project_json_path):
-        return False, "Project does not exist"
-
-    with open(project_json_path, 'r', encoding='utf-8') as f:
-        project_data = json.load(f)
-
-    # Remove image from project
-    # Check if image_name exists in project_data['images'] considering the new format (dict with 'name' field)
-    image_found = False
-    for img in project_data['images']:
-        if isinstance(img, dict) and img.get('name') == image_name:
-            project_data['images'].remove(img)
-            image_found = True
-            break
-        elif isinstance(img, str) and img == image_name:
-            project_data['images'].remove(img)
-            image_found = True
-            break
-
-    if image_found:
-        with open(project_json_path, 'w', encoding='utf-8') as f:
-            json.dump(project_data, f, indent=4, ensure_ascii=False)
-
-        # Check if image is used in any other project
-        if not is_image_used_in_other_projects(project_name, image_name):
-            # If not used in other projects, delete the image completely
-            deleted_count = delete_file_set([image_name])
-            if deleted_count > 0:
-                print(f"Deleted image file and annotation for {image_name}")
-
-        return True, project_data
-
-    return False, "Image not in project"
+        images = project_data.get('images', [])
+        # Возвращаем только имена файлов (строки) для консистентности
+        return [img['name'] if isinstance(img, dict) else img for img in images]
 
 
 def delete_project(project_name):
@@ -240,42 +159,3 @@ def delete_project(project_name):
     # Remove the entire project directory
     shutil.rmtree(project_path)
     return True, "Project deleted successfully"
-
-
-def get_image_status(image_name):
-    """Get the status of a single image"""
-    json_path = os.path.join(ANNOTATION_FOLDER, os.path.splitext(image_name)[0] + '.json')
-    status = 'crop'  # Default status is crop (needs to be cropped)
-    if os.path.exists(json_path):
-        with open(json_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            # If there are regions, the image has been segmented
-            if data.get('regions'):
-                status = 'segment'
-            # If there's a crop status, the image has been cropped but not yet segmented
-            elif data.get('status') == 'cropped':
-                status = 'cropped'
-            # If there's a texted status, the image has been fully processed with text
-            elif data.get('status') == 'texted':
-                status = 'texted'
-    return status
-
-
-def get_project_status(project_name):
-    """Get the status of a project based on its images"""
-    images = get_project_images(project_name)
-    if not images:
-        return 'empty'
-
-    # Count how many images have annotations
-    annotated_count = 0
-    for image_name in images:
-        if get_image_status(image_name) in ['cropped', 'segment', 'texted']:
-            annotated_count += 1
-
-    if annotated_count == 0:
-        return 'crop'
-    elif annotated_count == len(images):
-        return 'segment'
-    else:
-        return 'partial'
