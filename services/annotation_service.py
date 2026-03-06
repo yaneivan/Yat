@@ -80,24 +80,35 @@ class AnnotationService:
             Annotation dictionary with regions, texts, crop_params, etc.
         """
         validated_filename = self._validate_filename(filename)
-        
+
         session, annotation_repo, image_repo = self._get_session()
         try:
             # Find image by filename
             image = image_repo.get_by_filename(validated_filename)
             if not image:
-                return {'regions': [], 'texts': {}, 'image_name': validated_filename}
-            
+                return {
+                    'regions': [],
+                    'texts': {},
+                    'image_name': validated_filename,
+                    'crop_params': None
+                }
+
             # Find annotation
             annotation = annotation_repo.get_by_image(image.id)
             if not annotation:
-                return {'regions': [], 'texts': {}, 'image_name': validated_filename}
-            
+                return {
+                    'regions': [],
+                    'texts': {},
+                    'image_name': validated_filename,
+                    'crop_params': image.crop_params,
+                    'status': image.status
+                }
+
             # Convert to old format for compatibility
             polygons = annotation.polygons or []
             regions = [p.get('points', []) for p in polygons]
             texts = {str(i): p.get('text', '') for i, p in enumerate(polygons)}
-            
+
             return {
                 'regions': regions,
                 'texts': texts,
@@ -121,38 +132,44 @@ class AnnotationService:
             True if saved successfully, False otherwise
         """
         validated_filename = self._validate_filename(filename)
-        
+
         session, annotation_repo, image_repo = self._get_session()
         try:
             # Find image
             image = image_repo.get_by_filename(validated_filename)
             if not image:
                 return False
-            
+
+            # Update image fields (crop_params, status)
+            if 'crop_params' in data:
+                image_repo.update(image, crop_params=data['crop_params'])
+            if 'status' in data:
+                image_repo.update(image, status=data['status'])
+
             # Find or create annotation
             annotation = annotation_repo.get_by_image(image.id)
-            
+
             # Convert regions and texts to polygons format
             regions = data.get('regions', [])
             texts = data.get('texts', {})
             polygons = []
-            
+
             for i, region in enumerate(regions):
                 polygon = {
                     'points': region,
                     'text': texts.get(str(i), texts.get(i, ''))
                 }
                 polygons.append(polygon)
-            
+
             # Also accept polygons directly
             if 'polygons' in data:
                 polygons = data['polygons']
-            
+
             if annotation:
                 annotation_repo.update(annotation, polygons=polygons)
             else:
                 annotation_repo.create(image_id=image.id, polygons=polygons)
-            
+
             return True
         finally:
             session.close()

@@ -11,6 +11,7 @@ from unittest.mock import patch
 # Импортируем Flask приложение и storage
 from app import app
 import storage
+from database.session import engine, Base
 
 
 @pytest.fixture
@@ -24,24 +25,28 @@ def temp_storage():
     original_images = storage.IMAGE_FOLDER
     original_annotations = storage.ANNOTATION_FOLDER
     original_originals = storage.ORIGINALS_FOLDER
-    
+
     # Создаём временную директорию
     tmpdir = tempfile.mkdtemp()
-    
+
     # Подменяем пути на временные
     storage.PROJECTS_FOLDER = os.path.join(tmpdir, 'projects')
     storage.IMAGE_FOLDER = os.path.join(tmpdir, 'images')
     storage.ANNOTATION_FOLDER = os.path.join(tmpdir, 'annotations')
     storage.ORIGINALS_FOLDER = os.path.join(tmpdir, 'originals')
-    
+
     # Создаём директории
     os.makedirs(storage.PROJECTS_FOLDER)
     os.makedirs(storage.IMAGE_FOLDER)
     os.makedirs(storage.ANNOTATION_FOLDER)
     os.makedirs(storage.ORIGINALS_FOLDER)
-    
+
+    # Пересоздаём БД для каждого теста
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+
     yield tmpdir
-    
+
     # Восстанавливаем оригинальные пути и удаляем временную папку
     storage.PROJECTS_FOLDER = original_projects
     storage.IMAGE_FOLDER = original_images
@@ -135,9 +140,9 @@ def test_upload_image_to_project(client):
     # 4. Проверяем, что изображение появилось в проекте
     response = client.get('/api/projects/ImageProject/images')
     result = response.get_json()
-    
+
     assert response.status_code == 200
-    image_names = [img['name'] for img in result['images']]
+    image_names = [img['filename'] for img in result['images']]
     assert 'test_image.png' in image_names
 
 
@@ -164,23 +169,23 @@ def test_remove_image_from_project(client):
     # 2. Проверяем, что изображение есть
     response = client.get('/api/projects/RemoveProj/images')
     result = response.get_json()
-    image_names = [img['name'] for img in result['images']]
+    image_names = [img['filename'] for img in result['images']]
     assert 'to_remove.png' in image_names
-    
+
     # 3. Удаляем изображение из проекта
     response = client.delete(
         '/api/projects/RemoveProj/images',
         json={'image_name': 'to_remove.png'}
     )
     result = response.get_json()
-    
+
     assert response.status_code == 200
     assert result['status'] == 'success'
 
     # 4. Проверяем, что изображение удалено из проекта
     response = client.get('/api/projects/RemoveProj/images')
     result = response.get_json()
-    image_names = [img['name'] for img in result['images']]
+    image_names = [img['filename'] for img in result['images']]
     assert 'to_remove.png' not in image_names
 
 
@@ -352,9 +357,9 @@ def test_delete_image(client):
     # 4. Проверяем, что изображение удалено из проекта
     response = client.get('/api/projects/DeleteProj/images')
     result = response.get_json()
-    image_names = [img['name'] for img in result['images']]
+    image_names = [img['filename'] for img in result['images']]
     assert 'to_delete.png' not in image_names
-    
+
     # 5. Проверяем что файл удалён
     response = client.get('/api/images_list')
     result = response.get_json()

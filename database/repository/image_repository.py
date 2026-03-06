@@ -43,12 +43,17 @@ class ImageRepository:
         """Get image by filename."""
         stmt = select(Image).where(Image.filename == filename)
         return self.session.execute(stmt).scalar_one_or_none()
-    
+
     def get_by_project(self, project_id: int) -> List[Image]:
         """Get all images in a project."""
         stmt = select(Image).where(Image.project_id == project_id).order_by(Image.created_at)
         return self.session.execute(stmt).scalars().all()
-    
+
+    def get_all(self, skip: int = 0, limit: int = 1000) -> List[Image]:
+        """Get all images."""
+        stmt = select(Image).offset(skip).limit(limit).order_by(Image.created_at)
+        return self.session.execute(stmt).scalars().all()
+
     def get_by_status(self, status: str) -> List[Image]:
         """Get all images with a specific status."""
         stmt = select(Image).where(Image.status == status)

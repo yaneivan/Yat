@@ -24,9 +24,11 @@ from services import (
 # Import database
 from database.session import init_db
 
-# Initialize database
-init_db()
-print("Database initialized")
+# Initialize database only if not running tests
+import sys
+if 'pytest' not in sys.modules:
+    init_db()
+    print("Database initialized")
 
 # Initialize AI models at startup
 if ai_service.is_trocr_available():
