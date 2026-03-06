@@ -5,8 +5,10 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "alembic>=1.18.4",
     "flask>=3.1.2",
     "pillow>=12.1.1",
+    "sqlalchemy>=2.0.48",
     "torch>=2.10.0",
     "transformers>=5.1.0",
     "ultralytics>=8.4.14",

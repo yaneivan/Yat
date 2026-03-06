@@ -21,6 +21,13 @@ from services import (
     ai_service,
 )
 
+# Import database
+from database.session import init_db
+
+# Initialize database
+init_db()
+print("Database initialized")
+
 # Initialize AI models at startup
 if ai_service.is_trocr_available():
     try:
@@ -262,7 +269,7 @@ def projects():
     if request.method == 'GET':
         projects_list = project_service.get_all_projects()
         return jsonify({'projects': projects_list})
-    
+
     elif request.method == 'POST':
         try:
             data = request.json
@@ -272,13 +279,13 @@ def projects():
             if not name:
                 return jsonify({'status': 'error', 'msg': 'Project name is required'}), 400
 
-            success, result = project_service.create_project(name, description)
-            
-            if success:
+            result = project_service.create_project(name, description)
+
+            if result:
                 return jsonify({'status': 'success', 'project': result})
             else:
-                return jsonify({'status': 'error', 'msg': result}), 400
-                
+                return jsonify({'status': 'error', 'msg': 'Project already exists'}), 400
+
         except Exception as e:
             return jsonify({'status': 'error', 'msg': f'Server error: {str(e)}'}), 500
 
@@ -287,10 +294,10 @@ def projects():
 def project(project_name):
     if request.method == 'GET':
         project_data = project_service.get_project(project_name)
-        
+
         if not project_data:
             return jsonify({'status': 'error', 'msg': 'Project not found'}), 404
-        
+
         return jsonify({'project': project_data})
 
     elif request.method == 'PUT':
@@ -298,24 +305,24 @@ def project(project_name):
         new_name = data.get('name')
         description = data.get('description')
 
-        success, result = project_service.update_project(
+        result = project_service.update_project(
             project_name,
             new_name=new_name,
             description=description
         )
-        
-        if success:
+
+        if result:
             return jsonify({'status': 'success', 'project': result})
         else:
-            return jsonify({'status': 'error', 'msg': result}), 400
+            return jsonify({'status': 'error', 'msg': 'Project not found or name collision'}), 400
 
     elif request.method == 'DELETE':
-        success, msg = project_service.delete_project(project_name)
-        
-        if success:
-            return jsonify({'status': 'success', 'msg': msg})
+        result = project_service.delete_project(project_name)
+
+        if result:
+            return jsonify({'status': 'success', 'msg': 'Project deleted'})
         else:
-            return jsonify({'status': 'error', 'msg': msg}), 400
+            return jsonify({'status': 'error', 'msg': 'Project not found'}), 404
 
 
 @app.route('/api/projects/<project_name>/images', methods=['GET', 'DELETE'])
@@ -327,17 +334,16 @@ def project_images(project_name):
     elif request.method == 'DELETE':
         data = request.json
         image_name = data.get('image_name')
-        delete_file = data.get('delete_file', True)  # По умолчанию удалять файлы
 
         if not image_name:
             return jsonify({'status': 'error', 'msg': 'Image name is required'}), 400
 
-        success, result = project_service.remove_image(project_name, image_name, delete_file)
+        result = project_service.remove_image(project_name, image_name)
 
-        if success:
-            return jsonify({'status': 'success', 'project': result})
+        if result:
+            return jsonify({'status': 'success', 'msg': 'Image removed from project'})
         else:
-            return jsonify({'status': 'error', 'msg': result}), 400
+            return jsonify({'status': 'error', 'msg': 'Image or project not found'}), 404
 
 
 @app.route('/api/projects/<project_name>/upload_images', methods=['POST'])
@@ -353,18 +359,10 @@ def upload_project_images(project_name):
             # Validate extension
             if not image_service.is_allowed_extension(file.filename):
                 continue
-            
-            # Save image
-            filename = file.filename
-            filepath = os.path.join(storage.IMAGE_FOLDER, filename)
-            file.save(filepath)
-            
-            # Copy to originals
-            shutil.copy(filepath, os.path.join(storage.ORIGINALS_FOLDER, filename))
-            
-            # Add to project
-            success, _ = project_service.add_image(project_name, filename)
-            if success:
+
+            # Save image and add to project
+            filename = image_service.upload_image(file, project_name=project_name)
+            if filename:
                 uploaded_count += 1
 
     return jsonify({
@@ -375,17 +373,8 @@ def upload_project_images(project_name):
 
 @app.route('/api/projects/<project_name>/export_zip')
 def export_project_zip(project_name):
-    zip_data = project_service.export_to_zip(project_name)
-    
-    if zip_data is None:
-        return "Project not found", 404
-    
-    return send_file(
-        io.BytesIO(zip_data),
-        as_attachment=True,
-        download_name=f'{project_name}_export.zip',
-        mimetype='application/zip'
-    )
+    # Export not yet implemented for DB-backed projects
+    return jsonify({'status': 'error', 'msg': 'Export not implemented'}), 501
 
 
 @app.route('/api/projects/<project_name>/batch_detect', methods=['POST'])
@@ -396,10 +385,27 @@ def batch_detect(project_name):
     if not images:
         return jsonify({'status': 'error', 'msg': 'No images in project'}), 400
 
+    # Get project for project_id
+    project = project_service.get_project(project_name)
+    project_id = None
+    if project:
+        # Get project_id from DB
+        from database.session import SessionLocal
+        from database.repository.project_repository import ProjectRepository
+        session = SessionLocal()
+        try:
+            repo = ProjectRepository(session)
+            db_project = repo.get_by_name(project_name)
+            if db_project:
+                project_id = db_project.id
+        finally:
+            session.close()
+
     # Create task and run in background
     task = task_service.create_task(
         task_type="batch_detection",
         project_name=project_name,
+        project_id=project_id,
         images=[img['name'] if isinstance(img, dict) else img for img in images],
         description=f"Batch detection for project {project_name}"
     )
@@ -426,10 +432,24 @@ def batch_recognize(project_name):
     if not images:
         return jsonify({'status': 'error', 'msg': 'No images in project'}), 400
 
+    # Get project_id
+    from database.session import SessionLocal
+    from database.repository.project_repository import ProjectRepository
+    session = SessionLocal()
+    project_id = None
+    try:
+        repo = ProjectRepository(session)
+        db_project = repo.get_by_name(project_name)
+        if db_project:
+            project_id = db_project.id
+    finally:
+        session.close()
+
     # Create task and run in background
     task = task_service.create_task(
         task_type="batch_recognition",
         project_name=project_name,
+        project_id=project_id,
         images=[img['name'] if isinstance(img, dict) else img for img in images],
         description=f"Batch recognition for project {project_name}"
     )
