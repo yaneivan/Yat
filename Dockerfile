@@ -1,4 +1,7 @@
-FROM pytorch/pytorch:2.0.0-cuda11.7-cudnn8-devel
+# Dockerfile для Yat HTR Annotation Tool
+# Использует uv для управления зависимостями и CUDA 12.x
+
+FROM pytorch/pytorch:2.4.0-cuda12.4-cudnn9-devel
 
 WORKDIR /app
 
@@ -10,20 +13,25 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender-dev \
     libgomp1 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Установка зависимостей
-RUN pip install --no-cache-dir transformers==4.44.0 numpy==1.24.3 ultralytics
+# Установка uv (Python package manager)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
+# Копируем файлы зависимостей
+COPY pyproject.toml uv.lock ./
+
+# Устанавливаем зависимости через uv
+RUN uv sync --frozen
 
 # Создаем папку для моделей
 RUN mkdir -p /app/models
 
-# Копируем и устанавливаем зависимости
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-# Файлы приложения не копируем — монтируются через volume в docker-compose.yml
+# Файлы приложения не копируются — монтируются через volume в docker-compose.yml
+# Это позволяет разрабатывать без пересборки контейнера
 
 EXPOSE 5000
 
-CMD ["python", "app.py"]
+# Используем uv для запуска
+CMD ["uv", "run", "python", "app.py"]

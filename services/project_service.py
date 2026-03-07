@@ -17,6 +17,10 @@ from database.session import SessionLocal
 from database.repository.project_repository import ProjectRepository
 from database.repository.image_repository import ImageRepository
 
+# Import services for export functionality
+from services.image_service import image_service
+from services.annotation_service import annotation_service
+
 
 class ProjectService:
     """
@@ -320,14 +324,108 @@ class ProjectService:
             image = image_repo.get_by_filename(filename)
             if not image:
                 return []
-            
+
             project = project_repo.get_by_id(image.project_id)
             if not project:
                 return []
-            
+
             return [project.name]
         finally:
             session.close()
+
+    def export_to_zip(self, project_name: str) -> Optional[bytes]:
+        """
+        Export project to ZIP archive (METS + PageXML format).
+
+        Args:
+            project_name: Project name
+
+        Returns:
+            ZIP file bytes or None if export failed
+        """
+        import zipfile
+        import io
+        import xml.etree.ElementTree as ET
+        from PIL import Image
+
+        project_data = self.get_project(project_name)
+
+        if not project_data:
+            return None
+
+        images = self.get_images(project_name)
+
+        memory_file = io.BytesIO()
+
+        try:
+            with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for image_item in images:
+                    image_name = image_item['filename']
+
+                    image_path = image_service.get_image_path(image_name)
+
+                    if not os.path.exists(image_path):
+                        continue
+
+                    # Add image to zip
+                    zipf.write(image_path, image_name)
+
+                    # Create PAGE XML annotation
+                    annotation_name = os.path.splitext(image_name)[0] + '.xml'
+
+                    annotation_data = annotation_service.get_annotation(image_name)
+
+                    # Create PAGE XML structure
+                    root = ET.Element(
+                        'PcGts',
+                        xmlns="http://schema.primaresearch.org/PAGE/gts/pagecontent/2013-07-15"
+                    )
+                    page = ET.SubElement(root, 'Page', imageFilename=image_name)
+
+                    # Get image dimensions
+                    try:
+                        with Image.open(image_path) as img:
+                            w, h = img.size
+                    except:
+                        w, h = 0, 0
+
+                    page.set('imageWidth', str(w))
+                    page.set('imageHeight', str(h))
+
+                    # Add text regions and lines
+                    text_region = ET.SubElement(page, 'TextRegion', id='r1')
+
+                    # regions может быть в формате {points: [...]} или [...]
+                    regions = annotation_data.get('regions', [])
+                    texts = annotation_data.get('texts', {})
+
+                    for i, reg in enumerate(regions):
+                        # Извлекаем points из {points: [...]} или используем напрямую
+                        points = reg.get('points', reg) if isinstance(reg, dict) else reg
+                        if points:
+                            pts_str = " ".join([f"{p['x']},{p['y']}" for p in points])
+
+                            text_line = ET.SubElement(text_region, 'TextLine', id=f'l{i}')
+                            ET.SubElement(text_line, 'Coords', points=pts_str)
+
+                            # Add text if available
+                            text_key = str(i)
+                            if text_key in texts and texts[text_key]:
+                                text_equiv = ET.SubElement(text_line, 'TextEquiv')
+                                ET.SubElement(text_equiv, 'Unicode').text = texts[text_key]
+
+                    # Write XML to archive
+                    xml_content = ET.tostring(root, encoding='utf-8')
+                    zipf.writestr(annotation_name, xml_content)
+
+            memory_file.seek(0)
+            return memory_file.getvalue()
+
+        except Exception as e:
+            print(f"ProjectService.export_to_zip error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
 
 # Global project service instance

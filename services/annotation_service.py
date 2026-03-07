@@ -106,7 +106,8 @@ class AnnotationService:
 
             # Convert to old format for compatibility
             polygons = annotation.polygons or []
-            regions = [p.get('points', []) for p in polygons]
+            # Frontend ожидает {points: [...]}, а не просто [...]
+            regions = [{'points': p.get('points', [])} for p in polygons]
             texts = {str(i): p.get('text', '') for i, p in enumerate(polygons)}
 
             return {
@@ -155,20 +156,22 @@ class AnnotationService:
             polygons = []
 
             for i, region in enumerate(regions):
+                # Frontend отправляет {points: [...]}, извлекаем points
+                points = region['points']
                 polygon = {
-                    'points': region,
+                    'points': points,
                     'text': texts.get(str(i), texts.get(i, ''))
                 }
                 polygons.append(polygon)
 
-            # Also accept polygons directly
-            if 'polygons' in data:
-                polygons = data['polygons']
+            print(f"[AnnotationService] Saving {len(polygons)} polygons for {filename}")
 
             if annotation:
                 annotation_repo.update(annotation, polygons=polygons)
+                print(f"[AnnotationService] Updated existing annotation")
             else:
                 annotation_repo.create(image_id=image.id, polygons=polygons)
+                print(f"[AnnotationService] Created new annotation")
 
             return True
         finally:

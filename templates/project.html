@@ -747,16 +747,16 @@
         <div class="image-grid" id="imageGrid">
             {% for image in project.images %}
             <div class="image-card">
-                <img src="/data/images/{{ image.name }}" class="image-thumb" alt="{{ image.name }}">
+                <img src="/data/images/{{ image.filename }}" class="image-thumb" alt="{{ image.filename }}">
                 <div class="image-meta">
-                    <div class="image-name" title="{{ image.name }}">{{ image.name }}</div>
+                    <div class="image-name" title="{{ image.filename }}">{{ image.filename }}</div>
                     <div class="image-status status-{{ image.status }}">{{ 'Размечено' if image.status == 'segment' else 'Кадрировано' if image.status == 'cropped' else 'Текст добавлен' if image.status == 'texted' else 'Нужно кадрировать' }}</div>
                 </div>
                 <div class="image-actions">
-                    <input type="checkbox" class="select-checkbox" data-image="{{ image.name }}">
-                    <a href="/cropper?project={{ project.name }}&image={{ image.name }}" class="btn image-action-btn">Обрезка</a>
-                    <a href="/editor?project={{ project.name }}&image={{ image.name }}" class="btn image-action-btn">Сегменты</a>
-                    <a href="/text_editor?project={{ project.name }}&image={{ image.name }}" class="btn image-action-btn">Распознавать</a>
+                    <input type="checkbox" class="select-checkbox" data-image="{{ image.filename }}">
+                    <a href="/cropper?project={{ project.name }}&image={{ image.filename }}" class="btn image-action-btn">Обрезка</a>
+                    <a href="/editor?project={{ project.name }}&image={{ image.filename }}" class="btn image-action-btn">Сегменты</a>
+                    <a href="/text_editor?project={{ project.name }}&image={{ image.filename }}" class="btn image-action-btn">Распознавать</a>
                 </div>
             </div>
             {% endfor %}

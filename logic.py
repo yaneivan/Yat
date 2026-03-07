@@ -350,31 +350,27 @@ def process_zip_import(file, simplify_val=0, project_name=None):
     """
     import uuid
     from services.project_service import project_service
+    from services.annotation_service import annotation_service
+    from services.image_service import image_service
 
     if project_name is None:
         original_filename = file.filename
         project_name = os.path.splitext(original_filename)[0] + "_" + str(uuid.uuid4())[:8]
-        success, result = project_service.create_project(project_name)
+        result = project_service.create_project(project_name)
 
-        if not success:
-            raise Exception(f"Failed to create project: {result}")
-
-    # Use sanitized name for path
-    project_path = os.path.join(storage.PROJECTS_FOLDER, project_service._sanitize_name(project_name))
-
-    if not os.path.exists(project_path):
-        raise Exception(f"Project {project_name} does not exist")
+        if not result:
+            raise Exception(f"Failed to create project: {project_name}")
 
     zip_path = os.path.join(storage.TEMP_FOLDER, 'import.zip')
     file.save(zip_path)
-    
+
     extract_path = os.path.join(storage.TEMP_FOLDER, 'ext')
     if os.path.exists(extract_path):
         shutil.rmtree(extract_path)
     os.makedirs(extract_path)
 
     count = 0
-    
+
     try:
         with zipfile.ZipFile(zip_path, 'r') as z:
             z.extractall(extract_path)
@@ -386,19 +382,33 @@ def process_zip_import(file, simplify_val=0, project_name=None):
                     dest_path = os.path.join(storage.IMAGE_FOLDER, f)
                     shutil.move(src, dest_path)
 
+                    # Copy to originals folder
+                    original_dest = os.path.join(storage.ORIGINALS_FOLDER, f)
+                    shutil.copy(dest_path, original_dest)
+
                     xml_cands = [os.path.splitext(src)[0]+'.xml', src+'.xml']
                     for xc in xml_cands:
                         if os.path.exists(xc):
                             regs, texts = parse_page_xml(xc, simplify_val)
 
-                            json_data = {'image_name': f, 'regions': regs, 'texts': texts}
-                            json_path = os.path.join(storage.ANNOTATION_FOLDER, os.path.splitext(f)[0] + '.json')
+                            # Сначала добавляем изображение в проект (создаётся в БД)
+                            project_service.add_image(
+                                project_name=project_name,
+                                filename=f,
+                                original_path=original_dest,
+                                cropped_path=dest_path,
+                                status='segment',
+                                crop_params=None
+                            )
 
-                            with open(json_path, 'w', encoding='utf-8') as jf:
-                                json.dump(json_data, jf, indent=4)
-
-                            # Add image to project using service
-                            project_service.add_image(project_name, f)
+                            # Потом сохраняем аннотацию (теперь image есть в БД)
+                            annotation_data = {
+                                'image_name': f,
+                                'regions': regs,
+                                'texts': texts,
+                                'status': 'segment'
+                            }
+                            annotation_service.save_annotation(f, annotation_data)
                             break
                     count += 1
     finally:

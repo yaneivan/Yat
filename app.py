@@ -375,8 +375,17 @@ def upload_project_images(project_name):
 
 @app.route('/api/projects/<project_name>/export_zip')
 def export_project_zip(project_name):
-    # Export not yet implemented for DB-backed projects
-    return jsonify({'status': 'error', 'msg': 'Export not implemented'}), 501
+    zip_data = project_service.export_to_zip(project_name)
+    
+    if zip_data is None:
+        return jsonify({'status': 'error', 'msg': 'Project not found'}), 404
+    
+    return send_file(
+        io.BytesIO(zip_data),
+        as_attachment=True,
+        download_name=f'{project_name}_export.zip',
+        mimetype='application/zip'
+    )
 
 
 @app.route('/api/projects/<project_name>/batch_detect', methods=['POST'])
@@ -408,7 +417,7 @@ def batch_detect(project_name):
         task_type="batch_detection",
         project_name=project_name,
         project_id=project_id,
-        images=[img['name'] if isinstance(img, dict) else img for img in images],
+        images=[img['filename'] if isinstance(img, dict) else img for img in images],
         description=f"Batch detection for project {project_name}"
     )
 
@@ -452,7 +461,7 @@ def batch_recognize(project_name):
         task_type="batch_recognition",
         project_name=project_name,
         project_id=project_id,
-        images=[img['name'] if isinstance(img, dict) else img for img in images],
+        images=[img['filename'] if isinstance(img, dict) else img for img in images],
         description=f"Batch recognition for project {project_name}"
     )
 
