@@ -106,55 +106,49 @@
         const data = await API.loadAnnotation(filename);
         let corners = [];
 
-        if (data.crop_params && data.crop_params.corners) {
+        if (data.crop_params && data.crop_params.corners && data.crop_params.corners.length > 0) {
             // Если есть углы в crop_params, используем их напрямую
             corners = data.crop_params.corners;
-        } else if (data.processing_params) {
+        } else if (data.processing_params && data.processing_params.quad_coords) {
             // Если параметры обработки существуют, восстанавливаем углы
             const procParams = data.processing_params;
-            
-            // Используем координаты четырехугольника для получения углов
             const quad_coords = procParams.quad_coords;
-            
-            // quad_coords содержит координаты в порядке, требуемом Pillow: TL, BL, BR, TR
-            // Восстанавливаем их в порядке: TL, TR, BR, BL
+
             corners = [
                 {x: quad_coords[0], y: quad_coords[1]},  // верхний левый (TL)
                 {x: quad_coords[6], y: quad_coords[7]},  // верхний правый (TR)
                 {x: quad_coords[4], y: quad_coords[5]},  // нижний правый (BR)
                 {x: quad_coords[2], y: quad_coords[3]}   // нижний левый (BL)
             ];
-        } else if (data.crop_params) {
-            // Если есть только базовые параметры, вычисляем углы
+        } else if (data.crop_params && data.crop_params.x !== undefined) {
+            // Если есть базовые параметры (x, y, w, h), вычисляем углы
             const cropParams = data.crop_params;
             const centerX = cropParams.x + cropParams.w / 2;
             const centerY = cropParams.y + cropParams.h / 2;
             const angle = cropParams.angle || 0;
-            
-            // Вычисляем углы до поворота
+
             const unrotatedCorners = [
-                {x: cropParams.x, y: cropParams.y},                           // верхний левый
-                {x: cropParams.x + cropParams.w, y: cropParams.y},            // верхний правый
-                {x: cropParams.x + cropParams.w, y: cropParams.y + cropParams.h}, // нижний правый
-                {x: cropParams.x, y: cropParams.y + cropParams.h}             // нижний левый
+                {x: cropParams.x, y: cropParams.y},
+                {x: cropParams.x + cropParams.w, y: cropParams.y},
+                {x: cropParams.x + cropParams.w, y: cropParams.y + cropParams.h},
+                {x: cropParams.x, y: cropParams.y + cropParams.h}
             ];
-            
-            // Поворачиваем углы на угол поворота, чтобы получить углы в оригинальной системе координат
+
             corners = unrotatedCorners.map(corner => {
                 const rotatedCorner = rotate_pointJS(corner.x, corner.y, centerX, centerY, angle);
                 return {x: rotatedCorner[0], y: rotatedCorner[1]};
             });
         } else {
             // Если нет сохраненных параметров, создаем стандартный прямоугольник
-            const margin = 0.05; // 5% от размера изображения
+            const margin = 0.05;
             const width = imgObj.width * (1 - 2 * margin);
             const height = imgObj.height * (1 - 2 * margin);
-            
+
             corners = [
-                {x: imgObj.width * margin, y: imgObj.height * margin},                    // верхний левый
-                {x: imgObj.width * margin + width, y: imgObj.height * margin},            // верхний правый
-                {x: imgObj.width * margin + width, y: imgObj.height * margin + height},   // нижний правый
-                {x: imgObj.width * margin, y: imgObj.height * margin + height}            // нижний левый
+                {x: imgObj.width * margin, y: imgObj.height * margin},
+                {x: imgObj.width * margin + width, y: imgObj.height * margin},
+                {x: imgObj.width * margin + width, y: imgObj.height * margin + height},
+                {x: imgObj.width * margin, y: imgObj.height * margin + height}
             ];
         }
 
@@ -218,6 +212,10 @@
 
         const z = canvas.getZoom();
 
+        // Вычисляем размеры с теми же ограничениями что и при зуме
+        const strokeWidth = Math.max(1, Math.min(3, 2 / z));
+        const cornerSize = Math.max(4, Math.min(20, 10 / z));
+
         cropRect = new fabric.Rect({
             left: centerX,
             top: centerY,
@@ -228,9 +226,9 @@
             originY: 'center',
             fill: 'rgba(255, 255, 0, 0.1)',
             stroke: 'yellow',
-            strokeWidth: 2 / z,
+            strokeWidth: strokeWidth,
             strokeUniform: true,
-            cornerSize: 8 / z,
+            cornerSize: cornerSize,
             transparentCorners: false,
             cornerColor: 'white',
             cornerStyle: 'circle'
@@ -249,10 +247,15 @@
         if (zoom > 20) zoom = 20;
         if (zoom < 0.01) zoom = 0.01;
         canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
-        
+
         if(cropRect) {
-            cropRect.set('strokeWidth', 2 / zoom);
-            cropRect.set('cornerSize', 4 / zoom);
+            // Обновляем толщину обводки и размер углов так, чтобы они оставались 
+            // визуально одинакового размера при любом зуме (с ограничением 4-20px)
+            const strokeWidth = Math.max(1, Math.min(3, 2 / zoom));
+            const cornerSize = Math.max(4, Math.min(20, 10 / zoom));
+            cropRect.set('strokeWidth', strokeWidth);
+            cropRect.set('cornerSize', cornerSize);
+            canvas.requestRenderAll();
         }
         opt.e.preventDefault();
         opt.e.stopPropagation();
