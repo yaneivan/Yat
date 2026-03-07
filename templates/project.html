@@ -683,10 +683,32 @@
             transition: 0.2s;
             margin-bottom: 20px;
         }
-        
+
         .drop-area.highlight {
             border-color: #007bff;
             background: #e9f5ff;
+        }
+
+        .drop-area.uploading {
+            border-color: #28a745;
+            background: #e8f5e9;
+            pointer-events: none;
+            opacity: 0.8;
+        }
+
+        .drop-area .upload-spinner {
+            display: none;
+            margin-top: 10px;
+            font-size: 14px;
+            color: #28a745;
+        }
+
+        .drop-area.uploading .upload-spinner {
+            display: block;
+        }
+
+        .drop-area.uploading p {
+            display: none;
         }
         
         .batch-actions {
@@ -741,6 +763,7 @@
         
         <div class="drop-area" id="dropArea">
             <p>Перетащите изображения сюда или нажмите для выбора</p>
+            <div class="upload-spinner">⏳ Загрузка...</div>
             <input type="file" id="fileInput" multiple style="display: none;" accept="image/*">
         </div>
         
@@ -827,25 +850,29 @@
         }
         
         async function uploadImages(formData) {
+            dropArea.classList.add('uploading');
+            
             try {
                 const projectName = "{{ project.name }}";
                 const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/upload_images`, {
                     method: 'POST',
                     body: formData
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (result.status === 'success') {
                     showNotification('Изображения успешно загружены', 'success');
                     // Reload the page to show new images
                     location.reload();
                 } else {
                     showNotification('Ошибка: ' + result.msg, 'error');
+                    dropArea.classList.remove('uploading');
                 }
             } catch (error) {
                 console.error('Error uploading images:', error);
                 showNotification('Ошибка при загрузке изображений', 'error');
+                dropArea.classList.remove('uploading');
             }
         }
         
