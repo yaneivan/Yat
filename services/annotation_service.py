@@ -284,9 +284,10 @@ class AnnotationService:
             Status string: 'crop', 'cropped', 'segment', or 'texted'
         """
         validated_filename = self._validate_filename(filename)
-        
+
         session, annotation_repo, image_repo = self._get_session()
         try:
+            # Используем first() вместо scalar_one_or_none() на случай дубликатов
             image = image_repo.get_by_filename(validated_filename)
             if not image:
                 return 'crop'

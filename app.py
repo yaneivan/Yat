@@ -355,6 +355,7 @@ def upload_project_images(project_name):
 
     files = request.files.getlist('images')
     uploaded_count = 0
+    skipped_count = 0
 
     for file in files:
         if file and file.filename:
@@ -366,10 +367,18 @@ def upload_project_images(project_name):
             filename = image_service.upload_image(file, project_name=project_name)
             if filename:
                 uploaded_count += 1
+            else:
+                skipped_count += 1  # Duplicate or invalid
+
+    if uploaded_count == 0 and skipped_count > 0:
+        return jsonify({
+            'status': 'error',
+            'msg': 'Все файлы уже существуют в проекте (дубликаты)'
+        }), 409
 
     return jsonify({
         'status': 'success',
-        'msg': f'Uploaded {uploaded_count} images to project'
+        'msg': f'Загружено {uploaded_count} изображений' + (f' ({skipped_count} пропущено)' if skipped_count > 0 else '')
     })
 
 

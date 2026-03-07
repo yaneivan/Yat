@@ -239,13 +239,19 @@ class ProjectService:
             Image data dict or None if failed
         """
         sanitized_name = self._sanitize_name(project_name)
-        
+
         session, project_repo, image_repo = self._get_session()
         try:
             project = project_repo.get_by_name(sanitized_name)
             if not project:
                 return None
-            
+
+            # Check for duplicate filename in this project
+            existing_images = image_repo.get_by_project(project.id)
+            for img in existing_images:
+                if img.filename == filename:
+                    return None  # Duplicate found
+
             image = image_repo.create(
                 project_id=project.id,
                 filename=filename,
@@ -254,7 +260,7 @@ class ProjectService:
                 status=status,
                 crop_params=crop_params or {}
             )
-            
+
             return image.to_dict()
         finally:
             session.close()

@@ -289,8 +289,15 @@ class ImageService:
                         project = project_repo.get_by_id(project_id)
                     else:
                         project = project_repo.get_by_name(project_name)
-                    
+
                     if project:
+                        # Check for duplicate filename
+                        existing_images = image_repo.get_by_project(project.id)
+                        for img in existing_images:
+                            if img.filename == filename:
+                                # Duplicate found - skip this file
+                                return None
+                        
                         image_repo.create(
                             project_id=project.id,
                             filename=filename,

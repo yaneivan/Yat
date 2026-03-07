@@ -40,9 +40,9 @@ class ImageRepository:
         return self.session.get(Image, image_id)
     
     def get_by_filename(self, filename: str) -> Optional[Image]:
-        """Get image by filename."""
+        """Get image by filename. Returns first match if duplicates exist."""
         stmt = select(Image).where(Image.filename == filename)
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).scalars().first()
 
     def get_by_project(self, project_id: int) -> List[Image]:
         """Get all images in a project."""
