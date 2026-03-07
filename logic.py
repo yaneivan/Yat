@@ -427,7 +427,7 @@ def process_zip_import(file, simplify_val=0, project_name=None):
 def run_batch_detection_for_project(project_name, settings=None, task_id=None):
     """
     Run batch detection for all images in a project.
-    
+
     Args:
         project_name: Project name
         settings: YOLO detection settings
@@ -436,14 +436,14 @@ def run_batch_detection_for_project(project_name, settings=None, task_id=None):
     if settings is None:
         settings = {}
 
-    images = storage.get_project_images(project_name)
+    # Use project_service to get images from database
+    from services import project_service, task_service, ai_service, annotation_service
 
+    images = project_service.get_images(project_name)
+    
     if not images:
         print(f"No images found in project {project_name}")
         return
-
-    # Use task_service from services layer
-    from services import task_service, ai_service, annotation_service
 
     # Get task by ID (passed from app.py)
     if not task_id:
@@ -455,35 +455,37 @@ def run_batch_detection_for_project(project_name, settings=None, task_id=None):
         print(f"Error: task {task_id} not found")
         return
 
+    # Extract image names from image data dicts
+    image_names = [img.get('filename') or img.get('name') if isinstance(img, dict) else img for img in images]
+
     try:
         task_service.update_progress(task.id, 0, status="running")
 
-        for idx, image_name in enumerate(images):
-            json_path = os.path.join(storage.ANNOTATION_FOLDER, os.path.splitext(image_name)[0] + '.json')
-
-            if os.path.exists(json_path):
-                with open(json_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    if data.get('regions'):
-                        task_service.update_progress(task.id, idx + 1)
-                        continue
+        for idx, image_name in enumerate(image_names):
+            # Check if annotation already has regions using annotation_service
+            annotation_data = annotation_service.get_annotation(image_name)
+            
+            if annotation_data.get('regions'):
+                task_service.update_progress(task.id, idx + 1)
+                continue
 
             try:
                 regions = ai_service.detect_lines(image_name, settings)
 
-                annotation_data = storage.load_json(image_name)
+                # Use annotation_service instead of old storage layer
+                annotation_data = annotation_service.get_annotation(image_name)
                 annotation_data['regions'] = regions
                 if annotation_data.get('status') != 'cropped':
                     annotation_data['status'] = 'segment'
 
-                storage.save_json(annotation_data)
+                annotation_service.save_annotation(image_name, annotation_data)
                 task_service.update_progress(task.id, idx + 1)
 
             except Exception as e:
                 print(f"Error detecting lines in {image_name}: {e}")
                 task_service.update_progress(task.id, idx + 1)
 
-        task_service.update_progress(task.id, len(images), status="completed")
+        task_service.update_progress(task.id, len(image_names), status="completed")
         print(f"Batch detection completed for project {project_name}")
 
     except Exception as e:
@@ -494,19 +496,18 @@ def run_batch_detection_for_project(project_name, settings=None, task_id=None):
 def run_batch_recognition_for_project(project_name, task_id=None):
     """
     Run batch recognition for all images in a project.
-    
+
     Args:
         project_name: Project name
         task_id: Task ID from task_service (passed by app.py)
     """
-    images = storage.get_project_images(project_name)
+    # Use project_service to get images from database
+    from services import project_service, task_service, ai_service, annotation_service
 
+    images = project_service.get_images(project_name)
     if not images:
         print(f"No images found in project {project_name}")
         return
-
-    # Use task_service from services layer
-    from services import task_service, ai_service
 
     # Get task by ID (passed from app.py)
     if not task_id:
@@ -518,18 +519,18 @@ def run_batch_recognition_for_project(project_name, task_id=None):
         print(f"Error: task {task_id} not found")
         return
 
+    # Extract image names from image data dicts
+    image_names = [img.get('filename') or img.get('name') if isinstance(img, dict) else img for img in images]
+
     try:
         task_service.update_progress(task.id, 0, status="running")
 
-        for idx, image_name in enumerate(images):
-            json_path = os.path.join(storage.ANNOTATION_FOLDER, os.path.splitext(image_name)[0] + '.json')
-
-            if os.path.exists(json_path):
-                with open(json_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    if data.get('texts'):
-                        task_service.update_progress(task.id, idx + 1)
-                        continue
+        for idx, image_name in enumerate(image_names):
+            # Check if annotation already has texts using annotation_service
+            annotation_data = annotation_service.get_annotation(image_name)
+            if annotation_data.get('texts') and any(annotation_data.get('texts', {}).values()):
+                task_service.update_progress(task.id, idx + 1)
+                continue
 
             try:
                 ai_service.recognize_text(image_name, None)
