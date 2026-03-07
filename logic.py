@@ -24,6 +24,7 @@ from datetime import datetime
 
 import storage
 import config
+from database.enums import ImageStatus, TaskStatus
 
 # YOLOv9 imports
 try:
@@ -134,7 +135,7 @@ def perform_crop(filename, box):
 
             json_data['regions'] = new_regions
             json_data['crop_params'] = box
-            json_data['status'] = 'cropped'
+            json_data['status'] = ImageStatus.CROPPED.value
             json_data['image_name'] = filename
 
             storage.save_json(json_data)
@@ -397,7 +398,7 @@ def process_zip_import(file, simplify_val=0, project_name=None):
                                 filename=f,
                                 original_path=original_dest,
                                 cropped_path=dest_path,
-                                status='segment',
+                                status=ImageStatus.SEGMENT,
                                 crop_params=None
                             )
 
@@ -406,7 +407,7 @@ def process_zip_import(file, simplify_val=0, project_name=None):
                                 'image_name': f,
                                 'regions': regs,
                                 'texts': texts,
-                                'status': 'segment'
+                                'status': ImageStatus.SEGMENT.value
                             }
                             annotation_service.save_annotation(f, annotation_data)
                             break
@@ -459,12 +460,12 @@ def run_batch_detection_for_project(project_name, settings=None, task_id=None):
     image_names = [img.get('filename') or img.get('name') if isinstance(img, dict) else img for img in images]
 
     try:
-        task_service.update_progress(task.id, 0, status="running")
+        task_service.update_progress(task.id, 0, status=TaskStatus.RUNNING)
 
         for idx, image_name in enumerate(image_names):
             # Check if annotation already has regions using annotation_service
             annotation_data = annotation_service.get_annotation(image_name)
-            
+
             if annotation_data.get('regions'):
                 task_service.update_progress(task.id, idx + 1)
                 continue
@@ -475,8 +476,8 @@ def run_batch_detection_for_project(project_name, settings=None, task_id=None):
                 # Use annotation_service instead of old storage layer
                 annotation_data = annotation_service.get_annotation(image_name)
                 annotation_data['regions'] = regions
-                if annotation_data.get('status') != 'cropped':
-                    annotation_data['status'] = 'segment'
+                if annotation_data.get('status') != ImageStatus.CROPPED.value:
+                    annotation_data['status'] = ImageStatus.SEGMENT.value
 
                 annotation_service.save_annotation(image_name, annotation_data)
                 task_service.update_progress(task.id, idx + 1)
@@ -485,7 +486,7 @@ def run_batch_detection_for_project(project_name, settings=None, task_id=None):
                 print(f"Error detecting lines in {image_name}: {e}")
                 task_service.update_progress(task.id, idx + 1)
 
-        task_service.update_progress(task.id, len(image_names), status="completed")
+        task_service.update_progress(task.id, len(image_names), status=TaskStatus.COMPLETED)
         print(f"Batch detection completed for project {project_name}")
 
     except Exception as e:
@@ -523,7 +524,7 @@ def run_batch_recognition_for_project(project_name, task_id=None):
     image_names = [img.get('filename') or img.get('name') if isinstance(img, dict) else img for img in images]
 
     try:
-        task_service.update_progress(task.id, 0, status="running")
+        task_service.update_progress(task.id, 0, status=TaskStatus.RUNNING)
 
         for idx, image_name in enumerate(image_names):
             # Check if annotation already has texts using annotation_service
@@ -540,7 +541,7 @@ def run_batch_recognition_for_project(project_name, task_id=None):
                 print(f"Error recognizing text in {image_name}: {e}")
                 task_service.update_progress(task.id, idx + 1)
 
-        task_service.update_progress(task.id, len(images), status="completed")
+        task_service.update_progress(task.id, len(image_names), status=TaskStatus.COMPLETED)
         print(f"Batch recognition completed for project {project_name}")
 
     except Exception as e:

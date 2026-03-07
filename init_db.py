@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from database.session import init_db, engine, Base
 from database.models import Project, Image, Annotation, Task
+from database.enums import ImageStatus, TaskStatus
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
@@ -85,7 +86,7 @@ def migrate_projects():
                     filename=filename,
                     original_path=os.path.join('data/originals', filename),
                     cropped_path=os.path.join('data/images', filename),
-                    status='crop'
+                    status=ImageStatus.CROP.value
                 )
                 session.add(image)
             
@@ -138,7 +139,7 @@ def migrate_annotations():
                     filename=image_name,
                     original_path=os.path.join('data/originals', image_name),
                     cropped_path=os.path.join('data/images', image_name),
-                    status=data.get('status', 'crop')
+                    status=data.get('status', ImageStatus.CROP.value)
                 )
                 session.add(image)
                 session.flush()
@@ -170,13 +171,13 @@ def migrate_annotations():
                 polygons=polygons
             )
             session.add(annotation)
-            
+
             # Update image status
             if polygons:
-                image.status = 'segment'
-            elif data.get('status') == 'cropped':
-                image.status = 'cropped'
-            
+                image.status = ImageStatus.SEGMENT.value
+            elif data.get('status') == ImageStatus.CROPPED.value:
+                image.status = ImageStatus.CROPPED.value
+
             migrated += 1
             
         except Exception as e:

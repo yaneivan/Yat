@@ -15,6 +15,7 @@ from PIL import Image, ImageOps
 from database.session import SessionLocal
 from database.repository.image_repository import ImageRepository
 from database.repository.project_repository import ProjectRepository
+from database.enums import ImageStatus
 from services.annotation_service import annotation_service
 
 
@@ -236,7 +237,7 @@ class ImageService:
 
             # Update annotation
             annotation_data['crop_params'] = box
-            annotation_data['status'] = 'cropped'
+            annotation_data['status'] = ImageStatus.CROPPED.value
             annotation_data['image_name'] = validated
             annotation_service.save_annotation(validated, annotation_data)
 
@@ -303,7 +304,7 @@ class ImageService:
                             filename=filename,
                             original_path=self.get_original_path(filename),
                             cropped_path=image_path,
-                            status='crop'
+                            status=ImageStatus.CROP
                         )
                 finally:
                     session.close()

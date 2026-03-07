@@ -77,23 +77,39 @@ def list_images():
 
 @app.route('/data/images/<path:filename>')
 def serve_image(filename):
-    return send_from_directory(storage.IMAGE_FOLDER, filename)
+    try:
+        # Validate filename to prevent path traversal
+        validated = image_service._validate_filename(filename)
+        return send_from_directory(storage.IMAGE_FOLDER, validated)
+    except ValueError:
+        return jsonify({'error': 'Invalid filename'}), 400
 
 @app.route('/data/originals/<path:filename>')
 def serve_original(filename):
     try:
-        return send_from_directory(storage.ORIGINALS_FOLDER, filename)
-    except:
-        return send_from_directory(storage.IMAGE_FOLDER, filename)
+        # Validate filename to prevent path traversal
+        validated = image_service._validate_filename(filename)
+        return send_from_directory(storage.ORIGINALS_FOLDER, validated)
+    except ValueError:
+        return jsonify({'error': 'Invalid filename'}), 400
+    except Exception:
+        # Fallback to images folder only if filename is valid
+        try:
+            validated = image_service._validate_filename(filename)
+            return send_from_directory(storage.IMAGE_FOLDER, validated)
+        except ValueError:
+            return jsonify({'error': 'Invalid filename'}), 400
 
 # --- API: Annotations ---
 @app.route('/api/load/<filename>')
 def load_data(filename):
     try:
-        data = annotation_service.get_annotation(filename)
+        # Validate filename to prevent path traversal
+        validated = image_service._validate_filename(filename)
+        data = annotation_service.get_annotation(validated)
         return jsonify(data)
     except ValueError as e:
-        return jsonify({'status': 'error', 'msg': str(e)}), 400
+        return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
     except Exception as e:
         return jsonify({'status': 'error', 'msg': str(e)}), 500
 
@@ -248,8 +264,14 @@ def recognize_text():
 
 @app.route('/api/recognize_progress/<filename>')
 def recognize_progress(filename):
+    try:
+        # Validate filename to prevent path traversal
+        validated = image_service._validate_filename(filename)
+    except ValueError:
+        return jsonify({'error': 'Invalid filename'}), 400
+    
     progress_data = recognition_progress.get(
-        filename,
+        validated,
         {'processed': 0, 'total': 0, 'status': 'not_started'}
     )
     

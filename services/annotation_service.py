@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from database.session import SessionLocal
 from database.repository.annotation_repository import AnnotationRepository
 from database.repository.image_repository import ImageRepository
+from database.enums import ImageStatus
 
 
 class AnnotationService:
@@ -145,7 +146,10 @@ class AnnotationService:
             if 'crop_params' in data:
                 image_repo.update(image, crop_params=data['crop_params'])
             if 'status' in data:
-                image_repo.update(image, status=data['status'])
+                # Convert string status to ImageStatus enum if needed
+                status_value = data['status']
+                status_enum = ImageStatus(status_value) if isinstance(status_value, str) else status_value
+                image_repo.update(image, status=status_enum)
 
             # Find or create annotation
             annotation = annotation_repo.get_by_image(image.id)

@@ -4,6 +4,7 @@ from typing import Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from database.models import Image
+from database.enums import ImageStatus
 
 
 class ImageRepository:
@@ -18,7 +19,7 @@ class ImageRepository:
         filename: str,
         original_path: str,
         cropped_path: Optional[str] = None,
-        status: str = 'crop',
+        status: ImageStatus = ImageStatus.CROP,
         crop_params: Optional[dict] = None
     ) -> Image:
         """Create a new image."""
@@ -27,7 +28,7 @@ class ImageRepository:
             filename=filename,
             original_path=original_path,
             cropped_path=cropped_path,
-            status=status,
+            status=status.value,
             crop_params=crop_params or {}
         )
         self.session.add(image)
@@ -54,17 +55,17 @@ class ImageRepository:
         stmt = select(Image).offset(skip).limit(limit).order_by(Image.created_at)
         return self.session.execute(stmt).scalars().all()
 
-    def get_by_status(self, status: str) -> List[Image]:
+    def get_by_status(self, status: ImageStatus) -> List[Image]:
         """Get all images with a specific status."""
-        stmt = select(Image).where(Image.status == status)
+        stmt = select(Image).where(Image.status == status.value)
         return self.session.execute(stmt).scalars().all()
-    
+
     def update(
         self,
         image: Image,
         filename: Optional[str] = None,
         cropped_path: Optional[str] = None,
-        status: Optional[str] = None,
+        status: Optional[ImageStatus] = None,
         crop_params: Optional[dict] = None
     ) -> Image:
         """Update image fields."""
@@ -73,7 +74,7 @@ class ImageRepository:
         if cropped_path is not None:
             image.cropped_path = cropped_path
         if status is not None:
-            image.status = status
+            image.status = status.value
         if crop_params is not None:
             image.crop_params = crop_params
         self.session.commit()
@@ -91,7 +92,7 @@ class ImageRepository:
         stmt = select(Image).where(Image.project_id == project_id)
         return self.session.execute(stmt).scalars().count()
     
-    def count_by_status(self, status: str) -> int:
+    def count_by_status(self, status: ImageStatus) -> int:
         """Get number of images with a specific status."""
-        stmt = select(Image).where(Image.status == status)
+        stmt = select(Image).where(Image.status == status.value)
         return self.session.execute(stmt).scalars().count()

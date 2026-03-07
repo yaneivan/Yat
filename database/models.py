@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON, Text
 from sqlalchemy.orm import relationship
 from database.session import Base
+from database.enums import ImageStatus, TaskStatus
 
 
 class Project(Base):
@@ -42,7 +43,7 @@ class Image(Base):
     filename = Column(String(255), nullable=False)
     original_path = Column(String(512))  # Path to original (backup)
     cropped_path = Column(String(512))   # Path to cropped image
-    status = Column(String(50), default='crop')  # crop, cropped, segment, texted
+    status = Column(String(50), default=ImageStatus.CROP.value)  # ImageStatus: crop, cropped, segment, texted
     crop_params = Column(JSON)  # {x, y, width, height, angle}
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -99,7 +100,7 @@ class Task(Base):
     id = Column(String(64), primary_key=True)  # UUID string
     type = Column(String(50), nullable=False)  # 'detect', 'recognize'
     project_id = Column(Integer, ForeignKey('projects.id', ondelete='SET NULL'), index=True)
-    status = Column(String(20), default='pending', index=True)  # pending, running, completed, failed
+    status = Column(String(20), default=TaskStatus.PENDING.value, index=True)  # TaskStatus: pending, running, completed, failed
     progress = Column(Integer, default=0)  # 0-100
     result = Column(JSON, default={})  # {error: '', data: {...}}
     created_at = Column(DateTime, default=datetime.utcnow, index=True)

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from database.session import SessionLocal
 from database.repository.task_repository import TaskRepository
 from database.models import Task as TaskModel
+from database.enums import TaskStatus
 
 
 class Task:
@@ -34,7 +35,7 @@ class Task:
         self.project_id = project_id
         self.images = images or []
         self.description = description
-        self.status = "pending"  # pending, running, completed, failed
+        self.status = TaskStatus.PENDING.value  # pending, running, completed, failed
         self.progress = 0
         self.total = len(self.images)  # Использовать self.images вместо images
         self.completed = 0
@@ -112,7 +113,7 @@ class TaskService:
                 task_id=task_id,
                 task_type=task_type,
                 project_id=project_id,
-                status='pending',
+                status=TaskStatus.PENDING,
                 progress=0
             )
         finally:
@@ -175,7 +176,7 @@ class TaskService:
         self,
         task_id: str,
         completed: int,
-        status: str = None,
+        status: TaskStatus = None,
         error: str = None
     ) -> Optional[Task]:
         """Update the progress of a task."""
@@ -204,7 +205,7 @@ class TaskService:
                 project_name="",
                 project_id=task_model.project_id
             )
-            task.status = status or task_model.status
+            task.status = status.value if status else task_model.status
             task.progress = progress
             task.completed = completed
             task.error = error
@@ -228,7 +229,7 @@ class TaskService:
                 project_name="",
                 project_id=task_model.project_id
             )
-            task.status = 'completed'
+            task.status = TaskStatus.COMPLETED.value
             task.progress = 100
             task.completed = task.total
             return task
@@ -251,7 +252,7 @@ class TaskService:
                 project_name="",
                 project_id=task_model.project_id
             )
-            task.status = 'failed'
+            task.status = TaskStatus.FAILED.value
             task.progress = 0
             task.error = error
             return task
@@ -304,20 +305,20 @@ class TaskService:
         """
         def wrapper():
             try:
-                self.update_progress(task.id, 0, status="running")
-                
+                self.update_progress(task.id, 0, status=TaskStatus.RUNNING)
+
                 # Create a progress callback that updates the task
                 def task_progress_callback(current: int, total: int):
                     self.update_progress(task.id, current)
                     if progress_callback:
                         progress_callback(current, total)
-                
+
                 # Run the function
                 func(*args, **kwargs)
-                
+
                 # Mark as completed
-                self.update_progress(task.id, task.total, status="completed")
-                
+                self.update_progress(task.id, task.total, status=TaskStatus.COMPLETED)
+
             except Exception as e:
                 self.fail_task(task.id, str(e))
         
