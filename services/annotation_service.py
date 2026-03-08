@@ -7,10 +7,8 @@ and automatic field initialization.
 Uses database for storage instead of JSON files.
 """
 
-import os
 import re
-from typing import Dict, List, Any, Optional
-from sqlalchemy.orm import Session
+from typing import Dict, List, Any
 
 from database.session import SessionLocal
 from database.repository.annotation_repository import AnnotationRepository
@@ -172,10 +170,10 @@ class AnnotationService:
 
             if annotation:
                 annotation_repo.update(annotation, polygons=polygons)
-                print(f"[AnnotationService] Updated existing annotation")
+                print("[AnnotationService] Updated existing annotation")
             else:
                 annotation_repo.create(image_id=image.id, polygons=polygons)
-                print(f"[AnnotationService] Created new annotation")
+                print("[AnnotationService] Created new annotation")
 
             return True
         finally:
@@ -294,19 +292,19 @@ class AnnotationService:
             # Используем first() вместо scalar_one_or_none() на случай дубликатов
             image = image_repo.get_by_filename(validated_filename)
             if not image:
-                return 'crop'
-            
-            if image.status == 'texted':
-                return 'texted'
-            
+                return ImageStatus.CROP.value
+
+            if image.status == ImageStatus.TEXTED.value:
+                return ImageStatus.TEXTED.value
+
             annotation = annotation_repo.get_by_image(image.id)
             if annotation and annotation.polygons:
-                return 'segment'
-            
-            if image.status == 'cropped':
-                return 'cropped'
-            
-            return 'crop'
+                return ImageStatus.SEGMENT.value
+
+            if image.status == ImageStatus.CROPPED.value:
+                return ImageStatus.CROPPED.value
+
+            return ImageStatus.CROP.value
         finally:
             session.close()
 

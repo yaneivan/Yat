@@ -16,27 +16,25 @@ import os
 import math
 import zipfile
 import shutil
-import threading
 import xml.etree.ElementTree as ET
-import json
-from PIL import Image, ImageOps
-from datetime import datetime
 
 import storage
-import config
 from database.enums import ImageStatus, TaskStatus
 
 # YOLOv9 imports
 try:
-    import torch
-    from ultralytics import YOLO
+    import torch  # noqa: F401
+    from ultralytics import YOLO  # noqa: F401
     YOLO_AVAILABLE = True
 except ImportError:
     YOLO_AVAILABLE = False
 
 # TROCR imports
 try:
-    from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+    from transformers import (  # noqa: F401
+        TrOCRProcessor,
+        VisionEncoderDecoderModel,
+    )
     TROCR_AVAILABLE = True
 except ImportError:
     TROCR_AVAILABLE = False
@@ -96,53 +94,6 @@ def recalculate_regions(regions, old_crop, new_crop_params, new_w, new_h):
         final_regions.append({'points': new_points})
 
     return final_regions
-
-
-def perform_crop(filename, box):
-    """
-    Perform crop operation on an image.
-    This function is kept for backward compatibility.
-    New code should use ImageService.crop_image() instead.
-    """
-    if not storage.ensure_original_exists(filename):
-        return False
-    
-    src_path = os.path.join(storage.IMAGE_FOLDER, filename)
-    backup_path = os.path.join(storage.ORIGINALS_FOLDER, filename)
-
-    try:
-        json_data = storage.load_json(filename)
-        old_crop = json_data.get('crop_params')
-        old_regions = json_data.get('regions', [])
-
-        with Image.open(backup_path) as img:
-            img = ImageOps.exif_transpose(img)
-            c = box['corners']
-
-            quad = [c[0]['x'], c[0]['y'], c[3]['x'], c[3]['y'],
-                    c[2]['x'], c[2]['y'], c[1]['x'], c[1]['y']]
-
-            def dist(p1, p2):
-                return math.sqrt((p1['x']-p2['x'])**2 + (p1['y']-p2['y'])**2)
-            
-            nw = int((dist(c[0], c[1]) + dist(c[3], c[2])) / 2)
-            nh = int((dist(c[0], c[3]) + dist(c[1], c[2])) / 2)
-
-            img_cropped = img.transform((nw, nh), Image.QUAD, quad, Image.BICUBIC)
-            img_cropped.save(src_path)
-
-            new_regions = recalculate_regions(old_regions, old_crop, c, nw, nh)
-
-            json_data['regions'] = new_regions
-            json_data['crop_params'] = box
-            json_data['status'] = ImageStatus.CROPPED.value
-            json_data['image_name'] = filename
-
-            storage.save_json(json_data)
-        return True
-    except Exception as e:
-        print(f"Crop Error: {e}")
-        return False
 
 
 # =============================================================================
@@ -322,9 +273,10 @@ def parse_page_xml(xml_path, simplify_val):
                     try:
                         x, y = map(float, pair.split(','))
                         pts.append({'x': int(x), 'y': int(y)})
-                    except:
+                    except (ValueError, TypeError, AttributeError):
+                        # Skip malformed coordinate pairs
                         continue
-                
+
                 if pts:
                     if simplify_val > 0:
                         pts = simplify_points(pts, simplify_val)
@@ -352,7 +304,6 @@ def process_zip_import(file, simplify_val=0, project_name=None):
     import uuid
     from services.project_service import project_service
     from services.annotation_service import annotation_service
-    from services.image_service import image_service
 
     if project_name is None:
         original_filename = file.filename
@@ -374,6 +325,13 @@ def process_zip_import(file, simplify_val=0, project_name=None):
 
     try:
         with zipfile.ZipFile(zip_path, 'r') as z:
+            # Zip Slip vulnerability fix: validate all paths before extraction
+            for member in z.namelist():
+                member_path = os.path.join(extract_path, member)
+                # Check that the extracted file will be within extract_path
+                if not os.path.abspath(member_path).startswith(os.path.abspath(extract_path)):
+                    raise Exception(f"Zip Slip detected: {member}")
+            
             z.extractall(extract_path)
 
         for root, _, files in os.walk(extract_path):
@@ -448,7 +406,7 @@ def run_batch_detection_for_project(project_name, settings=None, task_id=None):
 
     # Get task by ID (passed from app.py)
     if not task_id:
-        print(f"Error: task_id not provided for batch detection")
+        print("Error: task_id not provided for batch detection")
         return
 
     task = task_service.get_task(task_id)
@@ -512,7 +470,7 @@ def run_batch_recognition_for_project(project_name, task_id=None):
 
     # Get task by ID (passed from app.py)
     if not task_id:
-        print(f"Error: task_id not provided for batch recognition")
+        print("Error: task_id not provided for batch recognition")
         return
 
     task = task_service.get_task(task_id)
@@ -529,6 +487,15 @@ def run_batch_recognition_for_project(project_name, task_id=None):
         for idx, image_name in enumerate(image_names):
             # Check if annotation already has texts using annotation_service
             annotation_data = annotation_service.get_annotation(image_name)
+            
+            # Skip if no polygons (nothing to recognize)
+            regions = annotation_data.get('regions', [])
+            if not regions:
+                print(f"Skip {image_name}: no polygons for recognition")
+                task_service.update_progress(task.id, idx + 1)
+                continue
+            
+            # Skip if text already recognized
             if annotation_data.get('texts') and any(annotation_data.get('texts', {}).values()):
                 task_service.update_progress(task.id, idx + 1)
                 continue

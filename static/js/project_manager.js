@@ -261,21 +261,48 @@ class ProjectManager {
             annotatedImages = project.images.filter(img => ['segment', 'cropped', 'texted'].includes(img.status)).length;
         }
 
-        projectCard.innerHTML = `
-            <div class="project-header">
-                <h3 class="project-title">${project.name}</h3>
-            </div>
-            <div class="project-description">
-                ${project.description || 'Без описания'}
-            </div>
-            <div class="project-stats">
-                <span>${totalImages} изображений</span>
-            </div>
-            <div class="project-actions">
-                <a href="/project/${encodeURIComponent(project.name)}" class="action-btn">Открыть</a>
-                <button class="action-btn" onclick="projectManager.deleteProject('${project.name.replace(/'/g, "\\'")}')">Удалить</button>
-            </div>
-        `;
+        // Create elements safely to prevent XSS
+        const projectHeader = document.createElement('div');
+        projectHeader.className = 'project-header';
+
+        const projectTitle = document.createElement('h3');
+        projectTitle.className = 'project-title';
+        projectTitle.textContent = project.name;  // Safe: textContent escapes HTML
+
+        projectHeader.appendChild(projectTitle);
+
+        const projectDescription = document.createElement('div');
+        projectDescription.className = 'project-description';
+        projectDescription.textContent = project.description || 'Без описания';  // Safe
+
+        const projectStats = document.createElement('div');
+        projectStats.className = 'project-stats';
+
+        const statsSpan = document.createElement('span');
+        statsSpan.textContent = `${totalImages} изображений`;
+
+        projectStats.appendChild(statsSpan);
+
+        const projectActions = document.createElement('div');
+        projectActions.className = 'project-actions';
+
+        const openLink = document.createElement('a');
+        openLink.href = `/project/${encodeURIComponent(project.name)}`;
+        openLink.className = 'action-btn';
+        openLink.textContent = 'Открыть';
+
+        const deleteButton = document.createElement('button');
+        deleteButton.className = 'action-btn';
+        deleteButton.textContent = 'Удалить';
+        deleteButton.onclick = () => projectManager.deleteProject(project.name);
+
+        projectActions.appendChild(openLink);
+        projectActions.appendChild(deleteButton);
+
+        projectCard.appendChild(projectHeader);
+        projectCard.appendChild(projectDescription);
+        projectCard.appendChild(projectStats);
+        projectCard.appendChild(projectActions);
 
         return projectCard;
     }
@@ -301,16 +328,34 @@ class ProjectManager {
         const taskItem = document.createElement('div');
         taskItem.className = 'task-item';
 
-        taskItem.innerHTML = `
-            <div class="task-header">
-                <span>${task.type} - ${task.project_name}</span>
-                <span>${task.status}</span>
-            </div>
-            <div>Прогресс: ${task.completed}/${task.total}</div>
-            <div class="task-progress-bar">
-                <div class="task-progress" style="width: ${task.progress}%"></div>
-            </div>
-        `;
+        // Create elements safely to prevent XSS
+        const taskHeader = document.createElement('div');
+        taskHeader.className = 'task-header';
+
+        const typeSpan = document.createElement('span');
+        typeSpan.textContent = `${task.type} - ${task.project_name}`;  // Safe
+
+        const statusSpan = document.createElement('span');
+        statusSpan.textContent = task.status;  // Safe
+
+        taskHeader.appendChild(typeSpan);
+        taskHeader.appendChild(statusSpan);
+
+        const progressDiv = document.createElement('div');
+        progressDiv.textContent = `Прогресс: ${task.completed}/${task.total}`;  // Safe
+
+        const progressBar = document.createElement('div');
+        progressBar.className = 'task-progress-bar';
+
+        const progressInner = document.createElement('div');
+        progressInner.className = 'task-progress';
+        progressInner.style.width = `${task.progress}%`;  // Safe: number value
+
+        progressBar.appendChild(progressInner);
+
+        taskItem.appendChild(taskHeader);
+        taskItem.appendChild(progressDiv);
+        taskItem.appendChild(progressBar);
 
         return taskItem;
     }
@@ -330,19 +375,60 @@ class ProjectManager {
     createImageCard(image) {
         const imageCard = document.createElement('div');
         imageCard.className = 'file-card';
-        imageCard.innerHTML = `
-            <div style="position:relative;">
-                <img src="/data/images/${image}" class="thumb" loading="lazy" style="cursor:pointer">
-            </div>
-            <div class="meta">
-                <span title="${image}" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:80px;">${image}</span>
-            </div>
-            <div class="card-actions">
-                <a href="/cropper?image=${image}" class="action-btn action-crop" title="Кадрировать">✂️ Crop</a>
-                <a href="/editor?image=${image}" class="action-btn action-segment" title="Размечать">✏️ Seg</a>
-                <a href="/text_editor?image=${image}" class="action-btn" title="Распознавание текста">📝 Расп</a>
-            </div>
-        `;
+
+        // Create elements safely to prevent XSS
+        const imageContainer = document.createElement('div');
+        imageContainer.style.position = 'relative';
+
+        const img = document.createElement('img');
+        img.src = `/data/images/${encodeURIComponent(image)}`;  // Safe: URL encoded
+        img.className = 'thumb';
+        img.loading = 'lazy';
+        img.style.cursor = 'pointer';
+
+        imageContainer.appendChild(img);
+
+        const metaDiv = document.createElement('div');
+        metaDiv.className = 'meta';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.title = image;  // Safe: attribute
+        nameSpan.style.whiteSpace = 'nowrap';
+        nameSpan.style.overflow = 'hidden';
+        nameSpan.style.textOverflow = 'ellipsis';
+        nameSpan.style.maxWidth = '80px';
+        nameSpan.textContent = image;  // Safe: textContent
+
+        metaDiv.appendChild(nameSpan);
+
+        const cardActions = document.createElement('div');
+        cardActions.className = 'card-actions';
+
+        const cropLink = document.createElement('a');
+        cropLink.href = `/cropper?image=${encodeURIComponent(image)}`;
+        cropLink.className = 'action-btn action-crop';
+        cropLink.title = 'Кадрировать';
+        cropLink.textContent = '✂️ Crop';
+
+        const segmentLink = document.createElement('a');
+        segmentLink.href = `/editor?image=${encodeURIComponent(image)}`;
+        segmentLink.className = 'action-btn action-segment';
+        segmentLink.title = 'Размечать';
+        segmentLink.textContent = '✏️ Seg';
+
+        const textLink = document.createElement('a');
+        textLink.href = `/text_editor?image=${encodeURIComponent(image)}`;
+        textLink.className = 'action-btn';
+        textLink.title = 'Распознавание текста';
+        textLink.textContent = '📝 Расп';
+
+        cardActions.appendChild(cropLink);
+        cardActions.appendChild(segmentLink);
+        cardActions.appendChild(textLink);
+
+        imageCard.appendChild(imageContainer);
+        imageCard.appendChild(metaDiv);
+        imageCard.appendChild(cardActions);
 
         return imageCard;
     }
@@ -560,17 +646,45 @@ class ProjectManager {
         images.forEach(image => {
             const imageCard = document.createElement('div');
             imageCard.className = 'file-card';
-            imageCard.innerHTML = `
-                <div style="position:relative;">
-                    <img src="/data/images/${image}" class="thumb" loading="lazy" style="cursor:pointer">
-                </div>
-                <div class="meta">
-                    <span title="${image}" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:80px;">${image}</span>
-                </div>
-                <div class="card-actions">
-                    <button class="action-btn" onclick="projectManager.addImageToProject('${projectName.replace(/'/g, "\\'")}', '${image.replace(/'/g, "\\'")}')">Добавить</button>
-                </div>
-            `;
+
+            // Create elements safely to prevent XSS
+            const imageContainer = document.createElement('div');
+            imageContainer.style.position = 'relative';
+
+            const img = document.createElement('img');
+            img.src = `/data/images/${encodeURIComponent(image)}`;
+            img.className = 'thumb';
+            img.loading = 'lazy';
+            img.style.cursor = 'pointer';
+
+            imageContainer.appendChild(img);
+
+            const metaDiv = document.createElement('div');
+            metaDiv.className = 'meta';
+
+            const nameSpan = document.createElement('span');
+            nameSpan.title = image;
+            nameSpan.style.whiteSpace = 'nowrap';
+            nameSpan.style.overflow = 'hidden';
+            nameSpan.style.textOverflow = 'ellipsis';
+            nameSpan.style.maxWidth = '80px';
+            nameSpan.textContent = image;  // Safe: textContent
+
+            metaDiv.appendChild(nameSpan);
+
+            const cardActions = document.createElement('div');
+            cardActions.className = 'card-actions';
+
+            const addButton = document.createElement('button');
+            addButton.className = 'action-btn';
+            addButton.textContent = 'Добавить';
+            addButton.onclick = () => this.addImageToProject(projectName, image);  // Safe: closure
+
+            cardActions.appendChild(addButton);
+
+            imageCard.appendChild(imageContainer);
+            imageCard.appendChild(metaDiv);
+            imageCard.appendChild(cardActions);
 
             container.appendChild(imageCard);
         });
@@ -628,30 +742,55 @@ class ProjectManager {
             annotatedImages = project.images.filter(img => ['segment', 'cropped', 'texted'].includes(img.status)).length;
         }
 
-        projectItem.innerHTML = `
-            <div class="project-info">
-                <h3 class="project-title">${project.name}</h3>
-                <p class="project-description">${project.description || 'Без описания'}</p>
-                <div class="project-stats">
-                    <span>${totalImages} изображений</span>
-                </div>
-            </div>
-            <div class="project-actions">
-                <a href="/project/${encodeURIComponent(project.name)}" class="btn">Открыть</a>
-                <button class="btn danger delete-project-btn">Удалить</button>
-            </div>
-        `;
+        // Create elements safely to prevent XSS
+        const projectInfo = document.createElement('div');
+        projectInfo.className = 'project-info';
+
+        const title = document.createElement('h3');
+        title.className = 'project-title';
+        title.textContent = project.name;  // Safe: textContent
+
+        const description = document.createElement('p');
+        description.className = 'project-description';
+        description.textContent = project.description || 'Без описания';  // Safe
+
+        const stats = document.createElement('div');
+        stats.className = 'project-stats';
+
+        const statsSpan = document.createElement('span');
+        statsSpan.textContent = `${totalImages} изображений`;  // Safe
+
+        stats.appendChild(statsSpan);
+
+        projectInfo.appendChild(title);
+        projectInfo.appendChild(description);
+        projectInfo.appendChild(stats);
+
+        const projectActions = document.createElement('div');
+        projectActions.className = 'project-actions';
+
+        const openLink = document.createElement('a');
+        openLink.href = `/project/${encodeURIComponent(project.name)}`;
+        openLink.className = 'btn';
+        openLink.textContent = 'Открыть';
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn danger delete-project-btn';
+        deleteBtn.textContent = 'Удалить';
+        deleteBtn.onclick = (event) => {
+            event.stopPropagation();
+            this.deleteProject(project.name);
+        };
+
+        projectActions.appendChild(openLink);
+        projectActions.appendChild(deleteBtn);
+
+        projectItem.appendChild(projectInfo);
+        projectItem.appendChild(projectActions);
 
         // Make the entire card clickable
         projectItem.addEventListener('click', function() {
             window.location.href = `/project/${encodeURIComponent(project.name)}`;
-        });
-
-        // Add delete button handler with stopPropagation
-        const deleteBtn = projectItem.querySelector('.delete-project-btn');
-        deleteBtn.addEventListener('click', (event) => {
-            event.stopPropagation();
-            this.deleteProject(project.name);
         });
 
         return projectItem;

@@ -117,13 +117,16 @@ def load_data(filename):
 def save_data():
     incoming_data = request.json
     filename = incoming_data.get('image_name')
-    
+
     if not filename:
         return jsonify({'status': 'error', 'msg': 'No filename'}), 400
 
     try:
+        # Validate filename to prevent path traversal
+        validated = image_service._validate_filename(filename)
+        
         # Load existing data
-        existing_data = annotation_service.get_annotation(filename)
+        existing_data = annotation_service.get_annotation(validated)
 
         # Update fields
         for key in ['regions', 'texts', 'status', 'processing_params', 'crop_params']:
@@ -131,14 +134,14 @@ def save_data():
                 existing_data[key] = incoming_data[key]
 
         # Ensure image_name is set
-        existing_data['image_name'] = filename
+        existing_data['image_name'] = validated
 
-        if annotation_service.save_annotation(filename, existing_data):
+        if annotation_service.save_annotation(validated, existing_data):
             return jsonify({'status': 'success'})
         return jsonify({'status': 'error'}), 500
-        
+
     except ValueError as e:
-        return jsonify({'status': 'error', 'msg': str(e)}), 400
+        return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
     except Exception as e:
         return jsonify({'status': 'error', 'msg': str(e)}), 500
 
@@ -153,9 +156,15 @@ def crop():
     if not filename or not box:
         return jsonify({'status': 'error', 'msg': 'No data'}), 400
 
+    try:
+        # Validate filename to prevent path traversal
+        validated = image_service._validate_filename(filename)
+    except ValueError:
+        return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
+
     # Async background processing
     def task():
-        image_service.crop_image(filename, box)
+        image_service.crop_image(validated, box)
 
     thread = threading.Thread(target=task)
     thread.start()
@@ -196,13 +205,17 @@ def detect_lines():
     data = request.json
     filename = data.get('image_name')
     settings = data.get('settings', {})
-    
+
     if not filename:
         return jsonify({'status': 'error', 'msg': 'No image name provided'}), 400
 
     try:
-        regions = ai_service.detect_lines(filename, settings)
+        # Validate filename to prevent path traversal
+        validated = image_service._validate_filename(filename)
+        regions = ai_service.detect_lines(validated, settings)
         return jsonify({'status': 'success', 'regions': regions})
+    except ValueError:
+        return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
     except Exception as e:
         return jsonify({'status': 'error', 'msg': str(e)}), 500
 
@@ -218,33 +231,39 @@ def recognize_text():
     if not filename:
         return jsonify({'status': 'error', 'msg': 'No image name provided'}), 400
 
+    try:
+        # Validate filename to prevent path traversal
+        validated = image_service._validate_filename(filename)
+    except ValueError:
+        return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
+
     # Get regions count for progress
     if regions is None:
-        annotation_data = annotation_service.get_annotation(filename)
+        annotation_data = annotation_service.get_annotation(validated)
         regions = annotation_data.get('regions', [])
 
     total_regions = len(regions)
-    recognition_progress[filename] = {'processed': 0, 'total': total_regions, 'status': 'processing'}
+    recognition_progress[validated] = {'processed': 0, 'total': total_regions, 'status': 'processing'}
 
     # Async background processing
     def task():
         def update_progress(processed, total):
-            recognition_progress[filename] = {
+            recognition_progress[validated] = {
                 'processed': processed,
                 'total': total,
                 'status': 'processing'
             }
 
         try:
-            ai_service.recognize_text(filename, regions, progress_callback=update_progress)
-            recognition_progress[filename] = {
+            ai_service.recognize_text(validated, regions, progress_callback=update_progress)
+            recognition_progress[validated] = {
                 'processed': total_regions,
                 'total': total_regions,
                 'status': 'completed'
             }
         except Exception as e:
             # При ошибке тоже очищаем запись
-            recognition_progress[filename] = {
+            recognition_progress[validated] = {
                 'processed': 0,
                 'total': total_regions,
                 'status': 'failed',
@@ -254,8 +273,8 @@ def recognize_text():
             # 🔧 Очистка записи после завершения (предотвращает утечку памяти)
             # Даём клиенту время (5 секунд) прочитать финальный статус перед удалением
             time.sleep(5)
-            if filename in recognition_progress:
-                del recognition_progress[filename]
+            if validated in recognition_progress:
+                del recognition_progress[validated]
 
     thread = threading.Thread(target=task)
     thread.start()
@@ -316,8 +335,11 @@ def projects():
 
 @app.route('/api/projects/<project_name>', methods=['GET', 'PUT', 'DELETE'])
 def project(project_name):
+    # Sanitize project name to prevent path traversal
+    sanitized_name = project_service._sanitize_name(project_name)
+    
     if request.method == 'GET':
-        project_data = project_service.get_project(project_name)
+        project_data = project_service.get_project(sanitized_name)
 
         if not project_data:
             return jsonify({'status': 'error', 'msg': 'Project not found'}), 404
@@ -330,7 +352,7 @@ def project(project_name):
         description = data.get('description')
 
         result = project_service.update_project(
-            project_name,
+            sanitized_name,
             new_name=new_name,
             description=description
         )
@@ -341,7 +363,7 @@ def project(project_name):
             return jsonify({'status': 'error', 'msg': 'Project not found or name collision'}), 400
 
     elif request.method == 'DELETE':
-        result = project_service.delete_project(project_name)
+        result = project_service.delete_project(sanitized_name)
 
         if result:
             return jsonify({'status': 'success', 'msg': 'Project deleted'})
@@ -351,8 +373,11 @@ def project(project_name):
 
 @app.route('/api/projects/<project_name>/images', methods=['GET', 'DELETE'])
 def project_images(project_name):
+    # Sanitize project name to prevent path traversal
+    sanitized_name = project_service._sanitize_name(project_name)
+    
     if request.method == 'GET':
-        images = project_service.get_images(project_name)
+        images = project_service.get_images(sanitized_name)
         return jsonify({'images': images})
 
     elif request.method == 'DELETE':
@@ -362,7 +387,7 @@ def project_images(project_name):
         if not image_name:
             return jsonify({'status': 'error', 'msg': 'Image name is required'}), 400
 
-        result = project_service.remove_image(project_name, image_name)
+        result = project_service.remove_image(sanitized_name, image_name)
 
         if result:
             return jsonify({'status': 'success', 'msg': 'Image removed from project'})
@@ -372,6 +397,9 @@ def project_images(project_name):
 
 @app.route('/api/projects/<project_name>/upload_images', methods=['POST'])
 def upload_project_images(project_name):
+    # Sanitize project name to prevent path traversal
+    sanitized_name = project_service._sanitize_name(project_name)
+    
     if 'images' not in request.files:
         return jsonify({'status': 'error', 'msg': 'No images provided'}), 400
 
@@ -386,7 +414,7 @@ def upload_project_images(project_name):
                 continue
 
             # Save image and add to project
-            filename = image_service.upload_image(file, project_name=project_name)
+            filename = image_service.upload_image(file, project_name=sanitized_name)
             if filename:
                 uploaded_count += 1
             else:
@@ -406,29 +434,35 @@ def upload_project_images(project_name):
 
 @app.route('/api/projects/<project_name>/export_zip')
 def export_project_zip(project_name):
-    zip_data = project_service.export_to_zip(project_name)
+    # Sanitize project name to prevent path traversal
+    sanitized_name = project_service._sanitize_name(project_name)
     
+    zip_data = project_service.export_to_zip(sanitized_name)
+
     if zip_data is None:
         return jsonify({'status': 'error', 'msg': 'Project not found'}), 404
-    
+
     return send_file(
         io.BytesIO(zip_data),
         as_attachment=True,
-        download_name=f'{project_name}_export.zip',
+        download_name=f'{sanitized_name}_export.zip',
         mimetype='application/zip'
     )
 
 
 @app.route('/api/projects/<project_name>/batch_detect', methods=['POST'])
 def batch_detect(project_name):
+    # Sanitize project name to prevent path traversal
+    sanitized_name = project_service._sanitize_name(project_name)
+    
     settings = request.json.get('settings', {})
-    images = project_service.get_images(project_name)
+    images = project_service.get_images(sanitized_name)
 
     if not images:
         return jsonify({'status': 'error', 'msg': 'No images in project'}), 400
 
     # Get project for project_id
-    project = project_service.get_project(project_name)
+    project = project_service.get_project(sanitized_name)
     project_id = None
     if project:
         # Get project_id from DB
@@ -437,7 +471,7 @@ def batch_detect(project_name):
         session = SessionLocal()
         try:
             repo = ProjectRepository(session)
-            db_project = repo.get_by_name(project_name)
+            db_project = repo.get_by_name(sanitized_name)
             if db_project:
                 project_id = db_project.id
         finally:
@@ -446,16 +480,16 @@ def batch_detect(project_name):
     # Create task and run in background
     task = task_service.create_task(
         task_type="batch_detection",
-        project_name=project_name,
+        project_name=sanitized_name,
         project_id=project_id,
         images=[img['filename'] if isinstance(img, dict) else img for img in images],
-        description=f"Batch detection for project {project_name}"
+        description=f"Batch detection for project {sanitized_name}"
     )
 
     task_service.run_background(
         task=task,
         func=logic.run_batch_detection_for_project,
-        project_name=project_name,
+        project_name=sanitized_name,
         settings=settings,
         task_id=task.id
     )
@@ -469,7 +503,10 @@ def batch_detect(project_name):
 
 @app.route('/api/projects/<project_name>/batch_recognize', methods=['POST'])
 def batch_recognize(project_name):
-    images = project_service.get_images(project_name)
+    # Sanitize project name to prevent path traversal
+    sanitized_name = project_service._sanitize_name(project_name)
+    
+    images = project_service.get_images(sanitized_name)
 
     if not images:
         return jsonify({'status': 'error', 'msg': 'No images in project'}), 400
@@ -481,7 +518,7 @@ def batch_recognize(project_name):
     project_id = None
     try:
         repo = ProjectRepository(session)
-        db_project = repo.get_by_name(project_name)
+        db_project = repo.get_by_name(sanitized_name)
         if db_project:
             project_id = db_project.id
     finally:
@@ -490,16 +527,16 @@ def batch_recognize(project_name):
     # Create task and run in background
     task = task_service.create_task(
         task_type="batch_recognition",
-        project_name=project_name,
+        project_name=sanitized_name,
         project_id=project_id,
         images=[img['filename'] if isinstance(img, dict) else img for img in images],
-        description=f"Batch recognition for project {project_name}"
+        description=f"Batch recognition for project {sanitized_name}"
     )
 
     task_service.run_background(
         task=task,
         func=logic.run_batch_recognition_for_project,
-        project_name=project_name,
+        project_name=sanitized_name,
         task_id=task.id
     )
 
@@ -530,12 +567,15 @@ def get_task(task_id):
 # --- Pages: Project ---
 @app.route('/project/<project_name>')
 def project_page(project_name):
-    project_data = project_service.get_project(project_name)
+    # Sanitize project name to prevent path traversal
+    sanitized_name = project_service._sanitize_name(project_name)
+    
+    project_data = project_service.get_project(sanitized_name)
 
     if not project_data:
         return "Project not found", 404
 
-    images = project_service.get_images(project_name)
+    images = project_service.get_images(sanitized_name)
     project_data['images'] = images
 
     return render_template('project.html', project=project_data)

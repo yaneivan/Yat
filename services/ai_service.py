@@ -286,6 +286,7 @@ class AIService:
         
         from services.image_service import image_service
         from services.annotation_service import annotation_service
+        from database.enums import ImageStatus
         
         # Load image
         image = image_service.get_image(filename)
@@ -326,7 +327,7 @@ class AIService:
         
         # Update annotation with recognized texts
         annotation_data['texts'] = recognized_texts
-        annotation_data['status'] = 'texted'
+        annotation_data['status'] = ImageStatus.TEXTED.value
         annotation_data['image_name'] = filename
         annotation_service.save_annotation(filename, annotation_data)
         
