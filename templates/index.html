@@ -410,6 +410,9 @@
                 <a href="/" class="active">Проекты</a>
             </div>
             <div class="nav-actions">
+                {% if USE_AUTH %}
+                <a href="/logout" style="color:#dc3545;">Выйти</a>
+                {% endif %}
                 <a href="#" onclick="openImportModal()">Импорт</a>
             </div>
         </div>

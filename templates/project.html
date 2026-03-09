@@ -554,6 +554,9 @@
                 <a href="/project/{{ project.name }}" class="active">Текущий проект</a>
             </div>
             <div class="nav-actions">
+                {% if USE_AUTH %}
+                <a href="/logout" style="color:#dc3545;">Выйти</a>
+                {% endif %}
                 <a href="#" onclick="openImportModal()">Импорт</a>
                 <a href="/api/projects/{{ project.name }}/export_zip">Экспорт</a>
             </div>

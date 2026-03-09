@@ -1,14 +1,10 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, send_file
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, send_file, session
+import argparse
 import io
-import json
 import os
-import re
-import shutil
 import threading
 import time
-from datetime import datetime
 
-import config
 import logic
 import storage
 
@@ -39,6 +35,69 @@ if ai_service.is_trocr_available():
         print(f"Error initializing AI models: {e}")
 
 app = Flask(__name__)
+
+# =============================================================================
+# Password Protection (optional)
+# =============================================================================
+# Parse command line arguments
+parser = argparse.ArgumentParser()
+parser.add_argument('--password', type=str, help='Password for access protection')
+parser.add_argument('--host', type=str, default='127.0.0.1', help='Host to bind')
+parser.add_argument('--port', type=int, default=5000, help='Port to bind')
+args, unknown = parser.parse_known_args()
+
+# Get password from argument or environment variable
+APP_PASSWORD = args.password or os.environ.get('APP_PASSWORD')
+USE_AUTH = APP_PASSWORD is not None
+
+# Set secret key for sessions (required for auth)
+if USE_AUTH:
+    app.secret_key = os.environ.get('SECRET_KEY', 'change-this-secret-key-in-production')
+
+
+@app.before_request
+def check_auth():
+    """Check authorization if password protection is enabled."""
+    if not USE_AUTH:
+        return  # No password - allow all
+    
+    # Skip login page and static files
+    if request.path in ['/login', '/static', '/favicon.ico']:
+        return
+    
+    # No session - redirect to login
+    if 'authenticated' not in session:
+        return redirect(url_for('login'))
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page for password protection."""
+    if not USE_AUTH:
+        return redirect('/')  # No password - redirect to home
+    
+    if request.method == 'POST':
+        if request.form.get('password') == APP_PASSWORD:
+            session['authenticated'] = True
+            return redirect('/')
+        return render_template('login.html', error='Неверный пароль')
+    return render_template('login.html')
+
+
+@app.route('/logout')
+def logout():
+    """Logout - clear session."""
+    session.pop('authenticated', None)
+    return redirect(url_for('login'))
+
+
+# Make USE_AUTH available to templates
+@app.context_processor
+def inject_auth():
+    return {'USE_AUTH': USE_AUTH}
+
+
+# =============================================================================
 
 # --- Pages ---
 @app.route('/')
@@ -108,7 +167,7 @@ def load_data(filename):
         validated = image_service._validate_filename(filename)
         data = annotation_service.get_annotation(validated)
         return jsonify(data)
-    except ValueError as e:
+    except ValueError:
         return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
     except Exception as e:
         return jsonify({'status': 'error', 'msg': str(e)}), 500
@@ -140,7 +199,7 @@ def save_data():
             return jsonify({'status': 'success'})
         return jsonify({'status': 'error'}), 500
 
-    except ValueError as e:
+    except ValueError:
         return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
     except Exception as e:
         return jsonify({'status': 'error', 'msg': str(e)}), 500
