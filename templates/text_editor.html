@@ -185,10 +185,6 @@
         <span id="filename-display" class="file-info" style="font-size:0.9em; color:#aaa; max-width:200px; overflow:hidden; white-space:nowrap;">{{ filename }}</span>
 
         <div style="flex:1"></div>
-        {% if USE_AUTH %}
-        <a href="/logout" style="color:#dc3545; text-decoration:none; padding:8px 12px; border:1px solid #dc3545; border-radius:4px; margin-right:10px; font-size:0.9em;">Выйти</a>
-        {% endif %}
-
         <button class="btn" id="btn-recognize" onclick="editor.recognizeText()">Распознать текст</button>
         <div class="sep"></div>
         <div id="save-status" style="font-size:0.8em; color:#888; min-width:80px; text-align:right; margin-right:10px; display:inline-block;">&nbsp;</div>
