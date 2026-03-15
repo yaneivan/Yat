@@ -8,11 +8,31 @@ dependencies = [
     "alembic>=1.18.4",
     "flask>=3.1.2",
     "pillow>=12.1.1",
+    "reportlab>=4.0.0",
     "sqlalchemy>=2.0.48",
-    "torch==2.7.1",
     "transformers>=5.1.0",
     "ultralytics>=8.4.14",
 ]
+
+# CUDA для Windows
+[project.optional-dependencies]
+cuda = [
+    "torch==2.5.1+cu124; sys_platform == 'win32'",
+    "torchvision==0.20.1+cu124; sys_platform == 'win32'",
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cuda", marker = "sys_platform == 'win32'" },
+]
+torchvision = [
+    { index = "pytorch-cuda", marker = "sys_platform == 'win32'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
 
 [dependency-groups]
 dev = [
