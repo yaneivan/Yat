@@ -138,6 +138,7 @@ class AnnotationService:
             # Find image
             image = image_repo.get_by_filename(validated_filename)
             if not image:
+                print(f"[AnnotationService] Image not found: {filename}")
                 return False
 
             # Update image fields (crop_params, status)
@@ -151,6 +152,7 @@ class AnnotationService:
 
             # Find or create annotation
             annotation = annotation_repo.get_by_image(image.id)
+            print(f"[AnnotationService] Found annotation: {annotation is not None}")
 
             # Convert regions and texts to polygons format
             regions = data.get('regions', [])
@@ -168,14 +170,19 @@ class AnnotationService:
 
             print(f"[AnnotationService] Saving {len(polygons)} polygons for {filename}")
 
-            if annotation:
-                annotation_repo.update(annotation, polygons=polygons)
-                print("[AnnotationService] Updated existing annotation")
-            else:
-                annotation_repo.create(image_id=image.id, polygons=polygons)
-                print("[AnnotationService] Created new annotation")
-
-            return True
+            try:
+                if annotation:
+                    annotation_repo.update(annotation, polygons=polygons)
+                    print("[AnnotationService] Updated existing annotation")
+                else:
+                    annotation_repo.create(image_id=image.id, polygons=polygons)
+                    print("[AnnotationService] Created new annotation")
+                return True
+            except Exception as e:
+                print(f"[AnnotationService] DB error: {e}")
+                import traceback
+                print(traceback.format_exc())
+                return False
         finally:
             session.close()
 

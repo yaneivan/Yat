@@ -555,7 +555,7 @@
             </div>
             <div class="nav-actions">
                 <a href="#" onclick="openImportModal()">Импорт</a>
-                <a href="/api/projects/{{ project.name }}/export_zip">Экспорт</a>
+                <a href="#" onclick="openExportModal()" style="margin-left: 10px;">Экспорт</a>
             </div>
         </div>
     </div>
@@ -731,6 +731,85 @@
         .project-title-container {
             display: flex;
             align-items: center;
+        }
+
+        /* Export modal styles */
+        .export-options {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .export-option {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: white;
+        }
+
+        .export-option:hover {
+            border-color: #007bff;
+            background: #f0f7ff;
+            transform: translateX(5px);
+        }
+
+        .export-option-icon {
+            font-size: 2em;
+            margin-right: 15px;
+            width: 50px;
+            text-align: center;
+        }
+
+        .export-option-info {
+            flex: 1;
+        }
+
+        .export-option-title {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 3px;
+        }
+
+        .export-option-desc {
+            font-size: 0.85em;
+            color: #666;
+        }
+
+        /* Loading animation for export */
+        .export-loading {
+            text-align: center;
+            padding: 30px;
+        }
+
+        .export-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .export-loading-text {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .export-loading-subtext {
+            color: #999;
+            font-size: 0.9em;
+            margin-top: 10px;
         }
     </style>
 </head>
@@ -1019,7 +1098,174 @@
         </div>
     </div>
 
+    <!-- Export Modal -->
+    <div id="exportModal" class="modal">
+        <div class="modal-content">
+            <h3>Экспорт проекта</h3>
+            <p style="color: #666; margin-bottom: 20px;">Выберите формат экспорта:</p>
+            
+            <div class="export-options">
+                <div class="export-option" onclick="startExport('zip')">
+                    <div class="export-option-icon">📦</div>
+                    <div class="export-option-info">
+                        <div class="export-option-title">ZIP (PageXML)</div>
+                        <div class="export-option-desc">METS + PageXML для eScriptorium</div>
+                    </div>
+                </div>
+                
+                <div class="export-option" onclick="startExport('overlay')">
+                    <div class="export-option-icon">📝</div>
+                    <div class="export-option-info">
+                        <div class="export-option-title">PDF: Полигоны</div>
+                        <div class="export-option-desc">Изображения с текстом внутри полигонов</div>
+                    </div>
+                </div>
+                
+                <div class="export-option" onclick="startExport('parallel')">
+                    <div class="export-option-icon">📖</div>
+                    <div class="export-option-info">
+                        <div class="export-option-title">PDF: Сравнение</div>
+                        <div class="export-option-desc">Слева оригинал, справа с текстом</div>
+                    </div>
+                </div>
+                
+                <div class="export-option" onclick="startExport('original')">
+                    <div class="export-option-icon">📷</div>
+                    <div class="export-option-info">
+                        <div class="export-option-title">PDF: Оригинал</div>
+                        <div class="export-option-desc">Только изображения без разметки</div>
+                    </div>
+                </div>
+                
+                <div class="export-option" onclick="startExport('text')">
+                    <div class="export-option-icon">📄</div>
+                    <div class="export-option-info">
+                        <div class="export-option-title">PDF: Текст</div>
+                        <div class="export-option-desc">Только распознанный текст</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-actions">
+                <div class="btn-group">
+                    <button class="btn" onclick="closeExportModal()">Отмена</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
+        // Export modal functions
+        function openExportModal() {
+            document.getElementById('exportModal').style.display = 'flex';
+        }
+
+        function closeExportModal() {
+            document.getElementById('exportModal').style.display = 'none';
+            // Restore original content
+            document.querySelector('#exportModal .modal-content').innerHTML = getExportModalContent();
+        }
+
+        function getExportModalContent() {
+            return `
+                <h3>Экспорт проекта</h3>
+                <p style="color: #666; margin-bottom: 20px;">Выберите формат экспорта:</p>
+                
+                <div class="export-options">
+                    <div class="export-option" onclick="startExport('zip')">
+                        <div class="export-option-icon">📦</div>
+                        <div class="export-option-info">
+                            <div class="export-option-title">ZIP (PageXML)</div>
+                            <div class="export-option-desc">METS + PageXML для eScriptorium</div>
+                        </div>
+                    </div>
+                    
+                    <div class="export-option" onclick="startExport('overlay')">
+                        <div class="export-option-icon">📝</div>
+                        <div class="export-option-info">
+                            <div class="export-option-title">PDF: Полигоны</div>
+                            <div class="export-option-desc">Изображения с текстом внутри полигонов</div>
+                        </div>
+                    </div>
+                    
+                    <div class="export-option" onclick="startExport('parallel')">
+                        <div class="export-option-icon">📖</div>
+                        <div class="export-option-info">
+                            <div class="export-option-title">PDF: Сравнение</div>
+                            <div class="export-option-desc">Слева оригинал, справа с текстом</div>
+                        </div>
+                    </div>
+                    
+                    <div class="export-option" onclick="startExport('original')">
+                        <div class="export-option-icon">📷</div>
+                        <div class="export-option-info">
+                            <div class="export-option-title">PDF: Оригинал</div>
+                            <div class="export-option-desc">Только изображения без разметки</div>
+                        </div>
+                    </div>
+                    
+                    <div class="export-option" onclick="startExport('text')">
+                        <div class="export-option-icon">📄</div>
+                        <div class="export-option-info">
+                            <div class="export-option-title">PDF: Текст</div>
+                            <div class="export-option-desc">Только распознанный текст</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-actions">
+                    <div class="btn-group">
+                        <button class="btn" onclick="closeExportModal()">Отмена</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function startExport(variant) {
+            const projectName = "{{ project.name }}";
+            const modalContent = document.querySelector('#exportModal .modal-content');
+            
+            // Show loading animation
+            modalContent.innerHTML = `
+                <h3>Экспорт проекта</h3>
+                <div class="export-loading">
+                    <div class="export-spinner"></div>
+                    <div class="export-loading-text">Генерация файла...</div>
+                    <div class="export-loading-subtext">Это может занять до 30 секунд</div>
+                    <div class="export-loading-subtext" style="color: #ffc107; margin-top: 15px;">⚠️ Не закрывайте окно до завершения скачивания</div>
+                </div>
+                <div class="form-actions" style="margin-top: 20px;">
+                    <div class="btn-group" style="justify-content: center;">
+                        <button class="btn" onclick="closeExportModal()">Закрыть</button>
+                    </div>
+                </div>
+            `;
+            
+            // Determine download URL and filename
+            const variantNames = {
+                'zip': 'export',
+                'overlay': 'with_text_overlay',
+                'parallel': 'side_by_side',
+                'original': 'images_only',
+                'text': 'text_only'
+            };
+            
+            const url = variant === 'zip' 
+                ? `/api/projects/${encodeURIComponent(projectName)}/export_zip`
+                : `/api/projects/${encodeURIComponent(projectName)}/export_pdf?variant=${variant}`;
+            
+            const filename = `${projectName}_${variantNames[variant]}.${variant === 'zip' ? 'zip' : 'pdf'}`;
+            
+            // Create invisible link and trigger download
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
         // Import modal functions
         function openImportModal() {
             document.getElementById('importModal').style.display = 'flex';

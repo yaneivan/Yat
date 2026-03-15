@@ -183,7 +183,7 @@ def save_data():
     try:
         # Validate filename to prevent path traversal
         validated = image_service._validate_filename(filename)
-        
+
         # Load existing data
         existing_data = annotation_service.get_annotation(validated)
 
@@ -195,13 +195,21 @@ def save_data():
         # Ensure image_name is set
         existing_data['image_name'] = validated
 
+        print(f"[DEBUG] Saving annotation for {validated}: {len(incoming_data.get('regions', []))} regions")
+        
         if annotation_service.save_annotation(validated, existing_data):
+            print(f"[DEBUG] Save successful")
             return jsonify({'status': 'success'})
+        print(f"[DEBUG] Save failed - annotation_service returned False")
         return jsonify({'status': 'error'}), 500
 
-    except ValueError:
+    except ValueError as e:
+        print(f"[DEBUG] ValueError: {e}")
         return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
     except Exception as e:
+        import traceback
+        print(f"[DEBUG] Exception: {e}")
+        print(traceback.format_exc())
         return jsonify({'status': 'error', 'msg': str(e)}), 500
 
 
@@ -495,7 +503,7 @@ def upload_project_images(project_name):
 def export_project_zip(project_name):
     # Sanitize project name to prevent path traversal
     sanitized_name = project_service._sanitize_name(project_name)
-    
+
     zip_data = project_service.export_to_zip(sanitized_name)
 
     if zip_data is None:
@@ -506,6 +514,44 @@ def export_project_zip(project_name):
         as_attachment=True,
         download_name=f'{sanitized_name}_export.zip',
         mimetype='application/zip'
+    )
+
+
+@app.route('/api/projects/<project_name>/export_pdf')
+def export_project_pdf(project_name):
+    # Sanitize project name to prevent path traversal
+    sanitized_name = project_service._sanitize_name(project_name)
+    
+    # Get variant from query parameter (default: overlay)
+    variant = request.args.get('variant', 'overlay')
+    
+    # Validate variant
+    valid_variants = ['original', 'overlay', 'parallel', 'text']
+    if variant not in valid_variants:
+        return jsonify({'status': 'error', 'msg': f'Invalid variant. Must be one of: {valid_variants}'}), 400
+    
+    # Import PDF export service
+    from services.pdf_export_service import pdf_export_service
+    
+    # Generate PDF
+    pdf_data = pdf_export_service.export_project(sanitized_name, variant=variant)
+    
+    if pdf_data is None:
+        return jsonify({'status': 'error', 'msg': 'Project not found or export failed'}), 404
+    
+    # Determine filename
+    variant_names = {
+        'original': 'images_only',
+        'overlay': 'with_text_overlay',
+        'parallel': 'side_by_side',
+        'text': 'text_only'
+    }
+    
+    return send_file(
+        io.BytesIO(pdf_data),
+        as_attachment=True,
+        download_name=f'{sanitized_name}_{variant_names[variant]}.pdf',
+        mimetype='application/pdf'
     )
 
 
