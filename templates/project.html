@@ -683,10 +683,32 @@
             transition: 0.2s;
             margin-bottom: 20px;
         }
-        
+
         .drop-area.highlight {
             border-color: #007bff;
             background: #e9f5ff;
+        }
+
+        .drop-area.uploading {
+            border-color: #28a745;
+            background: #e8f5e9;
+            pointer-events: none;
+            opacity: 0.8;
+        }
+
+        .drop-area .upload-spinner {
+            display: none;
+            margin-top: 10px;
+            font-size: 14px;
+            color: #28a745;
+        }
+
+        .drop-area.uploading .upload-spinner {
+            display: block;
+        }
+
+        .drop-area.uploading p {
+            display: none;
         }
         
         .batch-actions {
@@ -741,22 +763,23 @@
         
         <div class="drop-area" id="dropArea">
             <p>Перетащите изображения сюда или нажмите для выбора</p>
+            <div class="upload-spinner">⏳ Загрузка...</div>
             <input type="file" id="fileInput" multiple style="display: none;" accept="image/*">
         </div>
         
         <div class="image-grid" id="imageGrid">
             {% for image in project.images %}
             <div class="image-card">
-                <img src="/data/images/{{ image.name }}" class="image-thumb" alt="{{ image.name }}">
+                <img src="/data/images/{{ image.filename }}" class="image-thumb" alt="{{ image.filename }}">
                 <div class="image-meta">
-                    <div class="image-name" title="{{ image.name }}">{{ image.name }}</div>
+                    <div class="image-name" title="{{ image.filename }}">{{ image.filename }}</div>
                     <div class="image-status status-{{ image.status }}">{{ 'Размечено' if image.status == 'segment' else 'Кадрировано' if image.status == 'cropped' else 'Текст добавлен' if image.status == 'texted' else 'Нужно кадрировать' }}</div>
                 </div>
                 <div class="image-actions">
-                    <input type="checkbox" class="select-checkbox" data-image="{{ image.name }}">
-                    <a href="/cropper?project={{ project.name }}&image={{ image.name }}" class="btn image-action-btn">Обрезка</a>
-                    <a href="/editor?project={{ project.name }}&image={{ image.name }}" class="btn image-action-btn">Сегменты</a>
-                    <a href="/text_editor?project={{ project.name }}&image={{ image.name }}" class="btn image-action-btn">Распознавать</a>
+                    <input type="checkbox" class="select-checkbox" data-image="{{ image.filename }}">
+                    <a href="/cropper?project={{ project.name }}&image={{ image.filename }}" class="btn image-action-btn">Обрезка</a>
+                    <a href="/editor?project={{ project.name }}&image={{ image.filename }}" class="btn image-action-btn">Сегменты</a>
+                    <a href="/text_editor?project={{ project.name }}&image={{ image.filename }}" class="btn image-action-btn">Распознавать</a>
                 </div>
             </div>
             {% endfor %}
@@ -827,25 +850,29 @@
         }
         
         async function uploadImages(formData) {
+            dropArea.classList.add('uploading');
+            
             try {
                 const projectName = "{{ project.name }}";
                 const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/upload_images`, {
                     method: 'POST',
                     body: formData
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (result.status === 'success') {
                     showNotification('Изображения успешно загружены', 'success');
                     // Reload the page to show new images
                     location.reload();
                 } else {
                     showNotification('Ошибка: ' + result.msg, 'error');
+                    dropArea.classList.remove('uploading');
                 }
             } catch (error) {
                 console.error('Error uploading images:', error);
                 showNotification('Ошибка при загрузке изображений', 'error');
+                dropArea.classList.remove('uploading');
             }
         }
         
@@ -932,7 +959,7 @@
             }
             
             const selectedImages = Array.from(selectedCheckboxes).map(cb => cb.dataset.image);
-            if (!confirm(`Удалить ${selectedImages.length} изображений из проекта?`)) {
+            if (!confirm(`Удалить ${selectedImages.length} изображений? Файлы будут удалены безвозвратно.`)) {
                 return;
             }
             
@@ -946,17 +973,20 @@
                     const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/images`, {
                         method: 'DELETE',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({image_name: imageName})
+                        body: JSON.stringify({
+                            image_name: imageName,
+                            delete_file: true  // Полное удаление файлов
+                        })
                     });
-                    
+
                     const result = await response.json();
-                    
+
                     if (result.status !== 'success') {
                         showNotification(`Ошибка при удалении ${imageName}: ${result.msg}`, 'error');
                         return;
                     }
                 }
-                
+
                 showNotification(`Успешно удалено ${imageNames.length} изображений`, 'success');
                 // Reload the page to reflect changes
                 location.reload();

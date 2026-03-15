@@ -22,10 +22,10 @@ coverage.xml
 .pytest_cache
 .hypothesis
 .DS_Store
-uv.lock
 poetry.lock
 Pipfile
 Pipfile.lock
-pyproject.toml
 data/
 models/
+database.db
+tests/

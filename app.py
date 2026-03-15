@@ -1,22 +1,103 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for, send_file
-import storage
-import logic
-import threading
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, send_file, session
+import argparse
+import io
 import os
-import json
-import re
-from datetime import datetime
-import config
+import threading
+import time
 
-# Initialize TROCR model at startup
-if logic.TROCR_AVAILABLE:
+import logic
+import storage
+
+# Import services
+from services import (
+    task_service,
+    annotation_service,
+    image_service,
+    project_service,
+    ai_service,
+)
+
+# Import database
+from database.session import init_db
+
+# Initialize database only if not running tests
+import sys
+if 'pytest' not in sys.modules:
+    init_db()
+    print("Database initialized")
+
+# Initialize AI models at startup
+if ai_service.is_trocr_available():
     try:
-        device = logic.initialize_trocr_model("raxtemur/trocr-base-ru")  # Russian-specific model
-        print(f"TROCR model initialized successfully on {device}")
+        ai_service.initialize_models("raxtemur/trocr-base-ru")
+        print("AI models initialized successfully")
     except Exception as e:
-        print(f"Error initializing TROCR model: {e}")
+        print(f"Error initializing AI models: {e}")
 
 app = Flask(__name__)
+
+# =============================================================================
+# Password Protection (optional)
+# =============================================================================
+# Parse command line arguments
+parser = argparse.ArgumentParser()
+parser.add_argument('--password', type=str, help='Password for access protection')
+parser.add_argument('--host', type=str, default='127.0.0.1', help='Host to bind')
+parser.add_argument('--port', type=int, default=5000, help='Port to bind')
+args, unknown = parser.parse_known_args()
+
+# Get password from argument or environment variable
+APP_PASSWORD = args.password or os.environ.get('APP_PASSWORD')
+USE_AUTH = APP_PASSWORD is not None
+
+# Set secret key for sessions (required for auth)
+if USE_AUTH:
+    app.secret_key = os.environ.get('SECRET_KEY', 'change-this-secret-key-in-production')
+
+
+@app.before_request
+def check_auth():
+    """Check authorization if password protection is enabled."""
+    if not USE_AUTH:
+        return  # No password - allow all
+    
+    # Skip login page and static files
+    if request.path in ['/login', '/static', '/favicon.ico']:
+        return
+    
+    # No session - redirect to login
+    if 'authenticated' not in session:
+        return redirect(url_for('login'))
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page for password protection."""
+    if not USE_AUTH:
+        return redirect('/')  # No password - redirect to home
+    
+    if request.method == 'POST':
+        if request.form.get('password') == APP_PASSWORD:
+            session['authenticated'] = True
+            return redirect('/')
+        return render_template('login.html', error='Неверный пароль')
+    return render_template('login.html')
+
+
+@app.route('/logout')
+def logout():
+    """Logout - clear session."""
+    session.pop('authenticated', None)
+    return redirect(url_for('login'))
+
+
+# Make USE_AUTH available to templates
+@app.context_processor
+def inject_auth():
+    return {'USE_AUTH': USE_AUTH}
+
+
+# =============================================================================
 
 # --- Pages ---
 @app.route('/')
@@ -27,165 +108,232 @@ def index():
 def editor():
     filename = request.args.get('image')
     project_name = request.args.get('project')
-    if not filename: return redirect(url_for('index'))
+    if not filename:
+        return redirect(url_for('index'))
     return render_template('editor.html', filename=filename, project=project_name)
 
 @app.route('/text_editor')
 def text_editor():
     filename = request.args.get('image')
     project_name = request.args.get('project')
-    if not filename: return redirect(url_for('index'))
+    if not filename:
+        return redirect(url_for('index'))
     return render_template('text_editor.html', filename=filename, project=project_name)
 
 @app.route('/cropper')
 def cropper():
     filename = request.args.get('image')
     project_name = request.args.get('project')
-    if not filename: return redirect(url_for('index'))
+    if not filename:
+        return redirect(url_for('index'))
     return render_template('cropper.html', filename=filename, project=project_name)
 
-# --- API ---
+# --- API: Images ---
 @app.route('/api/images_list')
 def list_images():
-    return jsonify(storage.get_sorted_images())
+    images = image_service.get_all_images()
+    return jsonify([img['name'] for img in images])
 
 @app.route('/data/images/<path:filename>')
 def serve_image(filename):
-    return send_from_directory(storage.IMAGE_FOLDER, filename)
+    try:
+        # Validate filename to prevent path traversal
+        validated = image_service._validate_filename(filename)
+        return send_from_directory(storage.IMAGE_FOLDER, validated)
+    except ValueError:
+        return jsonify({'error': 'Invalid filename'}), 400
 
 @app.route('/data/originals/<path:filename>')
 def serve_original(filename):
     try:
-        return send_from_directory(storage.ORIGINALS_FOLDER, filename)
-    except:
-        return send_from_directory(storage.IMAGE_FOLDER, filename)
+        # Validate filename to prevent path traversal
+        validated = image_service._validate_filename(filename)
+        return send_from_directory(storage.ORIGINALS_FOLDER, validated)
+    except ValueError:
+        return jsonify({'error': 'Invalid filename'}), 400
+    except Exception:
+        # Fallback to images folder only if filename is valid
+        try:
+            validated = image_service._validate_filename(filename)
+            return send_from_directory(storage.IMAGE_FOLDER, validated)
+        except ValueError:
+            return jsonify({'error': 'Invalid filename'}), 400
 
+# --- API: Annotations ---
 @app.route('/api/load/<filename>')
 def load_data(filename):
-    return jsonify(storage.load_json(filename))
+    try:
+        # Validate filename to prevent path traversal
+        validated = image_service._validate_filename(filename)
+        data = annotation_service.get_annotation(validated)
+        return jsonify(data)
+    except ValueError:
+        return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
+    except Exception as e:
+        return jsonify({'status': 'error', 'msg': str(e)}), 500
 
 @app.route('/api/save', methods=['POST'])
 def save_data():
     incoming_data = request.json
     filename = incoming_data.get('image_name')
+
     if not filename:
         return jsonify({'status': 'error', 'msg': 'No filename'}), 400
 
-    # 1. Загружаем то, что уже лежит на диске
-    existing_data = storage.load_json(filename)
+    try:
+        # Validate filename to prevent path traversal
+        validated = image_service._validate_filename(filename)
+        
+        # Load existing data
+        existing_data = annotation_service.get_annotation(validated)
 
-    # 2. Обновляем поля (regions, texts и т.д.), но сохраняем crop_params
-    for key in ['regions', 'texts', 'status', 'processing_params']:
-        if key in incoming_data:
-            existing_data[key] = incoming_data[key]
+        # Update fields
+        for key in ['regions', 'texts', 'status', 'processing_params', 'crop_params']:
+            if key in incoming_data:
+                existing_data[key] = incoming_data[key]
 
-    # Не трогаем crop_params, если они уже есть в файле, а в новых данных их нет
-    if 'crop_params' in incoming_data:
-        existing_data['crop_params'] = incoming_data['crop_params']
-    
-    # Сохраняем image_name из входящих данных (важно для новых аннотаций)
-    existing_data['image_name'] = filename
+        # Ensure image_name is set
+        existing_data['image_name'] = validated
 
-    if storage.save_json(existing_data):
-        return jsonify({'status': 'success'})
-    return jsonify({'status': 'error'}), 400
+        if annotation_service.save_annotation(validated, existing_data):
+            return jsonify({'status': 'success'})
+        return jsonify({'status': 'error'}), 500
 
-@app.route('/api/delete', methods=['POST'])
-def delete():
-    count = storage.delete_file_set(request.json.get('filenames', []))
-    return jsonify({'status': 'success', 'deleted': count})
+    except ValueError:
+        return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
+    except Exception as e:
+        return jsonify({'status': 'error', 'msg': str(e)}), 500
 
+
+# --- API: Crop ---
 @app.route('/api/crop', methods=['POST'])
 def crop():
     data = request.json
     filename = data.get('image_name')
     box = data.get('box')
-    
+
     if not filename or not box:
         return jsonify({'status': 'error', 'msg': 'No data'}), 400
 
+    try:
+        # Validate filename to prevent path traversal
+        validated = image_service._validate_filename(filename)
+    except ValueError:
+        return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
+
     # Async background processing
     def task():
-        logic.perform_crop(filename, box)
-    
+        image_service.crop_image(validated, box)
+
     thread = threading.Thread(target=task)
     thread.start()
-    
+
     return jsonify({'status': 'success', 'msg': 'Background processing started'})
 
+# --- API: Import/Export ---
 @app.route('/api/import_zip', methods=['POST'])
 def import_zip_route():
     try:
-        # Добавим логирование для отладки
-        print("Form data:", request.form)
-        print("Files:", request.files.keys())
-        
         simp = int(request.form.get('simplify', 0))
-        print("Simplify value:", simp)
-        
-        # Получаем необязательное имя проекта
         project_name = request.form.get('project_name', None)
-        
-        # Проверим, есть ли файл в запросе
+
         if 'file' not in request.files:
-            print("No file in request")
             return jsonify({'status': 'error', 'msg': 'No file in request'}), 400
-            
+
         uploaded_file = request.files['file']
         if uploaded_file.filename == '':
-            print("No file selected")
             return jsonify({'status': 'error', 'msg': 'No file selected'}), 400
-            
-        # Вызываем универсальную функцию импорта
+
+        # Use logic function for import (keeps existing ZIP processing)
         count, final_project_name = logic.process_zip_import(uploaded_file, simp, project_name)
-        return jsonify({'status': 'success', 'count': count, 'project_name': final_project_name})
+        return jsonify({
+            'status': 'success',
+            'count': count,
+            'project_name': final_project_name
+        })
+
     except Exception as e:
-        print(f"Error in import_zip_route: {str(e)}")
+        import traceback
+        print(f"Import error: {e}")
+        print(traceback.format_exc())
         return jsonify({'status': 'error', 'msg': str(e)}), 500
 
+# --- API: AI Operations ---
 @app.route('/api/detect_lines', methods=['POST'])
 def detect_lines():
     data = request.json
     filename = data.get('image_name')
     settings = data.get('settings', {})
+
     if not filename:
         return jsonify({'status': 'error', 'msg': 'No image name provided'}), 400
 
-    print(f"Received settings: {settings}")  # Отладочный вывод
-
     try:
-        from logic import detect_text_lines_yolo
-        regions = detect_text_lines_yolo(filename, settings)
+        # Validate filename to prevent path traversal
+        validated = image_service._validate_filename(filename)
+        regions = ai_service.detect_lines(validated, settings)
         return jsonify({'status': 'success', 'regions': regions})
+    except ValueError:
+        return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
     except Exception as e:
         return jsonify({'status': 'error', 'msg': str(e)}), 500
 
-# Global dictionary to track recognition progress
+# Global dict for recognition progress (kept for backward compatibility)
 recognition_progress = {}
 
 @app.route('/api/recognize_text', methods=['POST'])
 def recognize_text():
     data = request.json
     filename = data.get('image_name')
-    regions = data.get('regions', None)  # Optional - if not provided, process all regions
+    regions = data.get('regions', None)
 
     if not filename:
         return jsonify({'status': 'error', 'msg': 'No image name provided'}), 400
 
-    # Initialize progress tracking
-    total_regions = len(regions) if regions else len(storage.load_json(filename).get('regions', []))
-    recognition_progress[filename] = {'processed': 0, 'total': total_regions, 'status': 'processing'}
+    try:
+        # Validate filename to prevent path traversal
+        validated = image_service._validate_filename(filename)
+    except ValueError:
+        return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
 
-        # Async background processing
+    # Get regions count for progress
+    if regions is None:
+        annotation_data = annotation_service.get_annotation(validated)
+        regions = annotation_data.get('regions', [])
+
+    total_regions = len(regions)
+    recognition_progress[validated] = {'processed': 0, 'total': total_regions, 'status': 'processing'}
+
+    # Async background processing
     def task():
-        from logic import recognize_text_with_trocr
-
         def update_progress(processed, total):
-            recognition_progress[filename] = {'processed': processed, 'total': total, 'status': 'processing'}
+            recognition_progress[validated] = {
+                'processed': processed,
+                'total': total,
+                'status': 'processing'
+            }
 
-        recognize_text_with_trocr(filename, regions, progress_callback=update_progress)
-        # Mark as complete when done
-        recognition_progress[filename] = {'processed': total_regions, 'total': total_regions, 'status': 'completed'}
+        try:
+            ai_service.recognize_text(validated, regions, progress_callback=update_progress)
+            recognition_progress[validated] = {
+                'processed': total_regions,
+                'total': total_regions,
+                'status': 'completed'
+            }
+        except Exception as e:
+            # При ошибке тоже очищаем запись
+            recognition_progress[validated] = {
+                'processed': 0,
+                'total': total_regions,
+                'status': 'failed',
+                'error': str(e)
+            }
+        finally:
+            # 🔧 Очистка записи после завершения (предотвращает утечку памяти)
+            # Даём клиенту время (5 секунд) прочитать финальный статус перед удалением
+            time.sleep(5)
+            if validated in recognition_progress:
+                del recognition_progress[validated]
 
     thread = threading.Thread(target=task)
     thread.start()
@@ -194,7 +342,17 @@ def recognize_text():
 
 @app.route('/api/recognize_progress/<filename>')
 def recognize_progress(filename):
-    progress_data = recognition_progress.get(filename, {'processed': 0, 'total': 0, 'status': 'not_started'})
+    try:
+        # Validate filename to prevent path traversal
+        validated = image_service._validate_filename(filename)
+    except ValueError:
+        return jsonify({'error': 'Invalid filename'}), 400
+    
+    progress_data = recognition_progress.get(
+        validated,
+        {'processed': 0, 'total': 0, 'status': 'not_started'}
+    )
+    
     if progress_data['total'] > 0:
         percentage = int((progress_data['processed'] / progress_data['total']) * 100)
     else:
@@ -207,115 +365,79 @@ def recognize_progress(filename):
         'percentage': percentage
     })
 
-
-# --- Project Management API ---
+# --- API: Projects ---
 @app.route('/api/projects', methods=['GET', 'POST'])
 def projects():
     if request.method == 'GET':
-        projects = storage.get_projects_list()
-        return jsonify({'projects': projects})
+        projects_list = project_service.get_all_projects()
+        return jsonify({'projects': projects_list})
+
     elif request.method == 'POST':
         try:
             data = request.json
-            print(f"Received project creation request: {data}")  # Debug log
             name = data.get('name')
             description = data.get('description', '')
 
             if not name:
-                print("Project name is missing or empty")  # Debug log
                 return jsonify({'status': 'error', 'msg': 'Project name is required'}), 400
 
-            success, result = storage.create_project(name, description)
-            print(f"Project creation result: success={success}, result={result}")  # Debug log
-            if success:
+            result = project_service.create_project(name, description)
+
+            if result:
                 return jsonify({'status': 'success', 'project': result})
             else:
-                return jsonify({'status': 'error', 'msg': result}), 400
+                return jsonify({'status': 'error', 'msg': 'Project already exists'}), 400
+
         except Exception as e:
-            print(f"Error in project creation endpoint: {e}")  # Debug log
             return jsonify({'status': 'error', 'msg': f'Server error: {str(e)}'}), 500
 
 
 @app.route('/api/projects/<project_name>', methods=['GET', 'PUT', 'DELETE'])
 def project(project_name):
+    # Sanitize project name to prevent path traversal
+    sanitized_name = project_service._sanitize_name(project_name)
+    
     if request.method == 'GET':
-        # Get project details
-        projects = storage.get_projects_list()
-        project = next((p for p in projects if p['name'] == project_name), None)
-        if not project:
+        project_data = project_service.get_project(sanitized_name)
+
+        if not project_data:
             return jsonify({'status': 'error', 'msg': 'Project not found'}), 404
-        return jsonify({'project': project})
+
+        return jsonify({'project': project_data})
 
     elif request.method == 'PUT':
-        # Update project (for renaming or updating description)
         data = request.json
         new_name = data.get('name')
-        description = data.get('description', '')
+        description = data.get('description')
 
-        # Sanitize both old and new names
-        sanitized_old_name = re.sub(r'[<>:"/\\|?*]', '_', project_name)
-        old_project_path = os.path.join(storage.PROJECTS_FOLDER, sanitized_old_name)
+        result = project_service.update_project(
+            sanitized_name,
+            new_name=new_name,
+            description=description
+        )
 
-        # If name is being changed, sanitize the new name too
-        if new_name and new_name != project_name:
-            sanitized_new_name = re.sub(r'[<>:"/\\|?*]', '_', new_name)
-            new_project_path = os.path.join(storage.PROJECTS_FOLDER, sanitized_new_name)
-
-            # Check if new name already exists
-            if os.path.exists(new_project_path):
-                return jsonify({'status': 'error', 'msg': 'Project with this name already exists'}), 400
-
-            # Rename the project directory
-            try:
-                os.rename(old_project_path, new_project_path)
-                project_name = new_name  # Update the project_name variable to the new name
-                sanitized_old_name = sanitized_new_name  # Update the sanitized name
-                old_project_path = new_project_path  # Update the path
-            except OSError as e:
-                return jsonify({'status': 'error', 'msg': f'Failed to rename project: {str(e)}'}), 500
-
-        project_json_path = os.path.join(old_project_path, 'project.json')
-
-        if not os.path.exists(project_json_path):
-            return jsonify({'status': 'error', 'msg': 'Project not found'}), 404
-
-        with open(project_json_path, 'r', encoding='utf-8') as f:
-            project_data = json.load(f)
-
-        # Update name and description
-        if new_name:
-            project_data['name'] = new_name
-        project_data['description'] = description
-
-        with open(project_json_path, 'w', encoding='utf-8') as f:
-            json.dump(project_data, f, indent=4, ensure_ascii=False)
-
-        return jsonify({'status': 'success', 'project': project_data})
+        if result:
+            return jsonify({'status': 'success', 'project': result})
+        else:
+            return jsonify({'status': 'error', 'msg': 'Project not found or name collision'}), 400
 
     elif request.method == 'DELETE':
-        success, msg = storage.delete_project(project_name)
-        if success:
-            return jsonify({'status': 'success', 'msg': msg})
+        result = project_service.delete_project(sanitized_name)
+
+        if result:
+            return jsonify({'status': 'success', 'msg': 'Project deleted'})
         else:
-            return jsonify({'status': 'error', 'msg': msg}), 400
+            return jsonify({'status': 'error', 'msg': 'Project not found'}), 404
 
 
 @app.route('/api/projects/<project_name>/images', methods=['GET', 'DELETE'])
 def project_images(project_name):
+    # Sanitize project name to prevent path traversal
+    sanitized_name = project_service._sanitize_name(project_name)
+    
     if request.method == 'GET':
-        images = storage.get_project_images(project_name)
-        # Add status information for each image
-        image_list = []
-        for img in images:
-            # Check if img is a dictionary (has name and status fields) or just a string
-            if isinstance(img, dict):
-                # If img is already a dictionary with name and status, use it directly
-                image_list.append(img)
-            else:
-                # If img is just a string (filename), get its status
-                status = storage.get_image_status(img)
-                image_list.append({'name': img, 'status': status})
-        return jsonify({'images': image_list})
+        images = project_service.get_images(sanitized_name)
+        return jsonify({'images': images})
 
     elif request.method == 'DELETE':
         data = request.json
@@ -324,201 +446,198 @@ def project_images(project_name):
         if not image_name:
             return jsonify({'status': 'error', 'msg': 'Image name is required'}), 400
 
-        success, result = storage.remove_image_from_project(project_name, image_name)
-        if success:
-            return jsonify({'status': 'success', 'project': result})
+        result = project_service.remove_image(sanitized_name, image_name)
+
+        if result:
+            return jsonify({'status': 'success', 'msg': 'Image removed from project'})
         else:
-            return jsonify({'status': 'error', 'msg': result}), 400
-
-
-@app.route('/api/tasks', methods=['GET'])
-def get_tasks():
-    """Get all background tasks"""
-    from logic import task_manager
-    tasks = task_manager.get_all_tasks()
-    return jsonify({'tasks': tasks})
-
-
-@app.route('/api/tasks/<task_id>', methods=['GET'])
-def get_task(task_id):
-    """Get a specific background task"""
-    from logic import task_manager
-    task = task_manager.get_task(task_id)
-    if task is None:
-        return jsonify({'status': 'error', 'msg': 'Task not found'}), 404
-    return jsonify({'task': task})
-
-
-# --- Batch Processing API ---
-@app.route('/api/projects/<project_name>/batch_detect', methods=['POST'])
-def batch_detect(project_name):
-    settings = request.json.get('settings', {})
-
-    # Get all images in the project
-    images = storage.get_project_images(project_name)
-
-    if not images:
-        return jsonify({'status': 'error', 'msg': 'No images in project'}), 400
-
-    # Start background processing for the entire project
-    def task():
-        from logic import run_batch_detection_for_project
-        run_batch_detection_for_project(project_name, settings)
-
-    thread = threading.Thread(target=task)
-    thread.start()
-
-    return jsonify({'status': 'success', 'msg': f'Batch detection started for {len(images)} images'})
-
-
-@app.route('/api/projects/<project_name>/batch_recognize', methods=['POST'])
-def batch_recognize(project_name):
-    # Get all images in the project
-    images = storage.get_project_images(project_name)
-
-    if not images:
-        return jsonify({'status': 'error', 'msg': 'No images in project'}), 400
-
-    # Start background processing for the entire project
-    def task():
-        from logic import run_batch_recognition_for_project
-        run_batch_recognition_for_project(project_name)
-
-    thread = threading.Thread(target=task)
-    thread.start()
-
-    return jsonify({'status': 'success', 'msg': f'Batch recognition started for {len(images)} images'})
-
-
-@app.route('/project/<project_name>')
-def project_page(project_name):
-    # Get project details
-    projects = storage.get_projects_list()
-    project = next((p for p in projects if p['name'] == project_name), None)
-    if not project:
-        return "Project not found", 404
-
-    # Get project images with status
-    images_response = project_images(project_name)
-    images_data = images_response.get_json()
-    project['images'] = images_data['images']
-
-    return render_template('project.html', project=project)
+            return jsonify({'status': 'error', 'msg': 'Image or project not found'}), 404
 
 
 @app.route('/api/projects/<project_name>/upload_images', methods=['POST'])
 def upload_project_images(project_name):
+    # Sanitize project name to prevent path traversal
+    sanitized_name = project_service._sanitize_name(project_name)
+    
     if 'images' not in request.files:
         return jsonify({'status': 'error', 'msg': 'No images provided'}), 400
 
     files = request.files.getlist('images')
     uploaded_count = 0
+    skipped_count = 0
 
     for file in files:
         if file and file.filename:
-            # Save the image to the main images folder
-            filename = file.filename
-            filepath = os.path.join(storage.IMAGE_FOLDER, filename)
-            file.save(filepath)
-            
-            # Copy to originals folder (for re-cropping)
-            import shutil
-            shutil.copy(filepath, os.path.join(storage.ORIGINALS_FOLDER, filename))
+            # Validate extension
+            if not image_service.is_allowed_extension(file.filename):
+                continue
 
-            # Add image to project
-            success, result = storage.add_image_to_project(project_name, filename)
-            if success:
+            # Save image and add to project
+            filename = image_service.upload_image(file, project_name=sanitized_name)
+            if filename:
                 uploaded_count += 1
+            else:
+                skipped_count += 1  # Duplicate or invalid
 
-    return jsonify({'status': 'success', 'msg': f'Uploaded {uploaded_count} images to project'})
+    if uploaded_count == 0 and skipped_count > 0:
+        return jsonify({
+            'status': 'error',
+            'msg': 'Все файлы уже существуют в проекте (дубликаты)'
+        }), 409
+
+    return jsonify({
+        'status': 'success',
+        'msg': f'Загружено {uploaded_count} изображений' + (f' ({skipped_count} пропущено)' if skipped_count > 0 else '')
+    })
 
 
 @app.route('/api/projects/<project_name>/export_zip')
 def export_project_zip(project_name):
-    import zipfile
-    import io
-    from flask import send_file
-    from PIL import Image
-    import xml.etree.ElementTree as ET
+    # Sanitize project name to prevent path traversal
+    sanitized_name = project_service._sanitize_name(project_name)
+    
+    zip_data = project_service.export_to_zip(sanitized_name)
 
-    # Get project details
-    projects = storage.get_projects_list()
-    project = next((p for p in projects if p['name'] == project_name), None)
-    if not project:
+    if zip_data is None:
+        return jsonify({'status': 'error', 'msg': 'Project not found'}), 404
+
+    return send_file(
+        io.BytesIO(zip_data),
+        as_attachment=True,
+        download_name=f'{sanitized_name}_export.zip',
+        mimetype='application/zip'
+    )
+
+
+@app.route('/api/projects/<project_name>/batch_detect', methods=['POST'])
+def batch_detect(project_name):
+    # Sanitize project name to prevent path traversal
+    sanitized_name = project_service._sanitize_name(project_name)
+    
+    settings = request.json.get('settings', {})
+    images = project_service.get_images(sanitized_name)
+
+    if not images:
+        return jsonify({'status': 'error', 'msg': 'No images in project'}), 400
+
+    # Get project for project_id
+    project = project_service.get_project(sanitized_name)
+    project_id = None
+    if project:
+        # Get project_id from DB
+        from database.session import SessionLocal
+        from database.repository.project_repository import ProjectRepository
+        session = SessionLocal()
+        try:
+            repo = ProjectRepository(session)
+            db_project = repo.get_by_name(sanitized_name)
+            if db_project:
+                project_id = db_project.id
+        finally:
+            session.close()
+
+    # Create task and run in background
+    task = task_service.create_task(
+        task_type="batch_detection",
+        project_name=sanitized_name,
+        project_id=project_id,
+        images=[img['filename'] if isinstance(img, dict) else img for img in images],
+        description=f"Batch detection for project {sanitized_name}"
+    )
+
+    task_service.run_background(
+        task=task,
+        func=logic.run_batch_detection_for_project,
+        project_name=sanitized_name,
+        settings=settings,
+        task_id=task.id
+    )
+
+    return jsonify({
+        'status': 'success',
+        'msg': f'Batch detection started for {len(images)} images',
+        'task_id': task.id
+    })
+
+
+@app.route('/api/projects/<project_name>/batch_recognize', methods=['POST'])
+def batch_recognize(project_name):
+    # Sanitize project name to prevent path traversal
+    sanitized_name = project_service._sanitize_name(project_name)
+    
+    images = project_service.get_images(sanitized_name)
+
+    if not images:
+        return jsonify({'status': 'error', 'msg': 'No images in project'}), 400
+
+    # Get project_id
+    from database.session import SessionLocal
+    from database.repository.project_repository import ProjectRepository
+    session = SessionLocal()
+    project_id = None
+    try:
+        repo = ProjectRepository(session)
+        db_project = repo.get_by_name(sanitized_name)
+        if db_project:
+            project_id = db_project.id
+    finally:
+        session.close()
+
+    # Create task and run in background
+    task = task_service.create_task(
+        task_type="batch_recognition",
+        project_name=sanitized_name,
+        project_id=project_id,
+        images=[img['filename'] if isinstance(img, dict) else img for img in images],
+        description=f"Batch recognition for project {sanitized_name}"
+    )
+
+    task_service.run_background(
+        task=task,
+        func=logic.run_batch_recognition_for_project,
+        project_name=sanitized_name,
+        task_id=task.id
+    )
+
+    return jsonify({
+        'status': 'success',
+        'msg': f'Batch recognition started for {len(images)} images',
+        'task_id': task.id
+    })
+
+
+# --- API: Tasks ---
+@app.route('/api/tasks', methods=['GET'])
+def get_tasks():
+    tasks = task_service.get_all_tasks()
+    return jsonify({'tasks': [t.to_dict() for t in tasks]})
+
+
+@app.route('/api/tasks/<task_id>', methods=['GET'])
+def get_task(task_id):
+    task = task_service.get_task(task_id)
+    
+    if task is None:
+        return jsonify({'status': 'error', 'msg': 'Task not found'}), 404
+    
+    return jsonify({'task': task.to_dict()})
+
+
+# --- Pages: Project ---
+@app.route('/project/<project_name>')
+def project_page(project_name):
+    # Sanitize project name to prevent path traversal
+    sanitized_name = project_service._sanitize_name(project_name)
+    
+    project_data = project_service.get_project(sanitized_name)
+
+    if not project_data:
         return "Project not found", 404
 
-    # Get project images
-    images = storage.get_project_images(project_name)
+    images = project_service.get_images(sanitized_name)
+    project_data['images'] = images
 
-    # Create a zip file in memory
-    memory_file = io.BytesIO()
-    with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        # Add images to zip
-        for image_item in images:
-            # Check if image_item is a dictionary (has name field) or just a string
-            image_name = image_item['name'] if isinstance(image_item, dict) else image_item
-
-            image_path = os.path.join(storage.IMAGE_FOLDER, image_name)
-            if os.path.exists(image_path):
-                # Add image to the root of the archive (not in subfolder)
-                zipf.write(image_path, image_name)
-
-                # Create corresponding PAGE XML annotation file
-                annotation_name = os.path.splitext(image_name)[0] + '.xml'
-                
-                # Load annotation data from JSON
-                json_annotation_path = os.path.join(storage.ANNOTATION_FOLDER, os.path.splitext(image_name)[0] + '.json')
-                annotation_data = {}
-                if os.path.exists(json_annotation_path):
-                    with open(json_annotation_path, 'r', encoding='utf-8') as f:
-                        annotation_data = json.load(f)
-
-                # Create PAGE XML structure
-                root = ET.Element('PcGts', xmlns="http://schema.primaresearch.org/PAGE/gts/pagecontent/2013-07-15")
-                page = ET.SubElement(root, 'Page', imageFilename=image_name)
-                
-                # Get image dimensions
-                try:
-                    with Image.open(image_path) as img:
-                        w, h = img.size
-                except:
-                    w, h = 0, 0
-                
-                page.set('imageWidth', str(w))
-                page.set('imageHeight', str(h))
-                
-                # Add text regions and lines
-                text_region = ET.SubElement(page, 'TextRegion', id='r1')
-
-                regions = annotation_data.get('regions', [])
-                texts = annotation_data.get('texts', {})
-                for i, reg in enumerate(regions):
-                    points = reg.get('points', [])
-                    if points:
-                        # Format points as required by PAGE XML
-                        pts_str = " ".join([f"{p['x']},{p['y']}" for p in points])
-
-                        text_line = ET.SubElement(text_region, 'TextLine', id=f'l{i}')
-                        coords = ET.SubElement(text_line, 'Coords', points=pts_str)
-
-                        # Add text if available
-                        # Frontend stores text with keys '0', '1', '2' (not 'l0', 'l1', 'l2')
-                        text_key = str(i)
-                        if text_key in texts and texts[text_key]:
-                            text_elem = ET.SubElement(text_line, 'TextEquiv')
-                            ET.SubElement(text_elem, 'Unicode').text = texts[text_key]
-
-                # Write XML to archive
-                xml_content = ET.tostring(root, encoding='utf-8')
-                zipf.writestr(annotation_name, xml_content)
-
-        # Add project metadata
-        project_json_path = os.path.join(storage.PROJECTS_FOLDER, project_name, 'project.json')
-        if os.path.exists(project_json_path):
-            zipf.write(project_json_path, 'project.json')
-
-    memory_file.seek(0)
-    return send_file(memory_file, as_attachment=True, download_name=f'{project_name}_export.zip')
+    return render_template('project.html', project=project_data)
 
 
 if __name__ == '__main__':

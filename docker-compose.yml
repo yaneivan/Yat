@@ -10,14 +10,18 @@ services:
       - ./models:/app/models
       - ./static:/app/static
       - ./templates:/app/templates
+      - ./services:/app/services
+      - ./database:/app/database
       - ./app.py:/app/app.py
       - ./logic.py:/app/logic.py
       - ./storage.py:/app/storage.py
       - ./config.py:/app/config.py
+      - ./init_db.py:/app/init_db.py
+      - ./database.db:/app/database.db
     environment:
       - FLASK_APP=app.py
       - FLASK_ENV=development
-    command: flask run --host=0.0.0.0 --reload --debug
+    command: uv run python app.py
     user: "${UID:-1000}:${GID:-1000}"
     networks:
       - default
