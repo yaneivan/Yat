@@ -14,6 +14,7 @@ from database.session import SessionLocal
 from database.repository.annotation_repository import AnnotationRepository
 from database.repository.image_repository import ImageRepository
 from database.enums import ImageStatus
+from sqlalchemy.orm import Session
 
 
 class AnnotationService:
@@ -317,28 +318,71 @@ class AnnotationService:
 
     def get_all_annotations(self) -> List[Dict[str, Any]]:
         """
-        Get all annotations with their filenames.
+        Get all annotations with their filenames (optimized query, no N+1).
 
         Returns:
             List of dictionaries with 'filename' and annotation data
         """
         session, annotation_repo, image_repo = self._get_session()
         try:
-            result = []
+            # Получить ВСЕ изображения одним запросом
             images = image_repo.get_all(skip=0, limit=1000)
             
-            for image in images:
-                try:
-                    data = self.get_annotation(image.filename)
-                    data['filename'] = image.filename
-                    result.append(data)
-                except Exception:
-                    # Skip files with invalid annotations
-                    pass
+            # Получить ВСЕ аннотации одним запросом
+            all_annotations = self._get_all_annotations_raw(session)
             
+            # Сгруппировать аннотации по image_id в памяти
+            annotations_by_image = {ann['image_id']: ann for ann in all_annotations}
+            
+            # Сформировать результат без дополнительных запросов к БД
+            result = []
+            for image in images:
+                ann = annotations_by_image.get(image.id)
+                
+                # Конвертировать в формат совместимости
+                if ann:
+                    polygons = ann.get('polygons', [])
+                    regions = [{'points': p.get('points', [])} for p in polygons]
+                    texts = {str(i): p.get('text', '') for i, p in enumerate(polygons)}
+                else:
+                    regions = []
+                    texts = {}
+                
+                result.append({
+                    'filename': image.filename,
+                    'regions': regions,
+                    'texts': texts,
+                    'image_name': image.filename,
+                    'crop_params': image.crop_params,
+                    'status': image.status,
+                    'polygons': ann.get('polygons', []) if ann else []
+                })
+
             return result
         finally:
             session.close()
+
+    def _get_all_annotations_raw(self, session: Session) -> List[Dict[str, Any]]:
+        """
+        Get all annotations as raw dicts (for batch operations).
+
+        Args:
+            session: Database session
+
+        Returns:
+            List of annotation dicts
+        """
+        from database.models import Annotation
+        
+        annotations = session.query(Annotation).all()
+        return [
+            {
+                'id': ann.id,
+                'image_id': ann.image_id,
+                'polygons': ann.polygons or []
+            }
+            for ann in annotations
+        ]
 
 
 # Global annotation service instance

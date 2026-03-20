@@ -6,7 +6,143 @@
 
 ## 🔴 КРИТИЧЕСКИЕ ПРОБЛЕМЫ (исправлять СРОЧНО)
 
-### 1. SQLAlchemy сессии в цикле (нет транзакционности)
+### 1. N+1 запросы к базе данных
+
+**Статус:** ❌ Не исправлено
+**Приоритет:** 🔴 КРИТИЧНО
+**Время на фикс:** 1.5 часа
+**Риск:** Высокий — деградация производительности при росте данных
+
+**Проблема:**
+
+В трёх сервисах запросы к БД выполняются в цикле:
+
+```python
+# services/project_service.py:135-148
+def get_all_projects(self) -> List[Dict[str, Any]]:
+    projects = project_repo.get_all()
+    for project in projects:  # ← Цикл
+        images = image_repo.get_by_project(project.id)  # ← ЗАПРОС НА КАЖДЫЙ
+```
+
+**Последствия:**
+- `get_all_projects()` → 1 + N запросов (100 проектов = 101 запрос)
+- `get_all_images()` → 1 + N запросов (1000 изображений = 1001 запрос)
+- `get_all_annotations()` → 1 + N запросов
+
+**Решение:**
+
+```python
+# Получить все изображения одним запросом
+all_images = image_repo.get_all()
+images_by_project = {}
+for img in all_images:
+    images_by_project.setdefault(img.project_id, []).append(img)
+
+for project in projects:
+    images = images_by_project.get(project.id, [])
+```
+
+**Файлы для изменения:**
+- `services/project_service.py` (get_all_projects)
+- `services/image_service.py` (get_all_images)
+- `services/annotation_service.py` (get_all_annotations)
+
+---
+
+### 2. Нет rate limiting
+
+**Статус:** ❌ Не исправлено
+**Приоритет:** 🔴 КРИТИЧНО
+**Время на фикс:** 30 минут
+**Риск:** DDoS атаки, перегрузка GPU
+
+**Проблема:**
+
+```python
+# Любой может делать 1000 запросов в секунду
+@app.route('/api/detect_lines', methods=['POST'])
+def detect_lines():
+    # GPU будет загружен на 100%
+```
+
+**Решение:**
+
+```python
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
+limiter = Limiter(app, key_func=get_remote_address)
+
+@app.route('/api/detect_lines', methods=['POST'])
+@limiter.limit("5 per minute")
+def detect_lines():
+    ...
+```
+
+**Файлы для изменения:**
+- `app.py` (добавить limiter)
+- `pyproject.toml` (добавить flask-limiter)
+
+---
+
+### 3. Нет валидации входных данных
+
+**Статус:** ❌ Не исправлено
+**Приоритет:** 🔴 КРИТИЧНО
+**Время на фикс:** 2 часа
+**Риск:** Безопасность — XSS, path traversal, SQL injection
+
+**Проблема:**
+
+```python
+@app.route('/api/save', methods=['POST'])
+def save_data():
+    incoming_data = request.json
+    filename = incoming_data.get('image_name')  # ← Нет проверки!
+    
+    # regions может быть любым
+    for key in ['regions', 'texts', 'status']:
+        if key in incoming_data:
+            existing_data[key] = incoming_data[key]  # ← Слепое копирование
+```
+
+**Атака:**
+```json
+{
+  "image_name": "../../../etc/passwd",
+  "regions": [{"points": "<script>alert('XSS')</script>"}],
+  "status": "'; DROP TABLE images; --"
+}
+```
+
+**Решение:**
+
+```python
+from marshmallow import Schema, fields, validate
+
+class AnnotationSchema(Schema):
+    image_name = fields.Str(required=True, validate=validate.Length(min=1, max=255))
+    regions = fields.List(fields.Dict(), validate=validate.Length(max=500))
+    status = fields.Str(validate=validate.OneOf(['crop', 'cropped', 'segment', 'texted']))
+
+schema = AnnotationSchema()
+
+@app.route('/api/save', methods=['POST'])
+def save_data():
+    try:
+        data = schema.load(request.json)  # ← Валидация
+    except ValidationError as e:
+        return jsonify({'error': str(e)}), 400
+```
+
+**Файлы для изменения:**
+- `app.py` (добавить валидацию)
+- `pyproject.toml` (добавить marshmallow)
+
+---
+
+### 4. SQLAlchemy сессии в цикле (нет транзакционности)
 
 **Статус:** ❌ Не исправлено  
 **Приоритет:** 🔴 КРИТИЧНО  
@@ -48,7 +184,7 @@ def save_batch_annotations(self, annotations: List[Dict]):
 
 ---
 
-### 2. Утечка памяти в recognition_progress
+### 5. Утечка памяти в recognition_progress
 
 **Статус:** ❌ Не исправлено  
 **Приоритет:** 🟡 СЕРЬЁЗНО  
@@ -180,41 +316,125 @@ def save_data():
 
 ## 🟠 СРЕДНИЕ ПРОБЛЕМЫ (исправлять в ближайшем спринте)
 
-### 4. Нет rate limiting
+### 5. Console.log в production
 
-**Статус:** ❌ Не исправлено  
-**Приоритет:** 🟠 СРЕДНЕ  
-**Время на фикс:** 30 минут  
-**Риск:** DDoS, перегрузка GPU
+**Статус:** ❌ Не исправлено
+**Приоритет:** 🟠 СРЕДНЕ
+**Время на фикс:** 30 минут
+**Риск:** Замедление, утечка информации
 
 **Проблема:**
-```python
-# Любой может делать 1000 запросов в секунду
-@app.route('/api/detect_lines', methods=['POST'])
-def detect_lines():
-    # GPU будет загружен на 100%
+
+Найдено 32 `console.log` в JS файлах:
+
+| Файл | Количество |
+|------|------------|
+| `static/js/project_manager.js` | 14 |
+| `static/js/editor.js` | 4 |
+| `static/js/text_editor.js` | 14 |
+
+**Пример:**
+```javascript
+console.log('User role:', this.userRole);
+console.log('Creating project:', name, description);
+console.log('Polygon clicked directly - index:', obj.index);
 ```
 
 **Решение:**
-```python
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 
-limiter = Limiter(app, key_func=get_remote_address)
-
-@app.route('/api/detect_lines', methods=['POST'])
-@limiter.limit("10 per minute")
-def detect_lines():
-    ...
+```javascript
+// Удалить все console.log или использовать условный логгер
+const DEBUG = false;
+const log = DEBUG ? console.log : () => {};
+log('Debug message');  // Не выполняется в production
 ```
 
 **Файлы для изменения:**
-- `app.py`
-- `pyproject.toml` (добавить flask-limiter)
+- `static/js/project_manager.js`
+- `static/js/editor.js`
+- `static/js/text_editor.js`
 
 ---
 
-### 5. Текст в модалках не автосохраняется
+### 6. Дублирование кода
+
+**Статус:** ❌ Не исправлено
+**Приоритет:** 🟠 СРЕДНЕ
+**Время на фикс:** 45 минут
+**Риск:** Поддерживаемость кода
+
+**Проблема:**
+
+1. **CSRF функции** дублируются в 3 файлах:
+   - `static/js/api.js` (getCsrfToken, getCsrfHeaders)
+   - `static/js/project_manager.js` (дубликат)
+   - `static/js/text_editor.js` (дубликат)
+
+2. **`_validate_filename()`** дублируется в сервисах:
+   - `services/annotation_service.py`
+   - `services/image_service.py`
+
+**Решение:**
+
+```python
+# services/utils.py
+import re
+
+VALID_FILENAME_PATTERN = re.compile(r'^[a-zA-Z0-9_\-\.\u0400-\u04FF]+\.[a-zA-Z0-9]+$')
+
+def validate_filename(filename: str) -> str:
+    if not filename:
+        raise ValueError("Filename cannot be empty")
+    if '..' in filename or '/' in filename or '\\' in filename:
+        raise ValueError("Invalid filename: path traversal detected")
+    if not VALID_FILENAME_PATTERN.match(filename):
+        return re.sub(r'[<>:"|?*]', '_', filename)
+    return filename
+```
+
+**Файлы для изменения:**
+- `static/js/project_manager.js` (удалить дубликаты, импортировать из api.js)
+- `services/utils.py` (создать)
+- `services/annotation_service.py`
+- `services/image_service.py`
+
+---
+
+### 7. Отсутствие индексов БД
+
+**Статус:** ❌ Не исправлено
+**Приоритет:** 🟠 СРЕДНЕ
+**Время на фикс:** 15 минут
+**Риск:** Медленные запросы к БД
+
+**Проблема:**
+
+```python
+# database/models.py
+class Image(Base):
+    filename = Column(String(255), nullable=False)  # ← НЕТ ИНДЕКСА
+```
+
+**Последствие:** `get_by_filename()` выполняет полный скан таблицы
+
+**Решение:**
+
+```python
+class Image(Base):
+    filename = Column(String(255), nullable=False, index=True)
+    
+class Task(Base):
+    __table_args__ = (
+        Index('ix_tasks_status_created', 'status', 'created_at'),
+    )
+```
+
+**Файлы для изменения:**
+- `database/models.py`
+
+---
+
+### 8. Текст в модалках не автосохраняется
 
 **Статус:** ❌ Не исправлено  
 **Приоритет:** 🟠 СРЕДНЕ  
@@ -329,8 +549,8 @@ MODEL_PATHS = {
 
 ### 9. Magic numbers
 
-**Статус:** ❌ Не исправлено  
-**Приоритет:** 🟢 МЕЛКО  
+**Статус:** ❌ Не исправлено
+**Приоритет:** 🟢 МЕЛКО
 **Время на фикс:** 30 минут
 
 **Проблема:**
@@ -345,6 +565,103 @@ this.maxHistory = 50;  // ← Почему 50?
 **Файлы для изменения:**
 - `static/js/editor.js`
 - `static/js/text_editor.js`
+
+---
+
+### 10. Сложные функции (>50 строк)
+
+**Статус:** ❌ Не исправлено
+**Приоритет:** 🟢 МЕЛКО
+**Время на фикс:** 4 часа
+**Риск:** Сложность поддержки и тестирования
+
+**Проблема:**
+
+Найдено 12 функций >50 строк:
+
+| Файл | Функция | Строк |
+|------|---------|-------|
+| `logic.py` | `process_zip_import()` | 85 |
+| `services/image_service.py` | `crop_image()` | 82 |
+| `services/pdf_export_service.py` | `export_parallel()` | 98 |
+| `static/js/editor.js` | `setupCanvasEvents()` | 150+ |
+| `static/js/text_editor.js` | `loadTextData()` | 80+ |
+
+**Решение:** Рефакторинг — разбить на подфункции
+
+**Файлы для изменения:**
+- `logic.py`
+- `services/image_service.py`
+- `services/pdf_export_service.py`
+- `static/js/editor.js`
+- `static/js/text_editor.js`
+
+---
+
+### 11. Нет breadcrumb навигации
+
+**Статус:** ❌ Не исправлено
+**Приоритет:** 🟢 МЕЛКО
+**Время на фикс:** 30 минут
+**Риск:** Плохой UX — пользователь не видит текущий путь
+
+**Проблема:**
+
+Нет индикации пути (Проекты → Проект X → Изображение Y)
+
+**Решение:**
+
+```html
+<div class="breadcrumb">
+    <a href="/">Проекты</a> → 
+    <a href="/project/{{ project }}">{{ project }}</a> → 
+    <span>{{ filename }}</span>
+</div>
+```
+
+**Файлы для изменения:**
+- `templates/editor.html`
+- `templates/cropper.html`
+- `templates/text_editor.html`
+
+---
+
+### 12. Нет кэширования часто читаемых данных
+
+**Статус:** ❌ Не исправлено
+**Приоритет:** 🟢 МЕЛКО
+**Время на фикс:** 1.5 часа
+**Риск:** Лишние запросы к БД
+
+**Проблема:**
+
+`get_all_projects()` и `get_all_images()` вызываются на каждой странице без кэша
+
+**Решение:**
+
+```python
+from functools import lru_cache
+import time
+
+class ProjectService:
+    def __init__(self):
+        self._cache = {}
+        self._cache_ttl = 60  # секунд
+
+    def get_all_projects(self) -> List[Dict[str, Any]]:
+        if 'projects' in self._cache:
+            cached_time, data = self._cache['projects']
+            if time.time() - cached_time < self._cache_ttl:
+                return data
+        
+        data = self._load_projects_from_db()
+        self._cache['projects'] = (time.time(), data)
+        return data
+```
+
+**Файлы для изменения:**
+- `services/project_service.py`
+- `services/image_service.py`
 
 ---
 

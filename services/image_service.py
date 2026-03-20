@@ -369,25 +369,43 @@ class ImageService:
 
     def get_all_images(self) -> List[Dict[str, Any]]:
         """
-        Get all images with their status.
+        Get all images with their status (optimized query, no N+1).
 
         Returns:
             List of dictionaries with 'name' and 'status' fields
         """
         session, image_repo, project_repo = self._get_session()
         try:
-            result = []
+            # Получить ВСЕ изображения одним запросом
             images = image_repo.get_all()
             
+            # Получить ВСЕ аннотации одним запросом (вместо N запросов)
+            all_annotations = annotation_service._get_all_annotations_raw(session)
+            
+            # Сгруппировать аннотации по image_id в памяти
+            annotations_by_image = {ann['image_id']: ann for ann in all_annotations}
+            
+            # Сформировать результат без дополнительных запросов к БД
+            result = []
             for image in images:
-                status = annotation_service.get_status(image.filename)
+                # Получить статус из памяти, а не из БД
+                ann = annotations_by_image.get(image.id)
+                if ann and ann.get('polygons'):
+                    status = 'segment'
+                elif image.status == 'texted':
+                    status = 'texted'
+                elif image.status == 'cropped':
+                    status = 'cropped'
+                else:
+                    status = 'crop'
+                
                 result.append({
                     'id': image.id,
                     'name': image.filename,
                     'status': status,
                     'project_id': image.project_id
                 })
-            
+
             return result
         finally:
             session.close()

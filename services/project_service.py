@@ -9,9 +9,7 @@ Uses database for storage instead of JSON files.
 
 import os
 import re
-from typing import Dict, List, Any, Optional, Tuple
-from datetime import datetime
-from sqlalchemy.orm import Session
+from typing import Dict, List, Any, Optional
 
 from database.session import SessionLocal
 from database.repository.project_repository import ProjectRepository
@@ -129,14 +127,26 @@ class ProjectService:
             session.close()
 
     def get_all_projects(self) -> List[Dict[str, Any]]:
-        """Get all projects."""
+        """Get all projects with optimized query (no N+1)."""
         session, project_repo, image_repo = self._get_session()
         try:
+            # Получить все проекты одним запросом
             projects = project_repo.get_all()
-            result = []
             
+            # Получить ВСЕ изображения одним запросом (вместо N запросов)
+            all_images = image_repo.get_all()
+            
+            # Сгруппировать изображения по project_id в памяти
+            images_by_project = {}
+            for img in all_images:
+                if img.project_id not in images_by_project:
+                    images_by_project[img.project_id] = []
+                images_by_project[img.project_id].append(img)
+            
+            # Сформировать результат без дополнительных запросов к БД
+            result = []
             for project in projects:
-                images = image_repo.get_by_project(project.id)
+                images = images_by_project.get(project.id, [])
                 result.append({
                     'name': project.name,
                     'description': project.description,
@@ -144,7 +154,7 @@ class ProjectService:
                     'image_count': len(images),
                     'images': [img.to_dict() for img in images]
                 })
-            
+
             return result
         finally:
             session.close()
@@ -392,7 +402,7 @@ class ProjectService:
                     try:
                         with Image.open(image_path) as img:
                             w, h = img.size
-                    except:
+                    except Exception:
                         w, h = 0, 0
 
                     page.set('imageWidth', str(w))
