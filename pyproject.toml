@@ -19,10 +19,8 @@ dependencies = [
     "rapidfuzz>=3.10.0",
 ]
 
-[tool.uv.sources]
-torch = { path = "./torch-2.5.1+cu118-cp312-cp312-linux_x86_64.whl" }
-torchvision = { path = "./torchvision-0.20.1+cu118-cp312-cp312-linux_x86_64.whl" }
-
+# PyTorch CUDA index
+# Install with: uv pip install --index pytorch-cuda torch torchvision
 [[tool.uv.index]]
 name = "pytorch-cuda"
 url = "https://download.pytorch.org/whl/cu118"
