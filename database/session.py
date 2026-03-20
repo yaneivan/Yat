@@ -8,10 +8,14 @@ from pathlib import Path
 DB_PATH = Path(__file__).parent.parent / "database.db"
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 
-# Create engine
+# Create engine with timeout to prevent "database is locked" errors
+# timeout=60 means wait up to 60 seconds for lock to be released
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False},  # Required for SQLite
+    connect_args={
+        "check_same_thread": False,  # Required for SQLite
+        "timeout": 60  # Wait 60 seconds for lock
+    },
     echo=False  # Set to True for SQL query logging
 )
 
