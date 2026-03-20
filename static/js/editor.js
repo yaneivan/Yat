@@ -653,10 +653,14 @@ class HTREditor {
 
             console.log('Sending settings to API:', settings); // Отладочный вывод
 
+            // Get CSRF token from meta tag
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
             const response = await fetch('/api/detect_lines', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
                 },
                 body: JSON.stringify({
                     image_name: this.filename,

@@ -139,8 +139,11 @@ class TextEditor {
             // Use 30% of the smaller dimension for the font size, with a minimum of 12 and maximum of 60 for better readability
             const fontSize = Math.max(12, Math.min(60, Math.round(Math.min(polygonWidth, polygonHeight) * 0.3)));
 
+            // Parse text for formatting and create an IText object with styled text
+            const styledText = this.parseFormats(text);
+
             // Create a text object with better styling for visibility
-            const textObj = new fabric.Text(text, {
+            const textObj = new fabric.IText(styledText.text, {
                 fontSize: fontSize,
                 fill: '#000000', // Black text for contrast
                 originX: 'center',
@@ -152,7 +155,9 @@ class TextEditor {
                 textAlign: 'center',
                 // Make text non-interactive to prevent direct dragging on canvas
                 selectable: false,
-                evented: false
+                evented: false,
+                // Apply styles from parsed formatting
+                styles: styledText.styles
             });
 
             // Position the text in the center of the polygon
@@ -211,6 +216,90 @@ class TextEditor {
         }
 
         this.rightCanvas.requestRenderAll();
+    }
+
+    // Parse text for formatting markers: [текст] and ~текст~
+    parseFormats(text) {
+        const styles = {};
+        let processedText = text;
+
+        // First pass: find all formatting markers and their positions
+        // Strong strikethrough: [текст]
+        const strongRegex = /\[([^\]]+)\]/g;
+        let match;
+
+        while ((match = strongRegex.exec(text)) !== null) {
+            const startIndex = match.index;
+            const endIndex = startIndex + match[0].length;
+            const innerStart = startIndex + 1;
+            const innerEnd = endIndex - 1;
+
+            // Mark characters for removal (brackets)
+            for (let i = startIndex; i < endIndex; i++) {
+                if (!styles[i]) styles[i] = {};
+                styles[i].remove = true;
+            }
+
+            // Apply strong strikethrough to inner text
+            for (let i = innerStart; i < innerEnd; i++) {
+                if (!styles[i]) styles[i] = {};
+                styles[i].stroke = 'black';
+                styles[i].strokeWidth = 2;
+            }
+        }
+
+        // Weak strikethrough: ~текст~
+        const weakRegex = /~([^~]+)~/g;
+        while ((match = weakRegex.exec(text)) !== null) {
+            const startIndex = match.index;
+            const endIndex = startIndex + match[0].length;
+            const innerStart = startIndex + 1;
+            const innerEnd = endIndex - 1;
+
+            // Mark characters for removal (tildes)
+            for (let i = startIndex; i < endIndex; i++) {
+                if (!styles[i]) styles[i] = {};
+                styles[i].remove = true;
+            }
+
+            // Apply weak strikethrough to inner text
+            for (let i = innerStart; i < innerEnd; i++) {
+                if (!styles[i]) styles[i] = {};
+                styles[i].stroke = 'black';
+                styles[i].strokeWidth = 1;
+            }
+        }
+
+        // Build the final text and adjust styles for removed characters
+        let finalText = '';
+        const finalStyles = {};
+        let offset = 0;
+
+        for (let i = 0; i < processedText.length; i++) {
+            if (styles[i] && styles[i].remove) {
+                offset++;
+                continue;
+            }
+            finalText += processedText[i];
+            if (styles[i]) {
+                finalStyles[i - offset] = { ...styles[i] };
+                delete finalStyles[i - offset].remove;
+            }
+        }
+
+        // Convert styles to fabric.js format
+        const fabricStyles = {};
+        for (const [index, style] of Object.entries(finalStyles)) {
+            fabricStyles[index] = {};
+            if (style.stroke) {
+                fabricStyles[index].stroke = style.stroke;
+            }
+            if (style.strokeWidth) {
+                fabricStyles[index].strokeWidth = style.strokeWidth;
+            }
+        }
+
+        return { text: finalText, styles: fabricStyles };
     }
 
     // Calculate the center of a polygon
@@ -777,6 +866,40 @@ class TextEditor {
         }
     }
 
+    applyFormat(formatType) {
+        const textInput = document.getElementById('text-input');
+        const start = textInput.selectionStart;
+        const end = textInput.selectionEnd;
+        const text = textInput.value;
+
+        if (formatType === 'strong') {
+            // Strong strikethrough: [текст]
+            if (start === end) {
+                // No selection - insert template with cursor inside
+                textInput.value = text.substring(0, start) + '[]' + text.substring(end);
+                textInput.setSelectionRange(start + 1, start + 1); // Cursor inside brackets
+            } else {
+                // Wrap selected text
+                const selectedText = text.substring(start, end);
+                textInput.value = text.substring(0, start) + `[${selectedText}]` + text.substring(end);
+                const newCursorPos = start + selectedText.length + 2;
+                textInput.setSelectionRange(newCursorPos, newCursorPos);
+            }
+        } else if (formatType === 'weak') {
+            // Weak strikethrough: ~текст~
+            if (start === end) {
+                // No selection - do nothing for weak format
+                return;
+            }
+            const selectedText = text.substring(start, end);
+            textInput.value = text.substring(0, start) + `~${selectedText}~` + text.substring(end);
+            const newCursorPos = start + selectedText.length + 2;
+            textInput.setSelectionRange(newCursorPos, newCursorPos);
+        }
+
+        textInput.focus();
+    }
+
     saveTextAndNext() {
         this.saveCurrentText();
 
@@ -879,43 +1002,46 @@ class TextEditor {
     }
 
     handleKeyDown(e) {
+        const modal = document.getElementById('text-modal');
+        const isModalOpen = modal && modal.style.display === 'flex';
+        const textInput = document.getElementById('text-input');
+        const isTextInputFocused = textInput && document.activeElement === textInput;
+
         // Handle Enter key to save and go to next region (only when modal is open)
-        if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-            const modal = document.getElementById('text-modal');
-            if (modal.style.display === 'flex') {
-                e.preventDefault();
-                this.saveTextAndNext();
-            }
+        if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey && !e.altKey && isModalOpen) {
+            e.preventDefault();
+            this.saveTextAndNext();
         }
         // Handle Ctrl+Enter to save and stay on the same region
-        else if (e.key === 'Enter' && e.ctrlKey) {
+        else if (e.key === 'Enter' && e.ctrlKey && isModalOpen) {
             e.preventDefault();
             this.saveCurrentText();
         }
         // Handle Escape key to close modal
-        else if (e.key === 'Escape') {
-            const modal = document.getElementById('text-modal');
-            if (modal.style.display === 'flex') {
-                this.closeModal();
-            }
+        else if (e.key === 'Escape' && isModalOpen) {
+            this.closeModal();
         }
-        // Handle arrow keys for navigation
-        else if (e.key === 'ArrowRight') {
-            this.nextRegion();
-        }
-        else if (e.key === 'ArrowLeft') {
+        // Handle Ctrl+Left/Right for region navigation (when modal is open)
+        else if (e.ctrlKey && e.key === 'ArrowLeft' && isModalOpen) {
+            e.preventDefault();
             this.previousRegion();
+        }
+        else if (e.ctrlKey && e.key === 'ArrowRight' && isModalOpen) {
+            e.preventDefault();
+            this.nextRegion();
         }
         // Handle Ctrl+S for saving
         else if ((e.ctrlKey || e.metaKey) && e.key === 's') {
             e.preventDefault();
             this.saveData();
         }
-        // Handle Ctrl+Left/Right for image navigation
-        else if (e.ctrlKey && e.key === 'ArrowLeft') {
+        // Handle Ctrl+Left/Right for image navigation (when not in modal)
+        else if (e.ctrlKey && e.key === 'ArrowLeft' && !isModalOpen) {
+            e.preventDefault();
             this.goImage(-1);
         }
-        else if (e.ctrlKey && e.key === 'ArrowRight') {
+        else if (e.ctrlKey && e.key === 'ArrowRight' && !isModalOpen) {
+            e.preventDefault();
             this.goImage(1);
         }
     }
@@ -1071,10 +1197,14 @@ class TextEditor {
             const originalData = await API.loadAnnotation(this.filename);
             const originalRegions = originalData.regions || [];
 
+            // Get CSRF token from meta tag
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
             const response = await fetch('/api/recognize_text', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
                 },
                 body: JSON.stringify({
                     image_name: this.filename,
@@ -1143,19 +1273,23 @@ if (typeof API !== 'undefined') {
             regions: regions || [],
             texts: texts
         };
-        
+
+        // Get CSRF token from meta tag
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
         const response = await fetch('/api/save', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
             },
             body: JSON.stringify(data)
         });
-        
+
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
-        
+
         return await response.json();
     };
 }
