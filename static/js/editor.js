@@ -717,7 +717,7 @@ class HTREditor {
 
                     <div style="margin-bottom: 15px;">
                         <label for="polygon-simplification" style="display: block; margin-bottom: 5px; color: #333;">Упрощение полигонов:</label>
-                        <input type="range" id="polygon-simplification" min="0" max="20" value="2" step="0.5" style="width: 100%;">
+                        <input type="range" id="polygon-simplification" min="0" max="60" value="2" step="0.5" style="width: 100%;">
                         <span id="simplification-value" style="font-size: 0.9em; color: #666;">2.0</span>
                     </div>
 
