@@ -3,9 +3,11 @@ from flask_wtf.csrf import CSRFProtect
 from functools import wraps
 import argparse
 import io
+import logging
 import os
 import threading
 import time
+import traceback
 
 import logic
 import storage
@@ -23,19 +25,27 @@ from services import (
 # Import database
 from database.session import init_db
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
 # Initialize database only if not running tests
 import sys
 if 'pytest' not in sys.modules:
     init_db()
-    print("Database initialized")
+    logger.info("Database initialized")
 
 # Initialize AI models at startup
 if ai_service.is_trocr_available():
     try:
         ai_service.initialize_models("raxtemur/trocr-base-ru")
-        print("AI models initialized successfully")
+        logger.info("AI models initialized successfully")
     except Exception as e:
-        print(f"Error initializing AI models: {e}")
+        logger.error(f"Error initializing AI models: {e}", exc_info=True)
 
 app = Flask(__name__)
 
@@ -238,21 +248,19 @@ def save_data():
         # Ensure image_name is set
         existing_data['image_name'] = validated
 
-        print(f"[DEBUG] Saving annotation for {validated}: {len(incoming_data.get('regions', []))} regions")
-        
+        logger.info(f"Saving annotation for {validated}: {len(incoming_data.get('regions', []))} regions")
+
         if annotation_service.save_annotation(validated, existing_data):
-            print(f"[DEBUG] Save successful")
+            logger.info(f"Save successful")
             return jsonify({'status': 'success'})
-        print(f"[DEBUG] Save failed - annotation_service returned False")
+        logger.warning(f"Save failed - annotation_service returned False")
         return jsonify({'status': 'error'}), 500
 
     except ValueError as e:
-        print(f"[DEBUG] ValueError: {e}")
+        logger.error(f"ValueError: {e}")
         return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
     except Exception as e:
-        import traceback
-        print(f"[DEBUG] Exception: {e}")
-        print(traceback.format_exc())
+        logger.error(f"Exception: {e}", exc_info=True)
         return jsonify({'status': 'error', 'msg': str(e)}), 500
 
 
@@ -308,9 +316,7 @@ def import_zip_route():
         })
 
     except Exception as e:
-        import traceback
-        print(f"Import error: {e}")
-        print(traceback.format_exc())
+        logger.error(f"Import error: {e}", exc_info=True)
         return jsonify({'status': 'error', 'msg': str(e)}), 500
 
 # --- API: AI Operations ---
