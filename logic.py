@@ -12,6 +12,7 @@ Note: Most business logic has been moved to the services layer.
 This module now focuses on low-level operations.
 """
 
+import logging
 import os
 import math
 import zipfile
@@ -20,6 +21,9 @@ import xml.etree.ElementTree as ET
 
 import storage
 from database.enums import ImageStatus, TaskStatus
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # YOLOv9 imports
 try:
@@ -291,8 +295,8 @@ def parse_page_xml(xml_path, simplify_val):
                         texts[str(i)] = ''
                         
     except Exception as e:
-        print(f"XML Error: {e}")
-    
+        logger.error(f"XML Error: {e}")
+
     return regions, texts
 
 
@@ -401,17 +405,17 @@ def run_batch_detection_for_project(project_name, settings=None, task_id=None):
     images = project_service.get_images(project_name)
     
     if not images:
-        print(f"No images found in project {project_name}")
+        logger.warning(f"No images found in project {project_name}")
         return
 
     # Get task by ID (passed from app.py)
     if not task_id:
-        print("Error: task_id not provided for batch detection")
+        logger.error("Error: task_id not provided for batch detection")
         return
 
     task = task_service.get_task(task_id)
     if not task:
-        print(f"Error: task {task_id} not found")
+        logger.error(f"Error: task {task_id} not found")
         return
 
     # Extract image names from image data dicts
@@ -441,14 +445,14 @@ def run_batch_detection_for_project(project_name, settings=None, task_id=None):
                 task_service.update_progress(task.id, idx + 1)
 
             except Exception as e:
-                print(f"Error detecting lines in {image_name}: {e}")
+                logger.error(f"Error detecting lines in {image_name}: {e}")
                 task_service.update_progress(task.id, idx + 1)
 
         task_service.update_progress(task.id, len(image_names), status=TaskStatus.COMPLETED)
-        print(f"Batch detection completed for project {project_name}")
+        logger.info(f"Batch detection completed for project {project_name}")
 
     except Exception as e:
-        print(f"Error in batch detection for project {project_name}: {e}")
+        logger.error(f"Error in batch detection for project {project_name}: {e}")
         task_service.fail_task(task.id, str(e))
 
 
@@ -465,17 +469,17 @@ def run_batch_recognition_for_project(project_name, task_id=None):
 
     images = project_service.get_images(project_name)
     if not images:
-        print(f"No images found in project {project_name}")
+        logger.warning(f"No images found in project {project_name}")
         return
 
     # Get task by ID (passed from app.py)
     if not task_id:
-        print("Error: task_id not provided for batch recognition")
+        logger.error("Error: task_id not provided for batch recognition")
         return
 
     task = task_service.get_task(task_id)
     if not task:
-        print(f"Error: task {task_id} not found")
+        logger.error(f"Error: task {task_id} not found")
         return
 
     # Extract image names from image data dicts
@@ -491,10 +495,10 @@ def run_batch_recognition_for_project(project_name, task_id=None):
             # Skip if no polygons (nothing to recognize)
             regions = annotation_data.get('regions', [])
             if not regions:
-                print(f"Skip {image_name}: no polygons for recognition")
+                logger.warning(f"Skip {image_name}: no polygons for recognition")
                 task_service.update_progress(task.id, idx + 1)
                 continue
-            
+
             # Skip if text already recognized
             if annotation_data.get('texts') and any(annotation_data.get('texts', {}).values()):
                 task_service.update_progress(task.id, idx + 1)
@@ -505,14 +509,14 @@ def run_batch_recognition_for_project(project_name, task_id=None):
                 task_service.update_progress(task.id, idx + 1)
 
             except Exception as e:
-                print(f"Error recognizing text in {image_name}: {e}")
+                logger.error(f"Error recognizing text in {image_name}: {e}")
                 task_service.update_progress(task.id, idx + 1)
 
         task_service.update_progress(task.id, len(image_names), status=TaskStatus.COMPLETED)
-        print(f"Batch recognition completed for project {project_name}")
+        logger.info(f"Batch recognition completed for project {project_name}")
 
     except Exception as e:
-        print(f"Error in batch recognition for project {project_name}: {e}")
+        logger.error(f"Error in batch recognition for project {project_name}: {e}")
         task_service.fail_task(task.id, str(e))
 
 
