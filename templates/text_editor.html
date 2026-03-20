@@ -103,9 +103,10 @@
         .modal-body {
             flex: 1;
             padding: 15px;
-            overflow: auto;
+            overflow-y: auto;
+            overflow-x: hidden;
         }
-        
+
         .modal-footer {
             padding: 15px;
             border-top: 1px solid #444;
@@ -140,13 +141,46 @@
             color: #ddd;
             font-size: 1.2em;
             resize: vertical;
+            box-sizing: border-box;
         }
         
         .text-input:focus {
             outline: none;
             border-color: #007bff;
         }
-        
+
+        .format-toolbar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+            padding: 8px;
+            background: #2a2a2a;
+            border-radius: 4px;
+            border: 1px solid #444;
+            box-sizing: border-box;
+        }
+
+        .format-btn {
+            padding: 6px 12px;
+            background: #3a3a3a;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: #ddd;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.2s;
+        }
+
+        .format-btn:hover {
+            background: #4a4a4a;
+            border-color: #007bff;
+        }
+
+        .format-btn:active {
+            background: #007bff;
+            color: white;
+        }
+
         .region-counter {
             font-size: 0.9em;
             color: #888;
@@ -220,6 +254,14 @@
             <div class="modal-body">
                 <div class="region-preview">
                     <img id="region-preview-img" src="" alt="Предпросмотр региона">
+                </div>
+                <div class="format-toolbar">
+                    <button class="format-btn" onclick="editor.applyFormat('weak')" title="Слабое зачеркивание ~текст~">
+                        слабое <s style="text-decoration-thickness: 1px">зачеркивание</s>
+                    </button>
+                    <button class="format-btn" onclick="editor.applyFormat('strong')" title="Сильное зачеркивание [текст]">
+                        нечитаемое <s style="text-decoration-thickness: 3px">зачеркивание</s>
+                    </button>
                 </div>
                 <textarea id="text-input" class="text-input" placeholder="Введите текст для этого региона..."></textarea>
                 <div class="region-counter">Регион <span id="current-region-index">1</span> из <span id="total-regions">0</span></div>
