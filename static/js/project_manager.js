@@ -1,6 +1,21 @@
 /**
  * Project Manager API Functions
  */
+
+// Get CSRF token from meta tag
+function getCsrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.content : '';
+}
+
+// Headers with CSRF token for POST/PUT/DELETE requests
+function getCsrfHeaders() {
+    return {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCsrfToken()
+    };
+}
+
 const ProjectAPI = {
     // Projects
     async getProjects() {
@@ -15,7 +30,7 @@ const ProjectAPI = {
     async createProject(name, description = "") {
         const response = await fetch('/api/projects', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: getCsrfHeaders(),
             body: JSON.stringify({name, description})
         });
 
@@ -38,7 +53,7 @@ const ProjectAPI = {
     async updateProject(projectName, name, description = "") {
         const response = await fetch(`/api/projects/${projectName}`, {
             method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
+            headers: getCsrfHeaders(),
             body: JSON.stringify({name, description})
         });
 
@@ -74,7 +89,7 @@ const ProjectAPI = {
     async addImageToProject(projectName, imageName) {
         const response = await fetch(`/api/projects/${projectName}/images`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: getCsrfHeaders(),
             body: JSON.stringify({image_name: imageName})
         });
 
@@ -88,7 +103,7 @@ const ProjectAPI = {
     async removeImageFromProject(projectName, imageName) {
         const response = await fetch(`/api/projects/${projectName}/images`, {
             method: 'DELETE',
-            headers: {'Content-Type': 'application/json'},
+            headers: getCsrfHeaders(),
             body: JSON.stringify({image_name: imageName})
         });
 
@@ -103,7 +118,7 @@ const ProjectAPI = {
     async startBatchDetection(projectName, settings = {}) {
         const response = await fetch(`/api/projects/${projectName}/batch_detect`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: getCsrfHeaders(),
             body: JSON.stringify({settings})
         });
 
@@ -117,7 +132,7 @@ const ProjectAPI = {
     async startBatchRecognition(projectName) {
         const response = await fetch(`/api/projects/${projectName}/batch_recognize`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'}
+            headers: getCsrfHeaders()
         });
 
         if (!response.ok) {
@@ -702,7 +717,7 @@ class ProjectManager {
         try {
             const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/images`, {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: getCsrfHeaders(),
                 body: JSON.stringify({image_name: image})
             });
 
@@ -866,6 +881,9 @@ class ProjectManager {
         try {
             const response = await fetch('/api/import_zip', {
                 method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCsrfToken()
+                },
                 body: formData
             });
 
