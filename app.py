@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, send_file, session
+from flask_wtf.csrf import CSRFProtect
 from functools import wraps
 import argparse
 import io
@@ -37,6 +38,18 @@ if ai_service.is_trocr_available():
         print(f"Error initializing AI models: {e}")
 
 app = Flask(__name__)
+
+# =============================================================================
+# CSRF Protection
+# =============================================================================
+app.config['WTF_CSRF_ENABLED'] = True
+app.config['WTF_CSRF_TIME_LIMIT'] = None  # Token doesn't expire
+csrf = CSRFProtect(app)
+
+# Whitelist API endpoints from CSRF (they use session-based auth instead)
+# CSRF protection is bypassed for API endpoints that are already protected
+# by role-based access control and session validation
+csrf.exempt('api_blueprint') if 'api_blueprint' in dir() else None
 
 # =============================================================================
 # Password Protection with Role-based Access

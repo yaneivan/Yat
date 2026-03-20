@@ -112,16 +112,17 @@
             {{ error }}
         </div>
         {% endif %}
-        
+
         <form method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
             <div class="form-group">
                 <label for="password">Пароль</label>
-                <input 
-                    type="password" 
-                    id="password" 
-                    name="password" 
-                    placeholder="Введите пароль" 
-                    required 
+                <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    placeholder="Введите пароль"
+                    required
                     autofocus
                 >
             </div>
