@@ -3,35 +3,28 @@ name = "yat"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "alembic>=1.18.4",
     "flask>=3.1.2",
     "pillow>=12.1.1",
+    "python-dotenv>=1.0.0",
     "reportlab>=4.0.0",
     "sqlalchemy>=2.0.48",
-    "transformers>=5.1.0",
-    "ultralytics>=8.4.14",
-]
-
-# CUDA для Windows
-[project.optional-dependencies]
-cuda = [
-    "torch==2.5.1+cu124; sys_platform == 'win32'",
-    "torchvision==0.20.1+cu124; sys_platform == 'win32'",
+    "transformers>=4.48.0",
+    "ultralytics>=8.3.0",
+    "torch==2.5.1+cu118",
+    "torchvision==0.20.1+cu118",
+    "rapidfuzz>=3.10.0",
 ]
 
 [tool.uv.sources]
-torch = [
-    { index = "pytorch-cuda", marker = "sys_platform == 'win32'" },
-]
-torchvision = [
-    { index = "pytorch-cuda", marker = "sys_platform == 'win32'" },
-]
+torch = { path = "./torch-2.5.1+cu118-cp312-cp312-linux_x86_64.whl" }
+torchvision = { path = "./torchvision-0.20.1+cu118-cp312-cp312-linux_x86_64.whl" }
 
 [[tool.uv.index]]
 name = "pytorch-cuda"
-url = "https://download.pytorch.org/whl/cu124"
+url = "https://download.pytorch.org/whl/cu118"
 explicit = true
 
 [dependency-groups]

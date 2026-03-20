@@ -35,5 +35,29 @@ const API = {
         }
 
         return await response.json();
+    },
+    async getUserRole() {
+        const res = await fetch('/api/auth/me');
+        if (!res.ok) return null;
+        const data = await res.json();
+        return data.role;
+    }
+};
+
+const AuthAPI = {
+    async getUserRole() {
+        try {
+            const res = await fetch('/api/auth/me');
+            if (!res.ok) return 'admin'; // Open access mode
+            const data = await res.json();
+            // If role is 'none' (not logged in), redirect to login
+            if (data.role === 'none') {
+                window.location.href = '/login';
+                return 'admin'; // Default while redirecting
+            }
+            return data.role || 'admin';
+        } catch (e) {
+            return 'admin';
+        }
     }
 };

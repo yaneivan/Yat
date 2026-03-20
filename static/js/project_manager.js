@@ -160,9 +160,14 @@ class ProjectManager {
         this.tasks = [];
         this.images = [];
         this.currentSection = 'projects';
+        this.userRole = 'admin'; // Default to admin
     }
 
     async init() {
+        // Get user role first
+        this.userRole = await AuthAPI.getUserRole();
+        console.log('User role:', this.userRole);
+        
         await this.loadProjects();
         await this.loadTasks();
         await this.loadImages();
@@ -291,13 +296,16 @@ class ProjectManager {
         openLink.className = 'action-btn';
         openLink.textContent = 'Открыть';
 
-        const deleteButton = document.createElement('button');
-        deleteButton.className = 'action-btn';
-        deleteButton.textContent = 'Удалить';
-        deleteButton.onclick = () => projectManager.deleteProject(project.name);
-
         projectActions.appendChild(openLink);
-        projectActions.appendChild(deleteButton);
+
+        // Only show delete button for admin
+        if (this.userRole === 'admin') {
+            const deleteButton = document.createElement('button');
+            deleteButton.className = 'action-btn';
+            deleteButton.textContent = 'Удалить';
+            deleteButton.onclick = () => projectManager.deleteProject(project.name);
+            projectActions.appendChild(deleteButton);
+        }
 
         projectCard.appendChild(projectHeader);
         projectCard.appendChild(projectDescription);
@@ -774,16 +782,19 @@ class ProjectManager {
         openLink.className = 'btn';
         openLink.textContent = 'Открыть';
 
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'btn danger delete-project-btn';
-        deleteBtn.textContent = 'Удалить';
-        deleteBtn.onclick = (event) => {
-            event.stopPropagation();
-            this.deleteProject(project.name);
-        };
-
         projectActions.appendChild(openLink);
-        projectActions.appendChild(deleteBtn);
+
+        // Only show delete button for admin
+        if (this.userRole === 'admin') {
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'btn danger delete-project-btn';
+            deleteBtn.textContent = 'Удалить';
+            deleteBtn.onclick = (event) => {
+                event.stopPropagation();
+                this.deleteProject(project.name);
+            };
+            projectActions.appendChild(deleteBtn);
+        }
 
         projectItem.appendChild(projectInfo);
         projectItem.appendChild(projectActions);

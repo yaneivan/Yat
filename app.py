@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, send_file, session
+from functools import wraps
 import argparse
 import io
 import os
@@ -7,6 +8,7 @@ import time
 
 import logic
 import storage
+import config
 
 # Import services
 from services import (
@@ -37,36 +39,52 @@ if ai_service.is_trocr_available():
 app = Flask(__name__)
 
 # =============================================================================
-# Password Protection (optional)
+# Password Protection with Role-based Access
 # =============================================================================
-# Parse command line arguments
-parser = argparse.ArgumentParser()
-parser.add_argument('--password', type=str, help='Password for access protection')
-parser.add_argument('--host', type=str, default='127.0.0.1', help='Host to bind')
-parser.add_argument('--port', type=int, default=5000, help='Port to bind')
-args, unknown = parser.parse_known_args()
-
-# Get password from argument or environment variable
-APP_PASSWORD = args.password or os.environ.get('APP_PASSWORD')
-USE_AUTH = APP_PASSWORD is not None
-
 # Set secret key for sessions (required for auth)
-if USE_AUTH:
-    app.secret_key = os.environ.get('SECRET_KEY', 'change-this-secret-key-in-production')
+app.secret_key = os.environ.get('SECRET_KEY', 'change-this-secret-key-in-production')
+
+# Determine authentication mode
+# Two modes only:
+# 1. No passwords (both None) → open access, everyone is admin, no login required
+# 2. Both passwords set → role-based access (admin/user), login required
+USE_AUTH = config.USE_ROLE_BASED_AUTH
+
+
+def get_user_role():
+    """Get current user's role from session."""
+    if not USE_AUTH:
+        return 'admin'  # Open access mode
+    return session.get('role', None)
+
+
+def is_admin():
+    """Check if current user is admin."""
+    return get_user_role() == 'admin'
+
+
+def require_admin(f):
+    """Decorator to restrict access to admin users only."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if USE_AUTH and not is_admin():
+            return jsonify({'error': 'Admin access required'}), 403
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 @app.before_request
 def check_auth():
     """Check authorization if password protection is enabled."""
     if not USE_AUTH:
-        return  # No password - allow all
-    
-    # Skip login page and static files
-    if request.path in ['/login', '/static', '/favicon.ico']:
+        return  # No password - open access, everyone is admin
+
+    # Skip login page, static files, and auth API
+    if request.path in ['/login', '/static', '/favicon.ico', '/api/auth/me']:
         return
-    
+
     # No session - redirect to login
-    if 'authenticated' not in session:
+    if 'role' not in session:
         return redirect(url_for('login'))
 
 
@@ -74,27 +92,39 @@ def check_auth():
 def login():
     """Login page for password protection."""
     if not USE_AUTH:
-        return redirect('/')  # No password - redirect to home
-    
+        # No passwords configured - open access, redirect to home
+        return redirect('/')
+
     if request.method == 'POST':
-        if request.form.get('password') == APP_PASSWORD:
-            session['authenticated'] = True
+        password = request.form.get('password')
+        
+        if password == config.ADMIN_PASSWORD:
+            session['role'] = 'admin'
             return redirect('/')
-        return render_template('login.html', error='Неверный пароль')
+        elif password == config.USER_PASSWORD:
+            session['role'] = 'user'
+            return redirect('/')
+        else:
+            return render_template('login.html', error='Неверный пароль')
+    
     return render_template('login.html')
 
 
 @app.route('/logout')
 def logout():
     """Logout - clear session."""
-    session.pop('authenticated', None)
+    session.pop('role', None)
     return redirect(url_for('login'))
 
 
-# Make USE_AUTH available to templates
+# Make USE_AUTH and user role available to templates
 @app.context_processor
 def inject_auth():
-    return {'USE_AUTH': USE_AUTH}
+    return {
+        'USE_AUTH': USE_AUTH,
+        'user_role': get_user_role(),
+        'is_admin': is_admin()
+    }
 
 
 # =============================================================================
@@ -241,6 +271,10 @@ def crop():
 # --- API: Import/Export ---
 @app.route('/api/import_zip', methods=['POST'])
 def import_zip_route():
+    # Admin only: import ZIP
+    if USE_AUTH and not is_admin():
+        return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
+    
     try:
         simp = int(request.form.get('simplify', 0))
         project_name = request.form.get('project_name', None)
@@ -381,6 +415,10 @@ def projects():
         return jsonify({'projects': projects_list})
 
     elif request.method == 'POST':
+        # Admin only: create project
+        if USE_AUTH and not is_admin():
+            return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
+        
         try:
             data = request.json
             name = data.get('name')
@@ -404,7 +442,7 @@ def projects():
 def project(project_name):
     # Sanitize project name to prevent path traversal
     sanitized_name = project_service._sanitize_name(project_name)
-    
+
     if request.method == 'GET':
         project_data = project_service.get_project(sanitized_name)
 
@@ -414,6 +452,10 @@ def project(project_name):
         return jsonify({'project': project_data})
 
     elif request.method == 'PUT':
+        # Admin only: edit project
+        if USE_AUTH and not is_admin():
+            return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
+        
         data = request.json
         new_name = data.get('name')
         description = data.get('description')
@@ -430,6 +472,10 @@ def project(project_name):
             return jsonify({'status': 'error', 'msg': 'Project not found or name collision'}), 400
 
     elif request.method == 'DELETE':
+        # Admin only: delete project
+        if USE_AUTH and not is_admin():
+            return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
+        
         result = project_service.delete_project(sanitized_name)
 
         if result:
@@ -442,12 +488,16 @@ def project(project_name):
 def project_images(project_name):
     # Sanitize project name to prevent path traversal
     sanitized_name = project_service._sanitize_name(project_name)
-    
+
     if request.method == 'GET':
         images = project_service.get_images(sanitized_name)
         return jsonify({'images': images})
 
     elif request.method == 'DELETE':
+        # Admin only: remove image from project
+        if USE_AUTH and not is_admin():
+            return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
+        
         data = request.json
         image_name = data.get('image_name')
 
@@ -464,9 +514,13 @@ def project_images(project_name):
 
 @app.route('/api/projects/<project_name>/upload_images', methods=['POST'])
 def upload_project_images(project_name):
+    # Admin only: upload images
+    if USE_AUTH and not is_admin():
+        return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
+    
     # Sanitize project name to prevent path traversal
     sanitized_name = project_service._sanitize_name(project_name)
-    
+
     if 'images' not in request.files:
         return jsonify({'status': 'error', 'msg': 'No images provided'}), 400
 
@@ -557,9 +611,13 @@ def export_project_pdf(project_name):
 
 @app.route('/api/projects/<project_name>/batch_detect', methods=['POST'])
 def batch_detect(project_name):
+    # Admin only: batch detection
+    if USE_AUTH and not is_admin():
+        return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
+    
     # Sanitize project name to prevent path traversal
     sanitized_name = project_service._sanitize_name(project_name)
-    
+
     settings = request.json.get('settings', {})
     images = project_service.get_images(sanitized_name)
 
@@ -608,9 +666,13 @@ def batch_detect(project_name):
 
 @app.route('/api/projects/<project_name>/batch_recognize', methods=['POST'])
 def batch_recognize(project_name):
+    # Admin only: batch recognition
+    if USE_AUTH and not is_admin():
+        return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
+    
     # Sanitize project name to prevent path traversal
     sanitized_name = project_service._sanitize_name(project_name)
-    
+
     images = project_service.get_images(sanitized_name)
 
     if not images:
@@ -662,11 +724,21 @@ def get_tasks():
 @app.route('/api/tasks/<task_id>', methods=['GET'])
 def get_task(task_id):
     task = task_service.get_task(task_id)
-    
+
     if task is None:
         return jsonify({'status': 'error', 'msg': 'Task not found'}), 404
-    
+
     return jsonify({'task': task.to_dict()})
+
+
+# --- API: Auth ---
+@app.route('/api/auth/me', methods=['GET'])
+def get_current_user():
+    """Get current user's role."""
+    if not USE_AUTH:
+        return jsonify({'role': 'admin', 'is_admin': True})
+    role = get_user_role()
+    return jsonify({'role': role or 'none', 'is_admin': is_admin()})
 
 
 # --- Pages: Project ---
