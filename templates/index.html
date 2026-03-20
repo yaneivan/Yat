@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>HTR Project Manager</title>
     <style>
         /* All CSS styles to prevent FOUC */
@@ -411,9 +412,14 @@
             </div>
             <div class="nav-actions">
                 {% if USE_AUTH %}
+                <span class="user-role-badge" style="margin-right:15px;font-size:0.85em;padding:4px 8px;background:{% if is_admin %}#28a745{% else %}#17a2b8{% endif %};color:white;border-radius:4px;">
+                    {% if is_admin %}👤 Admin{% else %}👤 User{% endif %}
+                </span>
                 <a href="/logout" style="color:#dc3545;">Выйти</a>
                 {% endif %}
+                {% if is_admin %}
                 <a href="#" onclick="openImportModal()">Импорт</a>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -440,7 +446,9 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; margin: 20px 0;">
                     <h2>Проекты</h2>
                     <div style="display: flex; gap: 10px;">
+                        {% if is_admin %}
                         <button class="btn create-project-btn" onclick="openCreateProjectModal()">+ Создать проект</button>
+                        {% endif %}
                     </div>
                 </div>
 

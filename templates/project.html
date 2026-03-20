@@ -3,6 +3,7 @@
 <head>
     <title>Проект: {{ project.name }}</title>
     <meta charset="UTF-8">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <style>
         /* All CSS styles to prevent FOUC */
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #222; color: #ddd; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
@@ -554,7 +555,9 @@
                 <a href="/project/{{ project.name }}" class="active">Текущий проект</a>
             </div>
             <div class="nav-actions">
+                {% if is_admin %}
                 <a href="#" onclick="openImportModal()">Импорт</a>
+                {% endif %}
                 <a href="#" onclick="openExportModal()" style="margin-left: 10px;">Экспорт</a>
             </div>
         </div>
@@ -710,14 +713,14 @@
         .drop-area.uploading p {
             display: none;
         }
-        
+
         .batch-actions {
             background: #f8f9fa;
             padding: 15px;
             border-radius: 8px;
             margin-bottom: 20px;
         }
-        
+
         .batch-actions h3 {
             margin-top: 0;
         }
@@ -829,7 +832,8 @@
                 </div>
             </div>
         </div>
-        
+
+        {% if is_admin %}
         <div class="batch-actions">
             <h3>Пакетная обработка</h3>
             <div class="batch-controls">
@@ -839,12 +843,15 @@
                 <button class="btn danger" onclick="deleteSelected()">Удалить выбранные</button>
             </div>
         </div>
-        
+        {% endif %}
+
+        {% if is_admin %}
         <div class="drop-area" id="dropArea">
             <p>Перетащите изображения сюда или нажмите для выбора</p>
             <div class="upload-spinner">⏳ Загрузка...</div>
             <input type="file" id="fileInput" multiple style="display: none;" accept="image/*">
         </div>
+        {% endif %}
         
         <div class="image-grid" id="imageGrid">
             {% for image in project.images %}
@@ -855,7 +862,9 @@
                     <div class="image-status status-{{ image.status }}">{{ 'Размечено' if image.status == 'segment' else 'Кадрировано' if image.status == 'cropped' else 'Текст добавлен' if image.status == 'texted' else 'Нужно кадрировать' }}</div>
                 </div>
                 <div class="image-actions">
+                    {% if is_admin %}
                     <input type="checkbox" class="select-checkbox" data-image="{{ image.filename }}">
+                    {% endif %}
                     <a href="/cropper?project={{ project.name }}&image={{ image.filename }}" class="btn image-action-btn">Обрезка</a>
                     <a href="/editor?project={{ project.name }}&image={{ image.filename }}" class="btn image-action-btn">Сегменты</a>
                     <a href="/text_editor?project={{ project.name }}&image={{ image.filename }}" class="btn image-action-btn">Распознавать</a>

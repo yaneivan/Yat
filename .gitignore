@@ -13,3 +13,4 @@ database.db
 /database/__pycache__
 /database/repository/__pycache__
 /services/__pycache__
+.env
