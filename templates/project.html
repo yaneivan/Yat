@@ -617,7 +617,7 @@
         .image-card {
             border: 1px solid #ddd;
             border-radius: 8px;
-            overflow: hidden;
+            overflow: visible;
             background: white;
             transition: transform 0.2s, box-shadow 0.2s;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
@@ -662,12 +662,112 @@
             background: #ffc107;
             color: #212529;
         }
-        
+
         .status-segment {
             background: #28a745;
             color: white;
         }
-        
+
+        .status-texted {
+            background: #17a2b8;
+            color: white;
+        }
+
+        .status-review_pending {
+            background: #fd7e14;
+            color: #212529;
+        }
+
+        .status-reviewed {
+            background: #6f42c1;
+            color: white;
+        }
+
+        .status-cropped {
+            background: #6c757d;
+            color: white;
+        }
+
+        /* Status popover */
+        .status-badge {
+            cursor: pointer;
+            position: relative;
+        }
+
+        .status-popover {
+            display: none;
+            position: fixed;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            z-index: 10000;
+            width: 250px;
+            color: #ddd;
+        }
+
+        .status-popover.show {
+            display: block;
+        }
+
+        .status-popover h4 {
+            margin: 0 0 10px 0;
+            font-size: 0.9em;
+            color: #fff;
+        }
+
+        .status-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px;
+            cursor: pointer;
+            border-radius: 4px;
+            color: #ddd;
+        }
+
+        .status-option:hover {
+            background: #3a3a3a;
+        }
+
+        .status-option input[type="radio"] {
+            margin: 0;
+        }
+
+        .status-popover textarea {
+            width: 100%;
+            min-height: 60px;
+            margin-top: 10px;
+            padding: 8px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 0.85em;
+            resize: vertical;
+            box-sizing: border-box;
+            background: #333;
+            color: #ddd;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .status-popover button {
+            width: 100%;
+            margin-top: 10px;
+            padding: 8px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+
+        .status-popover button:hover {
+            background: #0056b3;
+        }
+
         .image-actions {
             display: flex;
             flex-wrap: wrap;
@@ -859,7 +959,13 @@
                 <img src="/data/images/{{ image.filename }}" class="image-thumb" alt="{{ image.filename }}">
                 <div class="image-meta">
                     <div class="image-name" title="{{ image.filename }}">{{ image.filename }}</div>
-                    <div class="image-status status-{{ image.status }}">{{ 'Размечено' if image.status == 'segment' else 'Кадрировано' if image.status == 'cropped' else 'Текст добавлен' if image.status == 'texted' else 'Нужно кадрировать' }}</div>
+                    <div class="image-status status-{{ image.status }} status-badge" 
+                         data-filename="{{ image.filename }}"
+                         data-status="{{ image.status }}"
+                         data-comment="{{ image.comment }}"
+                         onclick="toggleStatusPopover(this)">
+                        {{ 'Требует ревью' if image.status == 'review_pending' else 'Проверено' if image.status == 'reviewed' else 'Размечено' if image.status == 'segment' else 'Текст' if image.status == 'texted' else 'Кадрировано' if image.status == 'cropped' else 'Загружено' }}
+                    </div>
                 </div>
                 <div class="image-actions">
                     {% if is_admin %}
@@ -871,6 +977,37 @@
                 </div>
             </div>
             {% endfor %}
+        </div>
+
+        <!-- Status popover (один на все карточки) -->
+        <div id="status-popover" class="status-popover">
+            <h4>Статус:</h4>
+            <label class="status-option">
+                <input type="radio" name="status" value="crop">
+                Загружено
+            </label>
+            <label class="status-option">
+                <input type="radio" name="status" value="cropped">
+                Кадрировано
+            </label>
+            <label class="status-option">
+                <input type="radio" name="status" value="segment">
+                Размечено
+            </label>
+            <label class="status-option">
+                <input type="radio" name="status" value="texted">
+                Текст добавлен
+            </label>
+            <label class="status-option">
+                <input type="radio" name="status" value="review_pending">
+                Требует ревью
+            </label>
+            <label class="status-option">
+                <input type="radio" name="status" value="reviewed">
+                Проверено
+            </label>
+            <textarea id="status-comment" placeholder="Комментарий..."></textarea>
+            <button onclick="saveStatus()">Сохранить</button>
         </div>
     </div>
 
@@ -1349,7 +1486,170 @@
             }
         }
     </script>
-    
+
+    <!-- Status update function -->
+    <script>
+        let currentFilename = null;
+        
+        function toggleStatusPopover(element) {
+            const popover = document.getElementById('status-popover');
+            const filename = element.dataset.filename;
+            const status = element.dataset.status;
+            const comment = element.dataset.comment || '';
+            
+            // Если клик на уже открытый popover - закрываем
+            if (currentFilename === filename && popover.classList.contains('show')) {
+                popover.classList.remove('show');
+                currentFilename = null;
+                return;
+            }
+            
+            currentFilename = filename;
+            
+            // Устанавливаем текущий статус
+            const radio = popover.querySelector(`input[name="status"][value="${status}"]`);
+            if (radio) radio.checked = true;
+            
+            // Устанавливаем комментарий
+            document.getElementById('status-comment').value = comment;
+            
+            // Позиционируем popover справа от статуса
+            const rect = element.getBoundingClientRect();
+            const popoverWidth = 250;
+            const popoverHeight = 350; // Примерная высота popover
+            
+            // Проверяем, есть ли место справа
+            const spaceOnRight = window.innerWidth - rect.right;
+            const spaceOnLeft = rect.left;
+            
+            // Выбираем сторону (справа или слева)
+            if (spaceOnRight >= popoverWidth) {
+                popover.style.left = (rect.right) + 'px';
+            } else if (spaceOnLeft >= popoverWidth) {
+                popover.style.left = (rect.left - popoverWidth) + 'px';
+            } else {
+                // Если места нет ни справа, ни слева - центрируем
+                popover.style.left = (rect.left - (popoverWidth - rect.width) / 2) + 'px';
+            }
+            
+            // Проверяем, есть ли место снизу
+            const spaceBelow = window.innerHeight - rect.bottom;
+            
+            if (spaceBelow >= popoverHeight) {
+                // Показываем снизу
+                popover.style.top = (rect.bottom + 5) + 'px';
+            } else {
+                // Показываем сверху
+                popover.style.top = (rect.top - popoverHeight - 5) + 'px';
+            }
+            
+            // Показываем
+            popover.classList.add('show');
+        }
+        
+        async function saveStatus() {
+            if (!currentFilename) return;
+            
+            const projectName = "{{ project.name }}";
+            const popover = document.getElementById('status-popover');
+            
+            // Get selected status
+            const selectedStatus = popover.querySelector('input[name="status"]:checked')?.value;
+            const comment = document.getElementById('status-comment').value;
+            
+            if (!selectedStatus) {
+                showNotification('Выберите статус', 'error');
+                return;
+            }
+            
+            try {
+                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+                const url = `/api/projects/${encodeURIComponent(projectName)}/images/${encodeURIComponent(currentFilename)}/status`;
+                
+                const response = await fetch(url, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
+                    },
+                    body: JSON.stringify({ status: selectedStatus, comment })
+                });
+                
+                const result = await response.json();
+                
+                // response.ok = 200-299, значит успех
+                if (response.ok) {
+                    // Обновляем текст на карточке
+                    const badge = document.querySelector(`.status-badge[data-filename="${currentFilename}"]`);
+                    
+                    if (badge) {
+                        const statusTexts = {
+                            'crop': 'Загружено',
+                            'cropped': 'Кадрировано',
+                            'segment': 'Размечено',
+                            'texted': 'Текст добавлен',
+                            'review_pending': 'Требует ревью',
+                            'reviewed': 'Проверено'
+                        };
+                        
+                        // Обновляем класс и текст
+                        badge.className = `image-status status-${selectedStatus} status-badge`;
+                        badge.textContent = statusTexts[selectedStatus] || selectedStatus;
+                        badge.dataset.status = selectedStatus;
+                        badge.dataset.comment = comment;
+                    }
+                    
+                    showNotification('Статус обновлён', 'success');
+                    
+                    // Закрываем popover
+                    popover.classList.remove('show');
+                    currentFilename = null;
+                } else {
+                    showNotification('Ошибка: ' + (result.msg || 'Неизвестная ошибка'), 'error');
+                }
+            } catch (error) {
+                console.error('Error updating status:', error);
+                showNotification('Ошибка при обновлении статуса', 'error');
+            }
+        }
+        
+        // Закрыть popover при клике вне его
+        document.addEventListener('click', function(e) {
+            const popover = document.getElementById('status-popover');
+            const badge = e.target.closest('.status-badge');
+            
+            if (!badge && !popover.contains(e.target)) {
+                popover.classList.remove('show');
+                currentFilename = null;
+            }
+        });
+        
+        // Закрыть popover при скролле
+        window.addEventListener('scroll', function() {
+            const popover = document.getElementById('status-popover');
+            if (popover.classList.contains('show')) {
+                popover.classList.remove('show');
+                currentFilename = null;
+            }
+        }, { passive: true });
+        
+        // Обработка Enter в textarea
+        document.getElementById('status-comment').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && (e.ctrlKey || e.shiftKey)) {
+                // Ctrl+Enter или Shift+Enter - перенос строки
+                e.preventDefault();
+                const start = this.selectionStart;
+                const end = this.selectionEnd;
+                this.value = this.value.substring(0, start) + '\n' + this.value.substring(end);
+                this.selectionStart = this.selectionEnd = start + 1;
+            } else if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey) {
+                // Enter без Ctrl/Shift - сохранить
+                e.preventDefault();
+                saveStatus();
+            }
+        });
+    </script>
+
     <!-- Подключаем файлы с логикой управления проектами -->
     <script src="/static/js/api.js"></script>
     <script src="/static/js/project_manager.js"></script>
