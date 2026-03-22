@@ -1171,7 +1171,7 @@ class TextEditor {
                 image_name: this.filename,
                 regions: originalRegions, // Use original regions order
                 texts: textsInOriginalOrder,
-                status: 'texted' // New status for text input completed
+                status: 'recognized' // Status for text recognition completed
             };
 
             await API.saveAnnotationWithTexts(this.filename, saveData.regions, saveData.texts, this.project);

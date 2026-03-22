@@ -335,7 +335,7 @@ class AIService:
         
         # Update annotation with recognized texts
         annotation_data['texts'] = recognized_texts
-        annotation_data['status'] = ImageStatus.TEXTED.value
+        annotation_data['status'] = ImageStatus.RECOGNIZED.value
         annotation_data['image_name'] = filename
         annotation_service.save_annotation(filename, annotation_data, project_name)
 

@@ -8,13 +8,12 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
     <style>
         /* Status widget styles */
-        .status-badge { cursor: pointer; transition: opacity 0.2s; }
-        .status-badge:hover { opacity: 0.8; }
-        .status-crop { background: #ffc107; color: #212529; }
-        .status-cropped { background: #6c757d; color: white; }
-        .status-segment { background: #28a745; color: white; }
-        .status-texted { background: #17a2b8; color: white; }
-        .status-review_pending { background: #fd7e14; color: #212529; }
+        .status-badge { cursor: pointer; transition: opacity 0.2s; border: 2px solid transparent; }
+        .status-badge:hover { opacity: 0.8; border-color: #212529; }
+        .status-uploaded { background: #ffc107; color: #212529; font-weight: 600; }
+        .status-cropped { background: #fd7e14; color: white; }
+        .status-segmented { background: #28a745; color: white; }
+        .status-recognized { background: #17a2b8; color: white; }
         .status-reviewed { background: #6f42c1; color: white; }
         
         .status-popover {
@@ -133,24 +132,20 @@
 <div id="status-popover" class="status-popover">
     <h4>Статус:</h4>
     <label class="status-option">
-        <input type="radio" name="status" value="crop">
+        <input type="radio" name="status" value="uploaded">
         Загружено
     </label>
     <label class="status-option">
         <input type="radio" name="status" value="cropped">
-        Кадрировано
+        Обрезано
     </label>
     <label class="status-option">
-        <input type="radio" name="status" value="segment">
-        Размечено
+        <input type="radio" name="status" value="segmented">
+        Полигоны готовы
     </label>
     <label class="status-option">
-        <input type="radio" name="status" value="texted">
-        Текст добавлен
-    </label>
-    <label class="status-option">
-        <input type="radio" name="status" value="review_pending">
-        Требует ревью
+        <input type="radio" name="status" value="recognized">
+        Текст распознан
     </label>
     <label class="status-option">
         <input type="radio" name="status" value="reviewed">
