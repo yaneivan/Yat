@@ -6,6 +6,7 @@ Fixtures here are automatically available in all test files.
 import pytest
 import tempfile
 import os
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 # =============================================================================
@@ -51,21 +52,22 @@ def reset_mocks():
 def temp_db():
     """
     Create temporary database for all tests.
-    
+
     This prevents tests from destroying the main database.db
     """
-    from database.session import engine, Base
+    from database.session import engine, Base, DB_PATH
     import sqlite3
-    
+
     # Create temporary file for test database
     tmpdir = tempfile.mkdtemp()
     temp_db_path = os.path.join(tmpdir, 'test_database.db')
-    
-    # Patch DATABASE_PATH to use temp database
+
+    # Patch DB_PATH to use temp database
     import database.session
-    original_db_path = database.session.DATABASE_PATH
-    database.session.DATABASE_PATH = temp_db_path
-    
+    original_db_path = database.session.DB_PATH
+    database.session.DB_PATH = Path(temp_db_path)
+    database.session.DATABASE_URL = f"sqlite:///{temp_db_path}"
+
     # Recreate engine with new database path
     database.session.engine = database.session.create_engine(
         f"sqlite:///{temp_db_path}",
@@ -73,14 +75,15 @@ def temp_db():
         pool_pre_ping=True,
         connect_args={"check_same_thread": False}
     )
-    
+
     # Create tables
     Base.metadata.create_all(bind=database.session.engine)
-    
+
     yield temp_db_path
-    
+
     # Cleanup
-    database.session.DATABASE_PATH = original_db_path
+    database.session.DB_PATH = original_db_path
+    database.session.DATABASE_URL = f"sqlite:///{original_db_path}"
     if os.path.exists(temp_db_path):
         os.remove(temp_db_path)
     if os.path.exists(tmpdir):

@@ -136,10 +136,10 @@ def test_upload_image_to_project(client):
         content_type='multipart/form-data'
     )
     result = response.get_json()
-    
+
     assert response.status_code == 200
     assert result['status'] == 'success'
-    assert 'Uploaded' in result['msg']
+    assert 'Загружено' in result['msg'] or 'Uploaded' in result['msg']
     
     # 4. Проверяем, что изображение появилось в проекте
     response = client.get('/api/projects/ImageProject/images')

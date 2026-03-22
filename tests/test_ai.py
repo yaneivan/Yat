@@ -42,6 +42,9 @@ class TestAIService:
         try:
             result = fresh_ai_service.is_yolo_available()
             assert isinstance(result, bool)
+        except FileNotFoundError as e:
+            # Модель YOLO не найдена — это не баг кода
+            pytest.skip(f"YOLO model not found: {e}")
         except Exception as e:
             # GPU может быть недоступен или несовместим
             # Это не баг кода, а аппаратное ограничение
@@ -140,25 +143,23 @@ class TestAIService:
     def test_detect_lines_mocked(self, fresh_ai_service):
         """
         Тест: обнаружение линий с моком.
-        
+
         Проверяет что метод вызывается корректно.
         """
-        with patch.object(fresh_ai_service, '_get_yolo_model') as mock_model:
-            mock_model.return_value = None  # YOLO не загружен
-            
-            # Должен вернуть пустой список без модели
-            result = fresh_ai_service.detect_lines("test.png")
-            assert result == []
+        # Mock YOLO_AVAILABLE flag и _get_yolo_model
+        with patch('services.ai_service.YOLO_AVAILABLE', False):
+            # Должен выбросить исключение что YOLO недоступен
+            with pytest.raises(Exception, match="YOLOv9 not available"):
+                fresh_ai_service.detect_lines("test.png")
 
     def test_recognize_text_mocked(self, fresh_ai_service):
         """
         Тест: распознавание текста с моком.
-        
+
         Проверяет что метод вызывается корректно.
         """
-        with patch.object(fresh_ai_service, '_get_trocr_model') as mock_model:
-            mock_model.return_value = (None, None)  # TROCR не загружен
-            
-            # Должен вернуть пустой dict без модели
-            result = fresh_ai_service.recognize_text("test.png", [])
-            assert result == {}
+        # Mock TROCR_AVAILABLE flag
+        with patch('services.ai_service.TROCR_AVAILABLE', False):
+            # Должен выбросить исключение что TROCR недоступен
+            with pytest.raises(Exception, match="Transformers not available"):
+                fresh_ai_service.recognize_text("test.png", [])
