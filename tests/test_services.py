@@ -87,6 +87,15 @@ class TestTaskService:
 
     def test_get_all_tasks(self, fresh_task_service):
         """Тест: получение всех задач."""
+        # Очистить БД от предыдущих тестов
+        from database.session import SessionLocal
+        from database.models import Task as TaskModel
+        
+        session = SessionLocal()
+        session.query(TaskModel).delete()
+        session.commit()
+        session.close()
+        
         # Создать 3 задачи
         for i in range(3):
             fresh_task_service.create_task(
