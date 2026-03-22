@@ -44,56 +44,13 @@
 - [ ] Настроить pre-commit хук для vulture/ruff
 - [ ] Исправить проблему с инициализацией AI моделей в тестах (таймаут)
 - [ ] Исправить проблему с БД в тестах (пересоздают основную database.db)
+- [ ] Удалить нумерацию в TODO.md (заменить "### 1.", "### 2." на "### Без номера")
 
 ---
 
 ## 🔴 КРИТИЧЕСКИЕ ПРОБЛЕМЫ (исправлять СРОЧНО)
 
-### 1. N+1 запросы к базе данных
-
-**Статус:** ❌ Не исправлено
-**Приоритет:** 🔴 КРИТИЧНО
-**Время на фикс:** 1.5 часа
-**Риск:** Высокий — деградация производительности при росте данных
-
-**Проблема:**
-
-В трёх сервисах запросы к БД выполняются в цикле:
-
-```python
-# services/project_service.py:135-148
-def get_all_projects(self) -> List[Dict[str, Any]]:
-    projects = project_repo.get_all()
-    for project in projects:  # ← Цикл
-        images = image_repo.get_by_project(project.id)  # ← ЗАПРОС НА КАЖДЫЙ
-```
-
-**Последствия:**
-- `get_all_projects()` → 1 + N запросов (100 проектов = 101 запрос)
-- `get_all_images()` → 1 + N запросов (1000 изображений = 1001 запрос)
-- `get_all_annotations()` → 1 + N запросов
-
-**Решение:**
-
-```python
-# Получить все изображения одним запросом
-all_images = image_repo.get_all()
-images_by_project = {}
-for img in all_images:
-    images_by_project.setdefault(img.project_id, []).append(img)
-
-for project in projects:
-    images = images_by_project.get(project.id, [])
-```
-
-**Файлы для изменения:**
-- `services/project_service.py` (get_all_projects)
-- `services/image_service.py` (get_all_images)
-- `services/annotation_service.py` (get_all_annotations)
-
----
-
-### 2. Нет rate limiting
+### Нет rate limiting
 
 **Статус:** ❌ Не исправлено
 **Приоритет:** 🔴 КРИТИЧНО
@@ -129,7 +86,7 @@ def detect_lines():
 
 ---
 
-### 3. Нет валидации входных данных
+### Нет валидации входных данных
 
 **Статус:** ❌ Не исправлено
 **Приоритет:** 🔴 КРИТИЧНО
@@ -185,11 +142,11 @@ def save_data():
 
 ---
 
-### 4. SQLAlchemy сессии в цикле (нет транзакционности)
+### SQLAlchemy сессии в цикле (нет транзакционности)
 
-**Статус:** ❌ Не исправлено  
-**Приоритет:** 🔴 КРИТИЧНО  
-**Время на фикс:** 2 часа  
+**Статус:** ❌ Не исправлено
+**Приоритет:** 🔴 КРИТИЧНО
+**Время на фикс:** 2 часа
 **Риск:** Потеря данных при ошибке в batch операциях
 
 **Проблема в `annotation_service.py`:**
