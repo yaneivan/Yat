@@ -45,6 +45,17 @@ class ImageRepository:
         stmt = select(Image).where(Image.filename == filename)
         return self.session.execute(stmt).scalars().first()
 
+    def get_by_filename_and_project(self, filename: str, project_name: str) -> Optional[Image]:
+        """Get image by filename and project name."""
+        from database.models import Project
+        stmt = (
+            select(Image)
+            .join(Project)
+            .where(Image.filename == filename)
+            .where(Project.name == project_name)
+        )
+        return self.session.execute(stmt).scalars().first()
+
     def get_by_project(self, project_id: int) -> List[Image]:
         """Get all images in a project."""
         stmt = select(Image).where(Image.project_id == project_id).order_by(Image.created_at)

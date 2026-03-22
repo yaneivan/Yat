@@ -436,6 +436,78 @@ class ImageService:
         finally:
             session.close()
 
+    def get_status(self, filename: str, project_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Get image status and comment.
+
+        Args:
+            filename: The image filename
+            project_name: The project name
+
+        Returns:
+            Dict with status, comment, reviewed_at or None if not found
+        """
+        session, image_repo, _ = self._get_session()
+        try:
+            image = image_repo.get_by_filename_and_project(filename, project_name)
+            if not image:
+                return None
+            
+            return {
+                'status': image.status,
+                'comment': image.comment,
+                'reviewed_at': image.reviewed_at.isoformat() if image.reviewed_at else None
+            }
+        finally:
+            session.close()
+
+    def update_status(
+        self,
+        filename: str,
+        project_name: str,
+        status: Optional[str] = None,
+        comment: Optional[str] = None
+    ) -> bool:
+        """
+        Update image status and/or comment.
+
+        Args:
+            filename: The image filename
+            project_name: The project name
+            status: New status value (optional)
+            comment: New comment value (optional)
+
+        Returns:
+            True if updated, False if image not found
+        """
+        from datetime import datetime
+        
+        session, image_repo, _ = self._get_session()
+        try:
+            image = image_repo.get_by_filename_and_project(filename, project_name)
+            if not image:
+                return False
+            
+            # Update fields
+            if status:
+                image.status = status
+            if comment is not None:
+                image.comment = comment
+            
+            # Set review timestamp when status changes to reviewed
+            if status == 'reviewed':
+                image.reviewed_at = datetime.utcnow()
+            
+            image.updated_at = datetime.utcnow()
+            session.commit()
+            
+            return True
+        except Exception:
+            session.rollback()
+            return False
+        finally:
+            session.close()
+
 
 # Global image service instance
 image_service = ImageService()

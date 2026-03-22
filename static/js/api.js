@@ -91,6 +91,16 @@ const API = {
             headers: getCsrfHeaders()
         });
     },
+    async getImageStatus(projectName, filename) {
+        return fetch(`/api/projects/${projectName}/images/${encodeURIComponent(filename)}/status`);
+    },
+    async updateImageStatus(projectName, filename, status, comment) {
+        return fetch(`/api/projects/${projectName}/images/${encodeURIComponent(filename)}/status`, {
+            method: 'PUT',
+            headers: getCsrfHeaders(),
+            body: JSON.stringify({ status, comment })
+        });
+    },
     async importZip(formData) {
         return fetch('/api/import_zip', {
             method: 'POST',

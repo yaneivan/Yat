@@ -35,23 +35,25 @@ class Project(Base):
 
 class Image(Base):
     """Image model - represents a cropped image in a project."""
-    
+
     __tablename__ = 'images'
-    
+
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey('projects.id', ondelete='CASCADE'), nullable=False, index=True)
     filename = Column(String(255), nullable=False)
     original_path = Column(String(512))  # Path to original (backup)
     cropped_path = Column(String(512))   # Path to cropped image
-    status = Column(String(50), default=ImageStatus.CROP.value)  # ImageStatus: crop, cropped, segment, texted
+    status = Column(String(50), default=ImageStatus.CROP.value)  # ImageStatus: crop, cropped, segment, texted, review_pending, reviewed
     crop_params = Column(JSON)  # {x, y, width, height, angle}
+    comment = Column(Text, default='')  # Comment from reviewer
+    reviewed_at = Column(DateTime)  # Timestamp of review
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     # Relationships
     project = relationship('Project', back_populates='images')
     annotations = relationship('Annotation', back_populates='image', cascade='all, delete-orphan')
-    
+
     def to_dict(self):
         """Convert to dictionary for API responses."""
         return {
@@ -62,6 +64,8 @@ class Image(Base):
             'cropped_path': self.cropped_path,
             'status': self.status,
             'crop_params': self.crop_params,
+            'comment': self.comment,
+            'reviewed_at': self.reviewed_at.isoformat() if self.reviewed_at else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }

@@ -531,6 +531,50 @@ def project_images(project_name):
             return jsonify({'status': 'error', 'msg': 'Image or project not found'}), 404
 
 
+@app.route('/api/projects/<project_name>/images/<filename>/status', methods=['GET', 'PUT'])
+def image_status(project_name, filename):
+    """Get or update image status and comment."""
+    # Sanitize project name and filename
+    sanitized_name = project_service._sanitize_name(project_name)
+    
+    try:
+        validated_filename = image_service._validate_filename(filename)
+    except ValueError:
+        return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
+
+    if request.method == 'GET':
+        # Get image status
+        result = image_service.get_status(validated_filename, sanitized_name)
+        if not result:
+            return jsonify({'status': 'error', 'msg': 'Image not found'}), 404
+        
+        return jsonify(result)
+
+    elif request.method == 'PUT':
+        # Update status and/or comment
+        data = request.json
+        new_status = data.get('status')
+        new_comment = data.get('comment')
+        
+        success = image_service.update_status(
+            validated_filename,
+            sanitized_name,
+            status=new_status,
+            comment=new_comment
+        )
+        
+        if not success:
+            return jsonify({'status': 'error', 'msg': 'Image not found'}), 404
+        
+        # Return updated status
+        updated = image_service.get_status(validated_filename, sanitized_name)
+        return jsonify({
+            'status': 'success',
+            'message': 'Status updated',
+            **updated
+        })
+
+
 @app.route('/api/projects/<project_name>/upload_images', methods=['POST'])
 def upload_project_images(project_name):
     # Admin only: upload images
