@@ -459,7 +459,10 @@
         const idx = imageList.indexOf(filename);
         if (idx === -1) return;
         const newIdx = (idx + dir + imageList.length) % imageList.length;
-        window.location.href = `?image=${imageList[newIdx]}`;
+        const newUrl = project 
+            ? `?image=${imageList[newIdx]}&project=${encodeURIComponent(project)}`
+            : `?image=${imageList[newIdx]}`;
+        window.location.href = newUrl;
     }
 </script>
 </body>
