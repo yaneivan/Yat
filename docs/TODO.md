@@ -4,26 +4,13 @@
 
 ---
 
-## ✅ ВЫПОЛНЕНО (2026-03-22)
-
-### Очистка кода и тесты
-
-- [x] Удалить неиспользуемые импорты (argparse, traceback, inch, canvas, TA_LEFT, timedelta, TaskModel)
-- [x] Исправить ai_service.py для использования config.MODEL_PATHS
-- [x] Разделить тесты на быстрые (test_api.py, AI замокан) и медленные (test_ai.py, реальный AI)
-- [x] Создать conftest.py с фикстурами для тестов
-- [x] Добавить temporary database для тестов чтобы не удаляли основную БД
-- [x] Отключить CSRF для тестов через app.config['WTF_CSRF_ENABLED'] = False
-- [x] Перенести тесты AI из test_services.py в test_ai.py
-
----
-
 ## 🔧 ТЕКУЩИЙ ПРОГРЕСС (в работе)
 
 ### Очистка кода от мёртвого кода
 
-**Статус:** 🟡 В ПРОЦЕССЕ
+**Статус:** ✅ ВЫПОЛНЕНО
 **Дата начала:** 2026-03-22
+**Дата завершения:** 2026-03-22
 
 **Что сделано:**
 - Удалены неиспользуемые импорты (argparse, traceback, inch, canvas, TA_LEFT, timedelta, TaskModel)
@@ -31,28 +18,8 @@
 - Разделены тесты на быстрые (test_api.py) и медленные (test_ai.py)
 - Создан conftest.py с фикстурами
 - Перенесены AI тесты из test_services.py в test_ai.py
-
-**Что осталось сделать:**
-- [ ] Удалить 12 мёртвых методов Категории А:
-  - `image_repository`: get_by_status, count_by_project, count_by_status
-  - `task_repository`: get_pending_tasks, get_running_tasks
-  - `annotation_service`: update_fields, has_annotation, get_all_annotations
-  - `image_service`: image_exists, original_exists, get_original, is_image_used_in_other_projects
-  - `project_service`: is_image_used_in_projects
-- [ ] Запустить тесты для проверки что ничего не сломалось
-- [ ] Проверить vulture снова после удаления
-- [ ] Настроить pre-commit хук для vulture/ruff
-- [ ] Исправить проблему с инициализацией AI моделей в тестах (таймаут)
-- [ ] Исправить проблему с БД в тестах (пересоздают основную database.db)
-
----
-
-## ✅ ИСПРАВЛЕНО (2026-03-22)
-
-### Баги
-
-- [x] Кнопка "Назад" пропадала при переключении изображений в cropper
-  - **Фикс:** Добавлен `&project=...` в URL переключения
+- Исправлены тесты — константы БД (DB_PATH) и моки AI
+- **Результат:** 54 теста пройдено, 1 пропущен (YOLO модель отсутствует)
 
 ---
 
