@@ -437,9 +437,13 @@
             ]
         };
 
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
         const resp = await fetch('/api/crop', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            },
             body: JSON.stringify({ image_name: filename, box: cropData })
         });
 
