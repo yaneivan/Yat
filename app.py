@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, send_file, session
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, send_file, session, abort
 from flask_wtf.csrf import CSRFProtect
 from functools import wraps
 import io
@@ -161,6 +161,9 @@ def editor():
     project_name = request.args.get('project')
     if not filename:
         return redirect(url_for('index'))
+    # Проверка существования файла
+    if not os.path.exists(os.path.join(storage.IMAGE_FOLDER, filename)):
+        abort(404)
     return render_template('editor.html', filename=filename, project=project_name)
 
 @app.route('/text_editor')
@@ -169,6 +172,9 @@ def text_editor():
     project_name = request.args.get('project')
     if not filename:
         return redirect(url_for('index'))
+    # Проверка существования файла
+    if not os.path.exists(os.path.join(storage.IMAGE_FOLDER, filename)):
+        abort(404)
     return render_template('text_editor.html', filename=filename, project=project_name)
 
 @app.route('/cropper')
@@ -177,6 +183,9 @@ def cropper():
     project_name = request.args.get('project')
     if not filename:
         return redirect(url_for('index'))
+    # Проверка существования файла
+    if not os.path.exists(os.path.join(storage.IMAGE_FOLDER, filename)):
+        abort(404)
     return render_template('cropper.html', filename=filename, project=project_name)
 
 # --- API: Images ---
@@ -818,16 +827,23 @@ def get_current_user():
 def project_page(project_name):
     # Sanitize project name to prevent path traversal
     sanitized_name = project_service._sanitize_name(project_name)
-    
+
     project_data = project_service.get_project(sanitized_name)
 
     if not project_data:
-        return "Project not found", 404
+        abort(404)
 
     images = project_service.get_images(sanitized_name)
     project_data['images'] = images
 
     return render_template('project.html', project=project_data)
+
+
+# --- Error Handlers ---
+@app.errorhandler(404)
+def handle_404(error):
+    """Обработчик 404 ошибки."""
+    return render_template('404.html'), 404
 
 
 if __name__ == '__main__':
