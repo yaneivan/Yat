@@ -1,14 +1,16 @@
 """
 Минимальные тесты для Yat API.
 Используем временную папку для данных — основная не засоряется.
+
+AI сервис замокан через conftest.py — тесты AI отдельно в test_ai.py
 """
 import pytest
 import tempfile
 import shutil
 import os
-from unittest.mock import patch
 
 # Импортируем Flask приложение и storage
+# AI сервис автоматически замокан через conftest.py fixture
 from app import app
 import storage
 from database.session import engine, Base
@@ -59,8 +61,10 @@ def temp_storage():
 def client(temp_storage):
     """
     Фикстура создаёт тестовый клиент Flask.
+    Отключаем CSRF для тестов.
     """
     app.config['TESTING'] = True
+    app.config['WTF_CSRF_ENABLED'] = False  # Отключить CSRF для тестов
     with app.test_client() as client:
         yield client
 

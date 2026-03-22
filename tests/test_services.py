@@ -3,18 +3,16 @@
 
 Эти тесты проверяют критичные места которые не покрываются test_api.py:
 1. TaskService - работа с базой данных
-2. AIService - инициализация моделей
-3. recognition_progress утечка — память не очищается
+2. recognition_progress утечка — память не очищается
+
+AI тесты перенесены в test_ai.py
 """
 
 import pytest
-import threading
-import time
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 # Импортируем сервисы напрямую
 from services.task_service import task_service, TaskService, Task
-from services.ai_service import ai_service, AIService
 
 
 # =============================================================================
@@ -29,27 +27,14 @@ def fresh_task_service():
     """
     from database.session import SessionLocal, engine, Base
     from database.models import Task as TaskModel
-    
+
     # Пересоздать БД для каждого теста
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
-    
+
     service = TaskService()
     yield service
     # Очистка после теста - для DB версии не нужна
-
-
-@pytest.fixture
-def fresh_ai_service():
-    """
-    Фикстура создаёт НОВЫЙ AIService для каждого теста.
-    """
-    service = AIService()
-    yield service
-    # Очистка
-    service._yolo_model = None
-    service._trocr_model = None
-    service._trocr_processor = None
 
 
 # =============================================================================
@@ -161,120 +146,6 @@ class TestTaskService:
         # Для DB версии cleanup не реализован
         removed = fresh_task_service.cleanup_completed(older_than_minutes=0)
         assert removed == 0
-
-
-# =============================================================================
-# AIService Tests
-# =============================================================================
-
-class TestAIService:
-    """Тесты для AIService."""
-
-    def test_ai_service_initialization(self, fresh_ai_service):
-        """Тест: AI сервис создаётся с пустыми моделями."""
-        assert fresh_ai_service._yolo_model is None
-        assert fresh_ai_service._trocr_model is None
-        assert fresh_ai_service._trocr_processor is None
-
-    def test_is_yolo_available(self, fresh_ai_service):
-        """Тест: проверка доступности YOLO."""
-        try:
-            result = fresh_ai_service.is_yolo_available()
-            assert isinstance(result, bool)
-        except Exception as e:
-            # GPU может быть недоступен или несовместим
-            # Это не баг кода, а аппаратное ограничение
-            if "CUDA" in str(e) or "GPU" in str(e):
-                pytest.skip(f"GPU not available: {e}")
-            else:
-                raise
-
-    def test_is_trocr_available(self, fresh_ai_service):
-        """Тест: проверка доступности TROCR."""
-        result = fresh_ai_service.is_trocr_available()
-        assert isinstance(result, bool)
-
-    # =============================================================================
-    # 🔴 КРИТИЧНЫЙ ТЕСТ: Race condition при инициализации
-    # =============================================================================
-
-    def test_concurrent_trocr_initialization(self, fresh_ai_service):
-        """
-        Тест: одновременная инициализация TROCR из нескольких потоков.
-        
-        🔧 Теперь это работает — блокировка предотвращает гонку
-        
-        Проверяем что только ОДИН поток выполняет инициализацию,
-        даже если 5 потоков одновременно вызовут _get_trocr_model()
-        """
-        if not fresh_ai_service.is_trocr_available():
-            pytest.skip("TROCR not available, skipping race condition test")
-
-        init_count = [0]  # Счётчик инициализаций
-        init_lock = threading.Lock()
-        barrier = threading.Barrier(5)  # Синхронизация потоков
-
-        def counting_init(*args, **kwargs):
-            with init_lock:
-                init_count[0] += 1
-                # Установить модели после первой инициализации
-                if init_count[0] == 1:
-                    fresh_ai_service._trocr_model = MagicMock()
-                    fresh_ai_service._trocr_processor = MagicMock()
-            # Имитация задержки инициализации
-            time.sleep(0.1)
-            return fresh_ai_service._trocr_model, fresh_ai_service._trocr_processor
-
-        # Подменить метод инициализации
-        with patch.object(fresh_ai_service, '_initialize_trocr', side_effect=counting_init):
-            # Инициализировать один раз для mock
-            fresh_ai_service._trocr_model = None
-            fresh_ai_service._trocr_processor = None
-            
-            errors = []
-
-            def worker():
-                try:
-                    barrier.wait()  # Ждать пока все потоки будут готовы
-                    fresh_ai_service._get_trocr_model()
-                except Exception as e:
-                    errors.append(e)
-
-            # Запустить 5 потоков одновременно
-            threads = []
-            for _ in range(5):
-                t = threading.Thread(target=worker)
-                threads.append(t)
-                t.start()
-
-            # Подождать завершения
-            for t in threads:
-                t.join(timeout=10)
-
-            # Проверить что ошибок не было
-            assert len(errors) == 0, f"Errors during concurrent init: {errors}"
-
-            # ✅ ПРОВЕРКА: инициализация должна вызваться только 1 раз
-            # Благодаря блокировке только один поток выполнит инициализацию
-            assert init_count[0] == 1, (
-                f"Race condition detected! _initialize_trocr called {init_count[0]} times "
-                f"instead of 1. Multiple threads initialized TROCR simultaneously."
-            )
-
-    def test_get_trocr_model_returns_pair(self, fresh_ai_service):
-        """Тест: _get_trocr_model возвращает кортеж (model, processor)."""
-        if not fresh_ai_service.is_trocr_available():
-            pytest.skip("TROCR not available")
-
-        # Пропустить реальную загрузку
-        with patch.object(fresh_ai_service, '_initialize_trocr'):
-            fresh_ai_service._trocr_model = MagicMock()
-            fresh_ai_service._trocr_processor = MagicMock()
-
-            model, processor = fresh_ai_service._get_trocr_model()
-
-            assert model is not None
-            assert processor is not None
 
 
 # =============================================================================
