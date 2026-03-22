@@ -200,6 +200,88 @@
             z-index: 10;
         }
 
+        /* Status widget styles */
+        .status-badge { cursor: pointer; transition: opacity 0.2s; }
+        .status-badge:hover { opacity: 0.8; }
+        .status-crop { background: #ffc107; color: #212529; }
+        .status-cropped { background: #6c757d; color: white; }
+        .status-segment { background: #28a745; color: white; }
+        .status-texted { background: #17a2b8; color: white; }
+        .status-review_pending { background: #fd7e14; color: #212529; }
+        .status-reviewed { background: #6f42c1; color: white; }
+        
+        .status-popover {
+            display: none;
+            position: fixed;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            z-index: 100000;
+            width: 250px;
+            color: #ddd;
+        }
+        .status-popover.show { display: block; }
+        .status-popover h4 { margin: 0 0 10px 0; font-size: 0.9em; color: #fff; }
+        .status-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px;
+            cursor: pointer;
+            border-radius: 4px;
+            color: #ddd;
+        }
+        .status-option:hover { background: #3a3a3a; }
+        .status-option input[type="radio"] { margin: 0; }
+        .status-popover textarea {
+            width: 100%;
+            min-height: 60px;
+            margin-top: 10px;
+            padding: 8px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 0.85em;
+            resize: vertical;
+            box-sizing: border-box;
+            background: #333;
+            color: #ddd;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .status-popover button {
+            width: 100%;
+            margin-top: 10px;
+            padding: 8px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+        .status-popover button:hover { background: #0056b3; }
+        
+        /* Notification styles */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            border-radius: 4px;
+            color: white;
+            z-index: 100001;
+            animation: slideIn 0.3s ease;
+        }
+        .notification.success { background: #28a745; }
+        .notification.error { background: #dc3545; }
+        
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
     </style>
 </head>
 <body>
@@ -207,6 +289,7 @@
         <button class="btn" onclick="window.location.href='/'" title="Home">🏠</button>
         {% if project %}
             <button class="btn" onclick="window.location.href='/project/{{ project }}'" title="Назад к проекту">📋 Проект</button>
+            <div class="sep"></div>
             <!-- Передаем тип инструмента строкой -->
             <button class="btn" onclick="editor.navigateTo('cropper')" title="Редактор обрезки">✂️ Обрезка</button>
             <button class="btn" onclick="editor.navigateTo('editor')" title="Редактор сегментов">📋 Сегменты</button>
@@ -222,8 +305,7 @@
         <div style="flex:1"></div>
         <button class="btn" id="btn-recognize" onclick="editor.recognizeText()">Распознать текст</button>
         <div class="sep"></div>
-        <div id="save-status" style="font-size:0.8em; color:#888; min-width:80px; text-align:right; margin-right:10px; display:inline-block;">&nbsp;</div>
-        <div id="recognition-status" style="font-size:0.8em; color:#888; min-width:80px; text-align:right; display:inline-block;">&nbsp;</div>
+        <span id="status-badge" class="status-badge" onclick="statusWidget.openPopover()" style="cursor:pointer; padding:4px 8px; border-radius:4px; font-size:0.85em; font-weight:600;">Загрузка...</span>
     </div>
 
     <div id="workspace">
@@ -273,18 +355,53 @@
         </div>
     </div>
 
+    <!-- Status popover -->
+    <div id="status-popover" class="status-popover">
+        <h4>Статус:</h4>
+        <label class="status-option">
+            <input type="radio" name="status" value="crop">
+            Загружено
+        </label>
+        <label class="status-option">
+            <input type="radio" name="status" value="cropped">
+            Кадрировано
+        </label>
+        <label class="status-option">
+            <input type="radio" name="status" value="segment">
+            Размечено
+        </label>
+        <label class="status-option">
+            <input type="radio" name="status" value="texted">
+            Текст добавлен
+        </label>
+        <label class="status-option">
+            <input type="radio" name="status" value="review_pending">
+            Требует ревью
+        </label>
+        <label class="status-option">
+            <input type="radio" name="status" value="reviewed">
+            Проверено
+        </label>
+        <textarea id="status-comment" placeholder="Комментарий..."></textarea>
+        <button>Сохранить</button>
+    </div>
+
     <script src="/static/js/api.js"></script>
+    <script src="/static/js/status_widget.js"></script>
     <script src="/static/js/text_editor.js"></script>
     <script>
         // Передаем также имя проекта, если оно есть, чтобы JS мог формировать ссылки
         // Используем '{{ project }}' или null/пустую строку
         const currentProject = "{{ project if project else '' }}";
-        
+
+        // Инициализируем виджет статусов
+        initStatusWidget(currentProject, "{{ filename }}");
+
         // Инициализация с безопасной передачей имени файла
         const editor = new TextEditor(
-            'left-canvas', 
-            'right-canvas', 
-            "{{ filename }}", 
+            'left-canvas',
+            'right-canvas',
+            "{{ filename }}",
             currentProject
         );
     </script>
