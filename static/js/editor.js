@@ -186,7 +186,7 @@ class HTREditor {
         };
         imgEl.src = imgUrl;
 
-        const data = await API.loadAnnotation(this.filename);
+        const data = await API.loadAnnotation(this.filename, this.project);
         if (data.regions) {
             data.regions.forEach(r => {
                 const p = new fabric.Polygon(r.points);
@@ -218,7 +218,7 @@ class HTREditor {
         [(idx + 1) % this.imageList.length, (idx - 1 + this.imageList.length) % this.imageList.length].forEach(i => {
             const fname = this.imageList[i];
             new Image().src = `/data/images/${fname}`;
-            fetch(`/api/load/${fname}`); 
+            API.loadAnnotation(fname, this.project);
         });
     }
 
@@ -641,7 +641,7 @@ class HTREditor {
         });
 
         try {
-            await API.saveAnnotation(this.filename, regions);
+            await API.saveAnnotation(this.filename, regions, this.project);
             const el = document.getElementById('status');
             if(el) el.textContent = 'Сохранено';
         } catch(e) {

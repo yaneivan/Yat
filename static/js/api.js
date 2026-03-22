@@ -17,12 +17,18 @@ const API = {
         const res = await fetch('/api/images_list');
         return res.json();
     },
-    async loadAnnotation(filename) {
-        const res = await fetch(`/api/load/${filename}`);
+    async loadAnnotation(filename, projectName = null) {
+        const url = projectName 
+            ? `/api/load/${filename}?project=${encodeURIComponent(projectName)}`
+            : `/api/load/${filename}`;
+        const res = await fetch(url);
         return res.json();
     },
-    async saveAnnotation(filename, regions) {
-        return fetch('/api/save', {
+    async saveAnnotation(filename, regions, projectName = null) {
+        const url = projectName 
+            ? `/api/save?project=${encodeURIComponent(projectName)}`
+            : '/api/save';
+        return fetch(url, {
             method: 'POST',
             headers: getCsrfHeaders(),
             body: JSON.stringify({
@@ -31,14 +37,18 @@ const API = {
             })
         });
     },
-    async saveAnnotationWithTexts(filename, regions, texts = {}) {
+    async saveAnnotationWithTexts(filename, regions, texts = {}, projectName = null) {
         const data = {
             image_name: filename,
             regions: regions || [],
             texts: texts
         };
 
-        const response = await fetch('/api/save', {
+        const url = projectName 
+            ? `/api/save?project=${encodeURIComponent(projectName)}`
+            : '/api/save';
+
+        const response = await fetch(url, {
             method: 'POST',
             headers: getCsrfHeaders(),
             body: JSON.stringify(data)

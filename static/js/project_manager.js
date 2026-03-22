@@ -66,7 +66,8 @@ const ProjectAPI = {
 
     async deleteProject(projectName) {
         const response = await fetch(`/api/projects/${projectName}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: getCsrfHeaders()
         });
 
         if (!response.ok) {

@@ -1174,7 +1174,7 @@ class TextEditor {
                 status: 'texted' // New status for text input completed
             };
 
-            await API.saveAnnotationWithTexts(this.filename, saveData.regions, saveData.texts);
+            await API.saveAnnotationWithTexts(this.filename, saveData.regions, saveData.texts, this.project);
 
             if (saveStatusEl) saveStatusEl.textContent = 'Сохранено';
         } catch (error) {
@@ -1275,28 +1275,10 @@ class TextEditor {
 // Extend the API object to support text data
 if (typeof API !== 'undefined') {
     API.saveAnnotation = async function(filename, regions, texts = {}) {
-        const data = {
-            image_name: filename,
-            regions: regions || [],
-            texts: texts
-        };
-
-        // Get CSRF token from meta tag
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
-
-        const response = await fetch('/api/save', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': csrfToken
-            },
-            body: JSON.stringify(data)
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        return await response.json();
+        // Use saveAnnotationWithTexts with project support
+        // Note: 'this' refers to the TextEditor instance when called as API.saveAnnotation
+        // We need to get project from the TextEditor instance
+        const project = window.textEditor ? window.textEditor.project : null;
+        return await API.saveAnnotationWithTexts(filename, regions, texts, project);
     };
 }

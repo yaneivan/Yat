@@ -438,7 +438,8 @@
         };
 
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
-        const resp = await fetch('/api/crop', {
+        const url = project ? `/api/crop?project=${encodeURIComponent(project)}` : '/api/crop';
+        const resp = await fetch(url, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
