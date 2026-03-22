@@ -4,6 +4,49 @@
 
 ---
 
+## ✅ ВЫПОЛНЕНО (2026-03-22)
+
+### Очистка кода и тесты
+
+- [x] Удалить неиспользуемые импорты (argparse, traceback, inch, canvas, TA_LEFT, timedelta, TaskModel)
+- [x] Исправить ai_service.py для использования config.MODEL_PATHS
+- [x] Разделить тесты на быстрые (test_api.py, AI замокан) и медленные (test_ai.py, реальный AI)
+- [x] Создать conftest.py с фикстурами для тестов
+- [x] Добавить temporary database для тестов чтобы не удаляли основную БД
+- [x] Отключить CSRF для тестов через app.config['WTF_CSRF_ENABLED'] = False
+- [x] Перенести тесты AI из test_services.py в test_ai.py
+
+---
+
+## 🔧 ТЕКУЩИЙ ПРОГРЕСС (в работе)
+
+### Очистка кода от мёртвого кода
+
+**Статус:** 🟡 В ПРОЦЕССЕ
+**Дата начала:** 2026-03-22
+
+**Что сделано:**
+- Удалены неиспользуемые импорты (argparse, traceback, inch, canvas, TA_LEFT, timedelta, TaskModel)
+- Исправлен ai_service.py для использования config.MODEL_PATHS
+- Разделены тесты на быстрые (test_api.py) и медленные (test_ai.py)
+- Создан conftest.py с фикстурами
+- Перенесены AI тесты из test_services.py в test_ai.py
+
+**Что осталось сделать:**
+- [ ] Удалить 12 мёртвых методов Категории А:
+  - `image_repository`: get_by_status, count_by_project, count_by_status
+  - `task_repository`: get_pending_tasks, get_running_tasks
+  - `annotation_service`: update_fields, has_annotation, get_all_annotations
+  - `image_service`: image_exists, original_exists, get_original, is_image_used_in_other_projects
+  - `project_service`: is_image_used_in_projects
+- [ ] Запустить тесты для проверки что ничего не сломалось
+- [ ] Проверить vulture снова после удаления
+- [ ] Настроить pre-commit хук для vulture/ruff
+- [ ] Исправить проблему с инициализацией AI моделей в тестах (таймаут)
+- [ ] Исправить проблему с БД в тестах (пересоздают основную database.db)
+
+---
+
 ## 🔴 КРИТИЧЕСКИЕ ПРОБЛЕМЫ (исправлять СРОЧНО)
 
 ### 1. N+1 запросы к базе данных
@@ -365,16 +408,34 @@ log('Debug message');  // Не выполняется в production
 
 **Проблема:**
 
-1. **CSRF функции** дублируются в 3 файлах:
-   - `static/js/api.js` (getCsrfToken, getCsrfHeaders)
-   - `static/js/project_manager.js` (дубликат)
-   - `static/js/text_editor.js` (дубликат)
+1. **CSRF функции** дублируются в 6 местах:
+   - `static/js/api.js` (getCsrfToken, getCsrfHeaders) — ✅ централизовано
+   - `static/js/project_manager.js` (дубликат функций) — ⚠️ нужно удалить
+   - `static/js/editor.js` (прямой fetch с получением из meta) — ⚠️ нужно использовать API
+   - `static/js/text_editor.js` (прямой fetch с получением из meta) — ⚠️ нужно использовать API
+   - `templates/project.html` (6 inline fetch с получением из meta) — ⚠️ нужно использовать API
+   - `templates/cropper.html` (прямой fetch с получением из meta) — ⚠️ нужно использовать API
 
 2. **`_validate_filename()`** дублируется в сервисах:
    - `services/annotation_service.py`
    - `services/image_service.py`
 
 **Решение:**
+
+```javascript
+// 1. Оставить getCsrfToken/getCsrfHeaders только в api.js
+// 2. Удалить дубликаты из project_manager.js
+// 3. Добавить в api.js недостающие методы:
+API.detectLines(filename, projectName)      // /api/detect_lines
+API.recognizeText(filename, regions, projectName)  // /api/recognize_text
+API.recognizeProgress(filename)             // /api/recognize_progress/<filename>
+API.crop(filename, box, projectName)        // /api/crop
+API.exportPdf(projectName, variant)         // /api/projects/<name>/export_pdf
+API.exportZip(projectName)                  // /api/projects/<name>/export_zip
+API.importZip(formData, projectName)        // /api/import_zip
+
+// 4. Обновить все файлы чтобы использовали API.* вместо прямых fetch
+```
 
 ```python
 # services/utils.py
