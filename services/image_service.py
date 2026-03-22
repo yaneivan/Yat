@@ -164,6 +164,7 @@ class ImageService:
         self,
         filename: str,
         box: Dict[str, Any],
+        project_name: str = None,
         update_regions: bool = True
     ) -> bool:
         """
@@ -172,6 +173,7 @@ class ImageService:
         Args:
             filename: The image filename
             box: Crop box with 'corners' array [TL, BL, BR, TR]
+            project_name: Optional project name to scope annotation lookup
             update_regions: Whether to recalculate regions
 
         Returns:
@@ -184,8 +186,8 @@ class ImageService:
             if not self.ensure_original_exists(validated):
                 return False
 
-            # Load current annotation data
-            annotation_data = annotation_service.get_annotation(validated)
+            # Load current annotation data with project scope
+            annotation_data = annotation_service.get_annotation(validated, project_name)
             old_crop = annotation_data.get('crop_params')
             old_regions = annotation_data.get('regions', [])
 
@@ -239,7 +241,7 @@ class ImageService:
             annotation_data['crop_params'] = box
             annotation_data['status'] = ImageStatus.CROPPED.value
             annotation_data['image_name'] = validated
-            annotation_service.save_annotation(validated, annotation_data)
+            annotation_service.save_annotation(validated, annotation_data, project_name)
 
             return True
 

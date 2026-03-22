@@ -389,7 +389,7 @@ class ProjectService:
                     # Create PAGE XML annotation
                     annotation_name = os.path.splitext(image_name)[0] + '.xml'
 
-                    annotation_data = annotation_service.get_annotation(image_name)
+                    annotation_data = annotation_service.get_annotation(image_name, project_name)
 
                     # Create PAGE XML structure
                     root = ET.Element(

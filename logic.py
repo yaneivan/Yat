@@ -371,7 +371,7 @@ def process_zip_import(file, simplify_val=0, project_name=None):
                                 'texts': texts,
                                 'status': ImageStatus.SEGMENT.value
                             }
-                            annotation_service.save_annotation(f, annotation_data)
+                            annotation_service.save_annotation(f, annotation_data, project_name)
                             break
                     count += 1
     finally:
@@ -426,7 +426,7 @@ def run_batch_detection_for_project(project_name, settings=None, task_id=None):
 
         for idx, image_name in enumerate(image_names):
             # Check if annotation already has regions using annotation_service
-            annotation_data = annotation_service.get_annotation(image_name)
+            annotation_data = annotation_service.get_annotation(image_name, project_name)
 
             if annotation_data.get('regions'):
                 task_service.update_progress(task.id, idx + 1)
@@ -436,12 +436,12 @@ def run_batch_detection_for_project(project_name, settings=None, task_id=None):
                 regions = ai_service.detect_lines(image_name, settings)
 
                 # Use annotation_service instead of old storage layer
-                annotation_data = annotation_service.get_annotation(image_name)
+                annotation_data = annotation_service.get_annotation(image_name, project_name)
                 annotation_data['regions'] = regions
                 if annotation_data.get('status') != ImageStatus.CROPPED.value:
                     annotation_data['status'] = ImageStatus.SEGMENT.value
 
-                annotation_service.save_annotation(image_name, annotation_data)
+                annotation_service.save_annotation(image_name, annotation_data, project_name)
                 task_service.update_progress(task.id, idx + 1)
 
             except Exception as e:
@@ -490,8 +490,8 @@ def run_batch_recognition_for_project(project_name, task_id=None):
 
         for idx, image_name in enumerate(image_names):
             # Check if annotation already has texts using annotation_service
-            annotation_data = annotation_service.get_annotation(image_name)
-            
+            annotation_data = annotation_service.get_annotation(image_name, project_name)
+
             # Skip if no polygons (nothing to recognize)
             regions = annotation_data.get('regions', [])
             if not regions:

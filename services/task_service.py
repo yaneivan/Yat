@@ -7,13 +7,12 @@ and automatic cleanup of completed tasks.
 
 import threading
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Callable, Optional, Dict, Any, List
 from sqlalchemy.orm import Session
 
 from database.session import SessionLocal
 from database.repository.task_repository import TaskRepository
-from database.models import Task as TaskModel
 from database.enums import TaskStatus
 
 

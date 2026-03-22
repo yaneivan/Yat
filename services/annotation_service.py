@@ -69,12 +69,13 @@ class AnnotationService:
 
         return filename
 
-    def get_annotation(self, filename: str) -> Dict[str, Any]:
+    def get_annotation(self, filename: str, project_name: str = None) -> Dict[str, Any]:
         """
         Get annotation data for an image.
 
         Args:
             filename: The image filename
+            project_name: Optional project name to scope the lookup
 
         Returns:
             Annotation dictionary with regions, texts, crop_params, etc.
@@ -83,8 +84,12 @@ class AnnotationService:
 
         session, annotation_repo, image_repo = self._get_session()
         try:
-            # Find image by filename
-            image = image_repo.get_by_filename(validated_filename)
+            # Find image by filename (and project if provided)
+            if project_name:
+                image = image_repo.get_by_filename_and_project(validated_filename, project_name)
+            else:
+                image = image_repo.get_by_filename(validated_filename)
+            
             if not image:
                 return {
                     'regions': [],
@@ -121,13 +126,14 @@ class AnnotationService:
         finally:
             session.close()
 
-    def save_annotation(self, filename: str, data: Dict[str, Any]) -> bool:
+    def save_annotation(self, filename: str, data: Dict[str, Any], project_name: str = None) -> bool:
         """
         Save annotation data for an image.
 
         Args:
             filename: The image filename
             data: Annotation data dictionary
+            project_name: Optional project name to scope the lookup
 
         Returns:
             True if saved successfully, False otherwise
@@ -136,8 +142,12 @@ class AnnotationService:
 
         session, annotation_repo, image_repo = self._get_session()
         try:
-            # Find image
-            image = image_repo.get_by_filename(validated_filename)
+            # Find image (and project if provided)
+            if project_name:
+                image = image_repo.get_by_filename_and_project(validated_filename, project_name)
+            else:
+                image = image_repo.get_by_filename(validated_filename)
+            
             if not image:
                 print(f"[AnnotationService] Image not found: {filename}")
                 return False
@@ -233,25 +243,30 @@ class AnnotationService:
         finally:
             session.close()
 
-    def delete_annotation(self, filename: str) -> bool:
+    def delete_annotation(self, filename: str, project_name: str = None) -> bool:
         """
         Delete annotation for an image.
 
         Args:
             filename: The image filename
+            project_name: Optional project name to scope the lookup
 
         Returns:
             True if deleted successfully, False if annotation didn't exist
         """
         validated_filename = self._validate_filename(filename)
-        
+
         session, annotation_repo, image_repo = self._get_session()
         try:
-            # Find image
-            image = image_repo.get_by_filename(validated_filename)
+            # Find image (and project if provided)
+            if project_name:
+                image = image_repo.get_by_filename_and_project(validated_filename, project_name)
+            else:
+                image = image_repo.get_by_filename(validated_filename)
+            
             if not image:
                 return False
-            
+
             # Find and delete annotation
             annotation = annotation_repo.get_by_image(image.id)
             if annotation:
@@ -283,12 +298,13 @@ class AnnotationService:
         finally:
             session.close()
 
-    def get_status(self, filename: str) -> str:
+    def get_status(self, filename: str, project_name: str = None) -> str:
         """
         Get the status of an image based on its annotation.
 
         Args:
             filename: The image filename
+            project_name: Optional project name to scope the lookup
 
         Returns:
             Status string: 'crop', 'cropped', 'segment', or 'texted'
@@ -297,8 +313,12 @@ class AnnotationService:
 
         session, annotation_repo, image_repo = self._get_session()
         try:
-            # Используем first() вместо scalar_one_or_none() на случай дубликатов
-            image = image_repo.get_by_filename(validated_filename)
+            # Find image (and project if provided)
+            if project_name:
+                image = image_repo.get_by_filename_and_project(validated_filename, project_name)
+            else:
+                image = image_repo.get_by_filename(validated_filename)
+            
             if not image:
                 return ImageStatus.CROP.value
 

@@ -72,38 +72,44 @@ class AIService:
             with self._yolo_init_lock:
                 # Проверить снова внутри блокировки
                 if self._yolo_model is None:
-                    # Try models folder first, then root directory
-                    model_path = os.path.join(
-                        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                        'models', 'model.pt'
+                    # Get model path from config
+                    model_path = config.MODEL_PATHS.get(
+                        'yolo', './models/yolo_model.pt'
                     )
-
+                    
                     if not os.path.exists(model_path):
-                        model_path = os.path.join(
-                            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                            'model.pt'
-                        )
-
-                    if os.path.exists(model_path):
-                        self._yolo_model = YOLO(model_path)
-                        self._yolo_model.to(self._get_device())
-                    else:
                         raise FileNotFoundError(
                             f"YOLOv9 model not found at {model_path}. "
-                            "Please ensure the model file is in the project root or models directory."
+                            "Please ensure the model file exists."
                         )
 
+                    self._yolo_model = YOLO(model_path)
+                    self._yolo_model.to(self._get_device())
+
         return self._yolo_model
-    
-    def _initialize_trocr(self, model_name: str = "raxtemur/trocr-base-ru"):
+
+    def _initialize_trocr(self, model_name: str = None):
         """Initialize TROCR model and processor."""
         if not TROCR_AVAILABLE:
-            raise Exception("Transformers not available. Install transformers to enable text recognition.")
-        
+            raise Exception(
+                "Transformers not available. "
+                "Install transformers to enable text recognition."
+            )
+
+        # Get model name from config if not specified
+        if model_name is None:
+            model_name = config.MODEL_PATHS.get(
+                'trocr', 'raxtemur/trocr-base-ru'
+            )
+
         cache_dir = './models'
         
-        self._trocr_processor = TrOCRProcessor.from_pretrained(model_name, cache_dir=cache_dir)
-        self._trocr_model = VisionEncoderDecoderModel.from_pretrained(model_name, cache_dir=cache_dir)
+        self._trocr_processor = TrOCRProcessor.from_pretrained(
+            model_name, cache_dir=cache_dir
+        )
+        self._trocr_model = VisionEncoderDecoderModel.from_pretrained(
+            model_name, cache_dir=cache_dir
+        )
         self._trocr_model.to(self._get_device())
         self._models_initialized = True
     
@@ -268,36 +274,38 @@ class AIService:
         self,
         filename: str,
         regions: List[Dict[str, Any]] = None,
-        progress_callback: Callable = None
+        progress_callback: Callable = None,
+        project_name: str = None
     ) -> Dict[int, str]:
         """
         Recognize text in image regions using TROCR.
-        
+
         Args:
             filename: Image filename
             regions: List of regions to process (or None for all)
             progress_callback: Optional callback(current, total)
-        
+            project_name: Optional project name to scope annotation lookup
+
         Returns:
             Dictionary of region_index -> recognized_text
         """
         if not TROCR_AVAILABLE:
             raise Exception("Transformers not available.")
-        
+
         from services.image_service import image_service
         from services.annotation_service import annotation_service
         from database.enums import ImageStatus
-        
+
         # Load image
         image = image_service.get_image(filename)
-        
+
         if image is None:
             raise Exception(f"Image not found: {filename}")
-        
+
         image = image.convert("RGB")
-        
-        # Load annotation data
-        annotation_data = annotation_service.get_annotation(filename)
+
+        # Load annotation data with project scope
+        annotation_data = annotation_service.get_annotation(filename, project_name)
         
         # Use provided regions or get from annotation
         if regions is None:
@@ -329,8 +337,8 @@ class AIService:
         annotation_data['texts'] = recognized_texts
         annotation_data['status'] = ImageStatus.TEXTED.value
         annotation_data['image_name'] = filename
-        annotation_service.save_annotation(filename, annotation_data)
-        
+        annotation_service.save_annotation(filename, annotation_data, project_name)
+
         return recognized_texts
     
     def initialize_models(self, trocr_model_name: str = "raxtemur/trocr-base-ru"):

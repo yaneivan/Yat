@@ -1,13 +1,11 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, send_file, session
 from flask_wtf.csrf import CSRFProtect
 from functools import wraps
-import argparse
 import io
 import logging
 import os
 import threading
 import time
-import traceback
 
 import logic
 import storage
@@ -218,7 +216,9 @@ def load_data(filename):
     try:
         # Validate filename to prevent path traversal
         validated = image_service._validate_filename(filename)
-        data = annotation_service.get_annotation(validated)
+        # Get project from query parameter
+        project_name = request.args.get('project')
+        data = annotation_service.get_annotation(validated, project_name)
         return jsonify(data)
     except ValueError:
         return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
@@ -236,9 +236,12 @@ def save_data():
     try:
         # Validate filename to prevent path traversal
         validated = image_service._validate_filename(filename)
+        
+        # Get project from query parameter
+        project_name = request.args.get('project')
 
-        # Load existing data
-        existing_data = annotation_service.get_annotation(validated)
+        # Load existing data with project scope
+        existing_data = annotation_service.get_annotation(validated, project_name)
 
         # Update fields
         for key in ['regions', 'texts', 'status', 'processing_params', 'crop_params']:
@@ -250,10 +253,10 @@ def save_data():
 
         logger.info(f"Saving annotation for {validated}: {len(incoming_data.get('regions', []))} regions")
 
-        if annotation_service.save_annotation(validated, existing_data):
-            logger.info(f"Save successful")
+        if annotation_service.save_annotation(validated, existing_data, project_name):
+            logger.info("Save successful")
             return jsonify({'status': 'success'})
-        logger.warning(f"Save failed - annotation_service returned False")
+        logger.warning("Save failed - annotation_service returned False")
         return jsonify({'status': 'error'}), 500
 
     except ValueError as e:
@@ -277,12 +280,15 @@ def crop():
     try:
         # Validate filename to prevent path traversal
         validated = image_service._validate_filename(filename)
+        
+        # Get project from query parameter
+        project_name = request.args.get('project')
     except ValueError:
         return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
 
     # Async background processing
     def task():
-        image_service.crop_image(validated, box)
+        image_service.crop_image(validated, box, project_name)
 
     thread = threading.Thread(target=task)
     thread.start()
@@ -354,12 +360,15 @@ def recognize_text():
     try:
         # Validate filename to prevent path traversal
         validated = image_service._validate_filename(filename)
+        
+        # Get project from request data
+        project_name = data.get('project')
     except ValueError:
         return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
 
     # Get regions count for progress
     if regions is None:
-        annotation_data = annotation_service.get_annotation(validated)
+        annotation_data = annotation_service.get_annotation(validated, project_name)
         regions = annotation_data.get('regions', [])
 
     total_regions = len(regions)

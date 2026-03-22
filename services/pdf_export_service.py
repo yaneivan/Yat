@@ -17,15 +17,13 @@ from PIL import Image as PILImage
 
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
-from reportlab.lib.units import mm, inch
-from reportlab.pdfgen import canvas
+from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, KeepTogether
 from reportlab.platypus.flowables import Flowable
 from reportlab.platypus import Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_LEFT
 
 # Import services
 from services.project_service import project_service
@@ -485,8 +483,8 @@ class PDFExportService:
                 if not os.path.exists(image_path):
                     continue
 
-                # Get annotation
-                annotation = annotation_service.get_annotation(filename)
+                # Get annotation with project scope
+                annotation = annotation_service.get_annotation(filename, project_name)
                 polygons = annotation.get('regions', [])
                 texts = annotation.get('texts', {})
 
@@ -585,8 +583,8 @@ class PDFExportService:
                 if not os.path.exists(image_path):
                     continue
 
-                # Get annotation
-                annotation = annotation_service.get_annotation(filename)
+                # Get annotation with project scope
+                annotation = annotation_service.get_annotation(filename, project_name)
                 polygons = annotation.get('regions', [])
                 texts = annotation.get('texts', {})
 
