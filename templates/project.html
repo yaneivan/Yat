@@ -1079,11 +1079,11 @@
 
             try {
                 const projectName = "{{ project.name }}";
-                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
                 const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/upload_images`, {
                     method: 'POST',
                     headers: {
-                        'X-CSRFToken': csrfToken
+                        'X-CSRFToken': API.getCsrfToken()
+                        // Content-Type не указываем — браузер сам поставит multipart/form-data с boundary
                     },
                     body: formData
                 });
@@ -1122,16 +1122,12 @@
             if (!confirm('Запустить детекцию полигонов для всех изображений в проекте?')) {
                 return;
             }
-            
+
             try {
                 const projectName = "{{ project.name }}";
-                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
                 const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/batch_detect`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': csrfToken
-                    },
+                    headers: API.getCsrfHeaders(),
                     body: JSON.stringify({})
                 });
                 
@@ -1152,16 +1148,12 @@
             if (!confirm('Запустить распознавание текста для всех изображений в проекте?')) {
                 return;
             }
-            
+
             try {
                 const projectName = "{{ project.name }}";
-                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
                 const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/batch_recognize`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': csrfToken
-                    },
+                    headers: API.getCsrfHeaders(),
                     body: JSON.stringify({})
                 });
                 
@@ -1206,15 +1198,11 @@
         async function deleteImages(imageNames) {
             try {
                 const projectName = "{{ project.name }}";
-                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
-                
+
                 for (const imageName of imageNames) {
                     const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/images`, {
                         method: 'DELETE',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': csrfToken
-                        },
+                        headers: API.getCsrfHeaders(),
                         body: JSON.stringify({
                             image_name: imageName,
                             delete_file: true  // Полное удаление файлов
@@ -1462,11 +1450,11 @@
             formData.append('project_name', currentProjectName);
 
             try {
-                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
                 const response = await fetch('/api/import_zip', {
                     method: 'POST',
                     headers: {
-                        'X-CSRFToken': csrfToken
+                        'X-CSRFToken': API.getCsrfToken()
+                        // Content-Type не указываем — браузер сам поставит multipart/form-data с boundary
                     },
                     body: formData
                 });
@@ -1568,15 +1556,11 @@
             }
             
             try {
-                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
                 const url = `/api/projects/${encodeURIComponent(projectName)}/images/${encodeURIComponent(currentFilename)}/status`;
-                
+
                 const response = await fetch(url, {
                     method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': csrfToken
-                    },
+                    headers: API.getCsrfHeaders(),
                     body: JSON.stringify({ status: selectedStatus, comment })
                 });
                 

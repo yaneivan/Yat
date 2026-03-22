@@ -1204,15 +1204,9 @@ class TextEditor {
             const originalData = await API.loadAnnotation(this.filename);
             const originalRegions = originalData.regions || [];
 
-            // Get CSRF token from meta tag
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
-
             const response = await fetch('/api/recognize_text', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': csrfToken
-                },
+                headers: API.getCsrfHeaders(),
                 body: JSON.stringify({
                     image_name: this.filename,
                     regions: originalRegions  // Send original unsorted regions
