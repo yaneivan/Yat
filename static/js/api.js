@@ -13,6 +13,10 @@ function getCsrfHeaders() {
 }
 
 const API = {
+    // CSRF helper functions (exported for use in other scripts)
+    getCsrfToken,
+    getCsrfHeaders,
+
     async listImages() {
         const res = await fetch('/api/images_list');
         return res.json();
@@ -91,6 +95,7 @@ const API = {
             method: 'POST',
             headers: {
                 'X-CSRFToken': getCsrfToken()
+                // Content-Type не указываем — браузер сам поставит multipart/form-data с boundary
             },
             body: formData
         });
