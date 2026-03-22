@@ -465,6 +465,13 @@ class TextEditor {
         } catch (error) {
             console.error('Error loading regions:', error);
         }
+        
+        // Обновляем статус при переключении изображения
+        if (window.statusWidget && typeof window.statusWidget.loadStatus === 'function') {
+            window.statusWidget.filename = this.filename;
+            window.statusWidget.loadStatus();
+            window.statusWidget.render();
+        }
     }
 
     // Function to sort regions from top to bottom based on their vertical position

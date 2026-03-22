@@ -193,7 +193,14 @@ class HTREditor {
                 this._configurePolygon(p); // Применяем единые настройки
                 this.canvas.add(p);
             });
-            this.history.save(); 
+            this.history.save();
+        }
+        
+        // Обновляем статус при переключении изображения
+        if (window.statusWidget && typeof window.statusWidget.loadStatus === 'function') {
+            window.statusWidget.filename = this.filename;
+            window.statusWidget.loadStatus();
+            window.statusWidget.render();
         }
     }
 
