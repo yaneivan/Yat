@@ -231,7 +231,7 @@ class ProjectService:
         filename: str,
         original_path: str,
         cropped_path: str = None,
-        status: str = 'crop',
+        status: str = 'uploaded',
         crop_params: dict = None
     ) -> Optional[Dict[str, Any]]:
         """

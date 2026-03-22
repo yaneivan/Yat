@@ -276,10 +276,10 @@ class ProjectManager {
         // Calculate stats for the project
         const totalImages = project.images ? project.images.length : 0;
 
-        // Count annotated images by checking their status ('segment', 'cropped', or 'texted')
+        // Count annotated images by checking their status ('segmented', 'cropped', or 'recognized')
         let annotatedImages = 0;
         if (project.images && Array.isArray(project.images)) {
-            annotatedImages = project.images.filter(img => ['segment', 'cropped', 'texted'].includes(img.status)).length;
+            annotatedImages = project.images.filter(img => ['segmented', 'cropped', 'recognized'].includes(img.status)).length;
         }
 
         // Create elements safely to prevent XSS
@@ -760,10 +760,10 @@ class ProjectManager {
         // Calculate stats for the project
         const totalImages = project.images ? project.images.length : 0;
 
-        // Count annotated images by checking their status ('segment', 'cropped', or 'texted')
+        // Count annotated images by checking their status ('segmented', 'cropped', or 'recognized')
         let annotatedImages = 0;
         if (project.images && Array.isArray(project.images)) {
-            annotatedImages = project.images.filter(img => ['segment', 'cropped', 'texted'].includes(img.status)).length;
+            annotatedImages = project.images.filter(img => ['segmented', 'cropped', 'recognized'].includes(img.status)).length;
         }
 
         // Create elements safely to prevent XSS

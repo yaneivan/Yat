@@ -307,7 +307,7 @@ class AnnotationService:
             project_name: Optional project name to scope the lookup
 
         Returns:
-            Status string: 'crop', 'cropped', 'segment', or 'texted'
+            Status string: 'uploaded', 'cropped', 'segmented', or 'recognized'
         """
         validated_filename = self._validate_filename(filename)
 
@@ -320,19 +320,19 @@ class AnnotationService:
                 image = image_repo.get_by_filename(validated_filename)
             
             if not image:
-                return ImageStatus.CROP.value
+                return ImageStatus.UPLOADED.value
 
-            if image.status == ImageStatus.TEXTED.value:
-                return ImageStatus.TEXTED.value
+            if image.status == ImageStatus.RECOGNIZED.value:
+                return ImageStatus.RECOGNIZED.value
 
             annotation = annotation_repo.get_by_image(image.id)
             if annotation and annotation.polygons:
-                return ImageStatus.SEGMENT.value
+                return ImageStatus.SEGMENTED.value
 
             if image.status == ImageStatus.CROPPED.value:
                 return ImageStatus.CROPPED.value
 
-            return ImageStatus.CROP.value
+            return ImageStatus.UPLOADED.value
         finally:
             session.close()
 

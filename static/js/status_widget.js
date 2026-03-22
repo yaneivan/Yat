@@ -58,11 +58,10 @@ class StatusWidget {
         if (!badge || !this.currentStatus) return;
 
         const statusTexts = {
-            'crop': 'Загружено',
-            'cropped': 'Кадрировано',
-            'segment': 'Размечено',
-            'texted': 'Текст добавлен',
-            'review_pending': 'Требует ревью',
+            'uploaded': 'Загружено',
+            'cropped': 'Обрезано',
+            'segmented': 'Полигоны готовы',
+            'recognized': 'Текст распознан',
             'reviewed': 'Проверено'
         };
 

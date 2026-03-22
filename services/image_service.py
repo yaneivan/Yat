@@ -306,7 +306,7 @@ class ImageService:
                             filename=filename,
                             original_path=self.get_original_path(filename),
                             cropped_path=image_path,
-                            status=ImageStatus.CROP
+                            status=ImageStatus.UPLOADED
                         )
                 finally:
                     session.close()
@@ -393,13 +393,13 @@ class ImageService:
                 # Получить статус из памяти, а не из БД
                 ann = annotations_by_image.get(image.id)
                 if ann and ann.get('polygons'):
-                    status = 'segment'
-                elif image.status == 'texted':
-                    status = 'texted'
-                elif image.status == 'cropped':
-                    status = 'cropped'
+                    status = ImageStatus.SEGMENTED.value
+                elif image.status == ImageStatus.RECOGNIZED.value:
+                    status = ImageStatus.RECOGNIZED.value
+                elif image.status == ImageStatus.CROPPED.value:
+                    status = ImageStatus.CROPPED.value
                 else:
-                    status = 'crop'
+                    status = ImageStatus.UPLOADED.value
                 
                 result.append({
                     'id': image.id,

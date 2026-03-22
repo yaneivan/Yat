@@ -6,11 +6,10 @@ from enum import Enum
 class ImageStatus(str, Enum):
     """Status values for images in the annotation workflow."""
 
-    CROP = 'crop'           # Image uploaded, needs cropping
+    UPLOADED = 'uploaded'   # Image uploaded, needs cropping
     CROPPED = 'cropped'     # Cropped, ready for segmentation
-    SEGMENT = 'segment'     # Polygons drawn, ready for text recognition
-    TEXTED = 'texted'       # Text recognized, ready for review
-    REVIEW_PENDING = 'review_pending'  # Waiting for review
+    SEGMENTED = 'segmented' # Polygons drawn, ready for text recognition
+    RECOGNIZED = 'recognized'  # Text recognized by AI
     REVIEWED = 'reviewed'   # Reviewed and approved
 
 

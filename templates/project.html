@@ -657,25 +657,21 @@
             font-size: 0.8em;
             font-weight: bold;
         }
-        
-        .status-crop {
+
+        .status-uploaded {
             background: #ffc107;
             color: #212529;
+            font-weight: 600;
         }
 
-        .status-segment {
+        .status-segmented {
             background: #28a745;
             color: white;
         }
 
-        .status-texted {
+        .status-recognized {
             background: #17a2b8;
             color: white;
-        }
-
-        .status-review_pending {
-            background: #fd7e14;
-            color: #212529;
         }
 
         .status-reviewed {
@@ -684,7 +680,7 @@
         }
 
         .status-cropped {
-            background: #6c757d;
+            background: #fd7e14;
             color: white;
         }
 
@@ -692,6 +688,11 @@
         .status-badge {
             cursor: pointer;
             position: relative;
+            border: 2px solid transparent;
+            transition: border-color 0.2s;
+        }
+        .status-badge:hover {
+            border-color: #212529;
         }
 
         .status-popover {
@@ -959,12 +960,12 @@
                 <img src="/data/images/{{ image.filename }}" class="image-thumb" alt="{{ image.filename }}">
                 <div class="image-meta">
                     <div class="image-name" title="{{ image.filename }}">{{ image.filename }}</div>
-                    <div class="image-status status-{{ image.status }} status-badge" 
+                    <div class="image-status status-{{ image.status }} status-badge"
                          data-filename="{{ image.filename }}"
                          data-status="{{ image.status }}"
                          data-comment="{{ image.comment }}"
                          onclick="toggleStatusPopover(this)">
-                        {{ 'Требует ревью' if image.status == 'review_pending' else 'Проверено' if image.status == 'reviewed' else 'Размечено' if image.status == 'segment' else 'Текст' if image.status == 'texted' else 'Кадрировано' if image.status == 'cropped' else 'Загружено' }}
+                        {{ 'Проверено' if image.status == 'reviewed' else 'Текст распознан' if image.status == 'recognized' else 'Полигоны готовы' if image.status == 'segmented' else 'Обрезано' if image.status == 'cropped' else 'Загружено' }}
                     </div>
                 </div>
                 <div class="image-actions">
@@ -983,24 +984,20 @@
         <div id="status-popover" class="status-popover">
             <h4>Статус:</h4>
             <label class="status-option">
-                <input type="radio" name="status" value="crop">
+                <input type="radio" name="status" value="uploaded">
                 Загружено
             </label>
             <label class="status-option">
                 <input type="radio" name="status" value="cropped">
-                Кадрировано
+                Обрезано
             </label>
             <label class="status-option">
-                <input type="radio" name="status" value="segment">
-                Размечено
+                <input type="radio" name="status" value="segmented">
+                Полигоны готовы
             </label>
             <label class="status-option">
-                <input type="radio" name="status" value="texted">
-                Текст добавлен
-            </label>
-            <label class="status-option">
-                <input type="radio" name="status" value="review_pending">
-                Требует ревью
+                <input type="radio" name="status" value="recognized">
+                Текст распознан
             </label>
             <label class="status-option">
                 <input type="radio" name="status" value="reviewed">
@@ -1586,14 +1583,13 @@
                 if (response.ok) {
                     // Обновляем текст на карточке
                     const badge = document.querySelector(`.status-badge[data-filename="${currentFilename}"]`);
-                    
+
                     if (badge) {
                         const statusTexts = {
-                            'crop': 'Загружено',
-                            'cropped': 'Кадрировано',
-                            'segment': 'Размечено',
-                            'texted': 'Текст добавлен',
-                            'review_pending': 'Требует ревью',
+                            'uploaded': 'Загружено',
+                            'cropped': 'Обрезано',
+                            'segmented': 'Полигоны готовы',
+                            'recognized': 'Текст распознан',
                             'reviewed': 'Проверено'
                         };
                         

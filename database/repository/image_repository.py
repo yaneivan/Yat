@@ -19,7 +19,7 @@ class ImageRepository:
         filename: str,
         original_path: str,
         cropped_path: Optional[str] = None,
-        status: ImageStatus = ImageStatus.CROP,
+        status: ImageStatus = ImageStatus.UPLOADED,
         crop_params: Optional[dict] = None
     ) -> Image:
         """Create a new image."""

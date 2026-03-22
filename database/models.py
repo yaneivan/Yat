@@ -43,7 +43,7 @@ class Image(Base):
     filename = Column(String(255), nullable=False)
     original_path = Column(String(512))  # Path to original (backup)
     cropped_path = Column(String(512))   # Path to cropped image
-    status = Column(String(50), default=ImageStatus.CROP.value)  # ImageStatus: crop, cropped, segment, texted, review_pending, reviewed
+    status = Column(String(50), default=ImageStatus.UPLOADED.value)  # ImageStatus: uploaded, cropped, segmented, recognized, reviewed
     crop_params = Column(JSON)  # {x, y, width, height, angle}
     comment = Column(Text, default='')  # Comment from reviewer
     reviewed_at = Column(DateTime)  # Timestamp of review

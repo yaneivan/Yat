@@ -360,7 +360,7 @@ def process_zip_import(file, simplify_val=0, project_name=None):
                                 filename=f,
                                 original_path=original_dest,
                                 cropped_path=dest_path,
-                                status=ImageStatus.SEGMENT,
+                                status=ImageStatus.SEGMENTED,
                                 crop_params=None
                             )
 
@@ -369,7 +369,7 @@ def process_zip_import(file, simplify_val=0, project_name=None):
                                 'image_name': f,
                                 'regions': regs,
                                 'texts': texts,
-                                'status': ImageStatus.SEGMENT.value
+                                'status': ImageStatus.SEGMENTED.value
                             }
                             annotation_service.save_annotation(f, annotation_data, project_name)
                             break
@@ -439,7 +439,7 @@ def run_batch_detection_for_project(project_name, settings=None, task_id=None):
                 annotation_data = annotation_service.get_annotation(image_name, project_name)
                 annotation_data['regions'] = regions
                 if annotation_data.get('status') != ImageStatus.CROPPED.value:
-                    annotation_data['status'] = ImageStatus.SEGMENT.value
+                    annotation_data['status'] = ImageStatus.SEGMENTED.value
 
                 annotation_service.save_annotation(image_name, annotation_data, project_name)
                 task_service.update_progress(task.id, idx + 1)
