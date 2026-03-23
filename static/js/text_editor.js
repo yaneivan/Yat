@@ -4,13 +4,18 @@
 class TextEditor {
     constructor(leftCanvasId, rightCanvasId, filename, project = null, snapDist = 15) {
         this.filename = filename;
-        this.project = project; 
+        this.project = project;
         this.snapDist = snapDist;
         this.currentRegionIndex = -1;
         this.regions = [];
         this.texts = {};
         this.imageList = [];
-        
+        this.notepadMode = false; // Notepad mode state
+        this.notepadFocusedIndex = -1; // Currently focused line in notepad mode
+        this.textsHistory = []; // History of text states for undo
+        this.historyIndex = -1; // Current position in history
+        this.maxHistoryLength = 50; // Maximum history entries
+
         // Initialize both canvases
         this.leftCanvas = new fabric.Canvas(leftCanvasId, {
             fireRightClick: true,
@@ -38,6 +43,14 @@ class TextEditor {
         this.resize();
         window.addEventListener('resize', () => this.resize());
         window.addEventListener('keydown', (e) => this.handleKeyDown(e));
+
+        // Save on page unload/reload
+        window.addEventListener('beforeunload', () => {
+            if (this.autoSaveTimeout) {
+                clearTimeout(this.autoSaveTimeout);
+                this.saveData(); // Save immediately before unload
+            }
+        });
 
         // Setup canvas events
         this.setupCanvasEvents();
@@ -465,13 +478,16 @@ class TextEditor {
         } catch (error) {
             console.error('Error loading regions:', error);
         }
-        
+
         // Обновляем статус при переключении изображения
         if (window.statusWidget && typeof window.statusWidget.loadStatus === 'function') {
             window.statusWidget.filename = this.filename;
             window.statusWidget.loadStatus();
             window.statusWidget.render();
         }
+
+        // Update notepad if in notepad mode (in case regions changed)
+        this.updateNotepadOnRegionsChange();
     }
 
     // Function to sort regions from top to bottom based on their vertical position
@@ -565,6 +581,9 @@ class TextEditor {
 
                 this.leftCanvas.requestRenderAll();
                 this.rightCanvas.requestRenderAll();
+
+                // Update notepad if in notepad mode
+                this.updateNotepadOnRegionsChange();
             }
         } catch (error) {
             console.error('Error loading text data:', error);
@@ -585,6 +604,389 @@ class TextEditor {
 
         return true;
     }
+
+    // ==================== NOTEPAD MODE METHODS ====================
+
+    // Save current state to history
+    saveToHistory() {
+        // Clone current texts
+        const currentState = JSON.parse(JSON.stringify(this.texts));
+
+        // Remove any future states if we're in the middle of history
+        if (this.historyIndex < this.textsHistory.length - 1) {
+            this.textsHistory = this.textsHistory.slice(0, this.historyIndex + 1);
+        }
+
+        // Add current state to history
+        this.textsHistory.push(currentState);
+
+        // Limit history length
+        if (this.textsHistory.length > this.maxHistoryLength) {
+            this.textsHistory.shift();
+        } else {
+            this.historyIndex++;
+        }
+    }
+
+    // Undo last action
+    undo() {
+        if (this.historyIndex > 0) {
+            this.historyIndex--;
+            const previousState = this.textsHistory[this.historyIndex];
+            this.texts = JSON.parse(JSON.stringify(previousState));
+
+            // Update UI
+            this.renderNotepad();
+
+            // Update polygons
+            this.updatePolygonsWithTexts();
+
+            this.showNotification('Действие отменено', 'undo');
+        } else if (this.historyIndex === 0) {
+            // First state - clear all
+            this.historyIndex = -1;
+            this.texts = {};
+            this.renderNotepad();
+            this.updatePolygonsWithTexts();
+            this.showNotification('Действие отменено', 'undo');
+        }
+    }
+
+    // Toggle notepad mode on/off
+    toggleNotepadMode() {
+        this.notepadMode = !this.notepadMode;
+
+        const notepadContainer = document.getElementById('notepad-container');
+        const rightCanvasContainer = document.getElementById('right-canvas-container');
+        const btn = document.getElementById('btn-notepad-mode');
+
+        if (this.notepadMode) {
+            notepadContainer.classList.add('active');
+            rightCanvasContainer.classList.add('hidden');
+            btn.classList.add('active');
+            // Save initial state when opening notepad
+            this.saveToHistory();
+            this.renderNotepad();
+        } else {
+            notepadContainer.classList.remove('active');
+            rightCanvasContainer.classList.remove('hidden');
+            btn.classList.remove('active');
+            // Update polygons with current text data
+            this.updatePolygonsWithTexts();
+        }
+    }
+
+    // Render notepad lines from sorted regions
+    renderNotepad() {
+        const linesContainer = document.getElementById('notepad-lines');
+        if (!linesContainer) return;
+
+        linesContainer.innerHTML = '';
+
+        this.regions.forEach((region, index) => {
+            const lineDiv = document.createElement('div');
+            lineDiv.className = 'notepad-line';
+            lineDiv.dataset.index = index;
+
+            const textContent = this.texts[index] || '';
+            if (textContent) {
+                lineDiv.classList.add('has-text');
+            }
+
+            // Line number
+            const numberSpan = document.createElement('span');
+            numberSpan.className = 'notepad-line-number';
+            numberSpan.textContent = index + 1;
+
+            // Text input
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = textContent;
+            input.placeholder = `Сегмент ${index + 1}`;
+            input.dataset.index = index;
+
+            // Focus event - highlight polygon on canvas
+            input.addEventListener('focus', (e) => this.onNotepadLineFocus(e, index));
+            input.addEventListener('blur', () => this.onNotepadLineBlur(index));
+
+            // Key events for Enter and Backspace logic
+            input.addEventListener('keydown', (e) => this.onNotepadKeyDown(e, index));
+
+            // Input event to update text in memory
+            input.addEventListener('input', (e) => {
+                this.texts[index] = e.target.value;
+                if (e.target.value) {
+                    lineDiv.classList.add('has-text');
+                } else {
+                    lineDiv.classList.remove('has-text');
+                }
+                // Auto-save after text change
+                this.autoSave();
+            });
+
+            // Indicator dot
+            const indicator = document.createElement('div');
+            indicator.className = 'line-indicator';
+
+            lineDiv.appendChild(numberSpan);
+            lineDiv.appendChild(input);
+            lineDiv.appendChild(indicator);
+            linesContainer.appendChild(lineDiv);
+        });
+    }
+
+    // Handle focus on notepad line - highlight corresponding polygon
+    onNotepadLineFocus(e, index) {
+        this.notepadFocusedIndex = index;
+
+        // Update visual focus
+        const lines = document.querySelectorAll('.notepad-line');
+        lines.forEach(line => line.classList.remove('focused'));
+        e.target.closest('.notepad-line').classList.add('focused');
+
+        // Highlight polygon on left canvas
+        this.highlightPolygonOnCanvas(index, true);
+
+        // Center polygon on canvas (scroll into view)
+        this.centerPolygonOnCanvas(index);
+    }
+
+    // Handle blur on notepad line
+    onNotepadLineBlur(index) {
+        this.notepadFocusedIndex = -1;
+        // Remove highlight from polygon
+        this.highlightPolygonOnCanvas(index, false);
+    }
+
+    // Highlight polygon on both canvases
+    highlightPolygonOnCanvas(index, highlight) {
+        const leftPoly = this.leftCanvas.getObjects().find(obj => obj.index === index);
+        const rightPoly = this.rightCanvas.getObjects().find(obj => obj.index === index);
+
+        if (leftPoly) {
+            if (highlight) {
+                leftPoly.set({
+                    fill: 'rgba(255, 165, 0, 0.5)',
+                    stroke: '#ff8800',
+                    strokeWidth: 3
+                });
+            } else {
+                // Restore original color based on whether it has text
+                const hasText = this.texts[index] && this.texts[index].trim() !== '';
+                leftPoly.set({
+                    fill: hasText ? 'rgba(0, 128, 0, 0.3)' : 'rgba(0, 255, 0, 0.2)',
+                    stroke: hasText ? '#00cc66' : 'green',
+                    strokeWidth: 2
+                });
+            }
+            this.leftCanvas.requestRenderAll();
+        }
+
+        if (rightPoly) {
+            if (highlight) {
+                rightPoly.set({
+                    fill: 'rgba(255, 165, 0, 0.5)',
+                    stroke: '#ff8800',
+                    strokeWidth: 3
+                });
+            } else {
+                const hasText = this.texts[index] && this.texts[index].trim() !== '';
+                rightPoly.set({
+                    fill: hasText ? 'rgba(255, 255, 255, 1.0)' : 'rgba(0, 0, 255, 0.2)',
+                    stroke: hasText ? '#0066ff' : 'blue',
+                    strokeWidth: 2
+                });
+            }
+            this.rightCanvas.requestRenderAll();
+        }
+    }
+
+    // Center polygon on canvas
+    centerPolygonOnCanvas(index) {
+        const region = this.regions[index];
+        if (!region || !region.points) return;
+
+        // Calculate center of polygon
+        const xs = region.points.map(p => p.x);
+        const ys = region.points.map(p => p.y);
+        const centerX = (Math.min(...xs) + Math.max(...xs)) / 2;
+        const centerY = (Math.min(...ys) + Math.max(...ys)) / 2;
+
+        // Center on left canvas
+        const leftVpt = this.leftCanvas.viewportTransform;
+        const leftCanvasWidth = this.leftCanvas.getWidth() / leftVpt[0];
+        const leftCanvasHeight = this.leftCanvas.getHeight() / leftVpt[3];
+
+        leftVpt[4] = (leftCanvasWidth / 2) * leftVpt[0] - centerX * leftVpt[0];
+        leftVpt[5] = (leftCanvasHeight / 2) * leftVpt[3] - centerY * leftVpt[3];
+        this.leftCanvas.setViewportTransform(leftVpt);
+
+        // Center on right canvas
+        const rightVpt = this.rightCanvas.viewportTransform;
+        const rightCanvasWidth = this.rightCanvas.getWidth() / rightVpt[0];
+        const rightCanvasHeight = this.rightCanvas.getHeight() / rightVpt[3];
+
+        rightVpt[4] = (rightCanvasWidth / 2) * rightVpt[0] - centerX * rightVpt[0];
+        rightVpt[5] = (rightCanvasHeight / 2) * rightVpt[3] - centerY * rightVpt[3];
+        this.rightCanvas.setViewportTransform(rightVpt);
+    }
+
+    // Handle keydown in notepad input
+    onNotepadKeyDown(e, index) {
+        if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) {
+            e.preventDefault();
+            this.handleNotepadEnter(index);
+        } else if (e.key === 'Backspace' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+            // Handle Backspace at beginning of input
+            const input = e.target;
+            if (input.selectionStart === 0 && input.selectionEnd === 0) {
+                e.preventDefault();
+                this.handleNotepadBackspace(index);
+            }
+        }
+    }
+
+    // Handle Enter key - move text after cursor to next line
+    handleNotepadEnter(index) {
+        // Save state before making changes
+        this.saveToHistory();
+
+        const input = document.querySelector(`.notepad-line input[data-index="${index}"]`);
+        if (!input) return;
+
+        const cursorPos = input.selectionStart;
+        const text = input.value;
+
+        // Text before cursor stays, text after cursor moves to next line
+        const textBeforeCursor = text.substring(0, cursorPos);
+        const textAfterCursor = text.substring(cursorPos);
+
+        // Check if there's a next line
+        if (index >= this.regions.length - 1) {
+            this.showNotification('Нет свободного сегмента для переноса текста', 'error');
+            return;
+        }
+
+        // Update current line
+        this.texts[index] = textBeforeCursor;
+
+        // Get next line input
+        const nextInput = document.querySelector(`.notepad-line input[data-index="${index + 1}"]`);
+        if (nextInput) {
+            // Prepend text to next line
+            const nextText = this.texts[index + 1] || '';
+            this.texts[index + 1] = textAfterCursor + nextText;
+
+            // Update UI
+            input.value = textBeforeCursor;
+            nextInput.value = this.texts[index + 1];
+
+            // Update line styles
+            const currentLine = input.closest('.notepad-line');
+            const nextLine = nextInput.closest('.notepad-line');
+            if (!textBeforeCursor) currentLine.classList.remove('has-text');
+            else currentLine.classList.add('has-text');
+            nextLine.classList.add('has-text');
+
+            // Move focus to next line with cursor at the beginning
+            nextInput.focus();
+            nextInput.setSelectionRange(0, 0);
+        }
+    }
+
+    // Handle Backspace at beginning - merge with previous line
+    handleNotepadBackspace(index) {
+        // Save state before making changes
+        this.saveToHistory();
+
+        // Check if there's a previous line
+        if (index <= 0) return; // Nothing to merge with
+
+        const input = document.querySelector(`.notepad-line input[data-index="${index}"]`);
+        if (!input) return;
+
+        const currentText = input.value;
+
+        // Get previous line input
+        const prevInput = document.querySelector(`.notepad-line input[data-index="${index - 1}"]`);
+        if (prevInput) {
+            // Append current text to previous line
+            const prevText = this.texts[index - 1] || '';
+            this.texts[index - 1] = prevText + currentText;
+
+            // Clear current line
+            this.texts[index] = '';
+
+            // Update UI
+            prevInput.value = this.texts[index - 1];
+            input.value = '';
+
+            // Update line styles
+            const prevLine = prevInput.closest('.notepad-line');
+            const currentLine = input.closest('.notepad-line');
+            prevLine.classList.add('has-text');
+            currentLine.classList.remove('has-text');
+
+            // Move focus to previous line
+            prevInput.focus();
+            prevInput.setSelectionRange(prevText.length, prevText.length);
+        }
+    }
+
+    // Show notification
+    showNotification(message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.className = `notification ${type}`;
+        notification.textContent = message;
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            notification.remove();
+        }, 3000);
+    }
+
+    // Update notepad UI when regions change
+    updateNotepadOnRegionsChange() {
+        if (this.notepadMode) {
+            this.renderNotepad();
+        }
+    }
+
+    // Update all polygons with current text data (used when switching from notepad mode)
+    updatePolygonsWithTexts() {
+        this.regions.forEach((region, index) => {
+            const textContent = this.texts[index] || '';
+
+            // Update left canvas polygon
+            const leftPoly = this.leftCanvas.getObjects().find(obj => obj.index === index);
+            if (leftPoly) {
+                leftPoly.set({ hasText: textContent !== '', textContent: textContent });
+                if (textContent) {
+                    leftPoly.set({ fill: 'rgba(0, 128, 0, 0.3)', stroke: '#00cc66' });
+                } else {
+                    leftPoly.set({ fill: 'rgba(0, 255, 0, 0.2)', stroke: 'green' });
+                }
+            }
+
+            // Update right canvas polygon
+            const rightPoly = this.rightCanvas.getObjects().find(obj => obj.index === index);
+            if (rightPoly) {
+                rightPoly.set({ hasText: textContent !== '', textContent: textContent });
+                if (textContent) {
+                    rightPoly.set({ fill: 'rgba(255, 255, 255, 1.0)', stroke: '#0066ff' });
+                    this.updatePolygonText(rightPoly, textContent);
+                } else {
+                    rightPoly.set({ fill: 'rgba(0, 0, 255, 0.2)', stroke: 'blue' });
+                    this.updatePolygonText(rightPoly, '');
+                }
+            }
+        });
+
+        this.leftCanvas.requestRenderAll();
+        this.rightCanvas.requestRenderAll();
+    }
+
+    // ==================== END NOTEPAD MODE METHODS ====================
 
     setupCanvasEvents() {
         // Variables for panning
@@ -1013,6 +1415,13 @@ class TextEditor {
         const isModalOpen = modal && modal.style.display === 'flex';
         const textInput = document.getElementById('text-input');
         const isTextInputFocused = textInput && document.activeElement === textInput;
+
+        // Notepad mode: Ctrl+Z for undo
+        if (this.notepadMode && (e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+            e.preventDefault();
+            this.undo();
+            return;
+        }
 
         // Handle Enter key to save and go to next region (only when modal is open)
         if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey && !e.altKey && isModalOpen) {
