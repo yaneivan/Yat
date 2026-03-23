@@ -944,3 +944,335 @@ if ai_service.is_trocr_available():
 - [ ] Ручное переключение через popover работает
 - [ ] В popover только актуальные статусы (5 шт.)
 - [ ] Нет ошибок при переключении
+
+---
+
+## 📋 НОВЫЕ ЗАДАЧИ (добавлено 2026-03-23)
+
+### 16. Улучшение AI Service: батчинг, очередь, выгрузка моделей
+
+**Статус:** ❌ Не исправлено
+**Приоритет:** 🟠 СРЕДНЕ
+**Время на фикс:** 4 часа
+
+**Описание:**
+Сейчас AI Service (`services/ai_service.py`) имеет базовую реализацию с синглтоном и lazy initialization.
+Однако отсутствуют важные функции для production-нагрузки:
+
+**Текущее состояние:**
+- ✅ Синглтон (`ai_service = AIService()`)
+- ✅ Lazy initialization моделей
+- ✅ Thread-safe (double-checked locking)
+- ✅ Кэширование моделей (не выгружаются)
+
+**Проблемы:**
+1. **Нет реального батчинга** — пакетная обработка вызывает YOLO по одной картинке в цикле
+2. **Нет очереди задач** — `logic.py` напрямую вызывает `ai_service.detect_lines()`
+3. **Нет выгрузки моделей** — модели занимают RAM/GPU постоянно
+4. **Прогресс в `logic.py`** — AI service не управляет прогрессом выполнения
+
+**Сценарии использования:**
+
+| Сценарий | Где вызывается | Как сейчас | Проблема |
+|----------|----------------|------------|----------|
+| **Одиночный запрос** (из редактора) | `editor.js` → `/api/detect_lines` | Синхронно, браузер ждёт | ✅ Нормально для интерактива |
+| **Пакетный запрос** (из project.html) | `project_manager.js` → `/api/batch_detect` | Цикл по одной картинке | ❌ Нет GPU батчинга |
+
+**Производительность (оценка):**
+
+| Количество картинок | Сейчас (по одной) | С батчингом |
+|---------------------|-------------------|-------------|
+| 1 | ~2 сек | ~2 сек |
+| 10 | ~20 сек | ~5-7 сек |
+| 100 | ~200 сек | ~30-50 сек |
+
+---
+
+### Задачи для реализации
+
+#### 16.1. Добавить пакетную обработку для YOLO
+
+**Файл:** `services/ai_service.py`
+
+**Задача:** Создать метод `detect_lines_batch()` для реальной пакетной обработки на GPU.
+
+```python
+def detect_lines_batch(
+    self,
+    image_paths: List[str],
+    settings: Dict[str, Any],
+    progress_callback: Callable = None
+) -> Dict[str, List[Dict]]:
+    """
+    Пакетная детекция на нескольких изображениях.
+    
+    Args:
+        image_paths: Список путей к изображениям
+        settings: Настройки детекции (threshold, simplification, merge)
+        progress_callback: Callback(processed, total)
+    
+    Returns:
+        Dict: {filename: [regions]}
+    """
+    # Загрузить все изображения
+    images = [Image.open(path) for path in image_paths]
+    
+    # ОДИН вызов модели на все изображения (GPU батчинг!)
+    model = self._get_yolo_model()
+    results = model(images, conf=settings.get('threshold', 50)/100)
+    
+    # Обработать результаты
+    output = {}
+    for idx, result in enumerate(results):
+        filename = os.path.basename(image_paths[idx])
+        regions = self._process_result(result, settings)
+        output[filename] = regions
+        
+        if progress_callback:
+            progress_callback(idx + 1, len(images))
+    
+    return output
+```
+
+**Преимущества:**
+- 3-4x быстрее на GPU (параллелизм внутри YOLO)
+- Меньше накладных расходов на загрузку изображений
+
+**Где использовать:**
+- `logic.py:run_batch_detection_for_project()` — вместо цикла по одной
+
+---
+
+#### 16.2. Добавить выгрузку моделей
+
+**Файл:** `services/ai_service.py`
+
+**Задача:** Создать метод `unload_models()` для освобождения памяти.
+
+```python
+def unload_models(self):
+    """
+    Выгрузить модели из памяти (освободить GPU RAM).
+    
+    Вызывать:
+    - При длительном простое (>5 мин)
+    - Перед завершением приложения
+    - Для экономии памяти на серверах с несколькими сервисами
+    """
+    import gc
+    
+    if self._yolo_model:
+        del self._yolo_model
+        self._yolo_model = None
+    
+    if self._trocr_model:
+        del self._trocr_model
+        self._trocr_model = None
+        self._trocr_processor = None
+    
+    gc.collect()
+    torch.cuda.empty_cache()
+    self._models_initialized = False
+```
+
+**Дополнительно:** Добавить автоматическую выгрузку при простое.
+
+```python
+# В __init__
+self._last_activity = time.time()
+self._idle_timeout = 300  # 5 минут
+
+# В detect_lines() и recognize_text()
+self._last_activity = time.time()
+
+# В фоновом потоке
+def _check_idle():
+    if time.time() - self._last_activity > self._idle_timeout:
+        self.unload_models()
+```
+
+---
+
+#### 16.3. Перенести управление прогрессом в AI Service
+
+**Файл:** `services/ai_service.py`
+
+**Проблема:** Сейчас `logic.py` управляет прогрессом через `task_service.update_progress()`.
+
+**Решение:** AI service должен принимать callback для обновления прогресса.
+
+**Сейчас:**
+```python
+# logic.py:675-690
+for idx, image_name in enumerate(image_names):
+    regions = ai_service.detect_lines(image_name, settings)
+    annotation_service.save_annotation(...)
+    task_service.update_progress(task.id, idx + 1)  # ← logic.py знает о прогрессе
+```
+
+**Как должно быть:**
+```python
+# logic.py
+def run_batch_detection_for_project(project_name, settings, task_id):
+    images = project_service.get_images(project_name)
+    
+    def on_progress(processed, total):
+        task_service.update_progress(task.id, processed)
+    
+    ai_service.detect_lines_batch(
+        image_paths=[img.cropped_path for img in images],
+        settings=settings,
+        progress_callback=on_progress  # ← AI service управляет прогрессом
+    )
+```
+
+---
+
+#### 16.4. Добавить очередь задач (опционально)
+
+**Файл:** `services/ai_service.py` или новый `services/ai_queue.py`
+
+**Задача:** Создать очередь для управления приоритетами и предотвращения перегрузки.
+
+```python
+from queue import PriorityQueue
+from dataclasses import dataclass, field
+from enum import Enum
+
+class TaskPriority(Enum):
+    HIGH = 1      # Одиночные запросы из редактора
+    NORMAL = 5    # Пакетная обработка
+    LOW = 10      # Фоновые задачи
+
+@dataclass(order=True)
+class AITask:
+    priority: int
+    created_at: float = field(compare=False)
+    func: str = field(compare=False)  # 'detect' или 'recognize'
+    args: tuple = field(compare=False)
+    kwargs: dict = field(compare=False)
+    callback: callable = field(compare=False, default=None)
+
+class AIQueue:
+    def __init__(self, max_workers=2):
+        self._queue = PriorityQueue()
+        self._workers = []
+        self._shutdown = False
+        self._max_workers = max_workers
+    
+    def submit(self, func, args, kwargs, callback, priority=TaskPriority.NORMAL):
+        self._queue.put(AITask(
+            priority=priority.value,
+            created_at=time.time(),
+            func=func,
+            args=args,
+            kwargs=kwargs,
+            callback=callback
+        ))
+    
+    def start(self):
+        for _ in range(self._max_workers):
+            worker = threading.Thread(target=self._worker_loop, daemon=True)
+            worker.start()
+            self._workers.append(worker)
+    
+    def _worker_loop(self):
+        while not self._shutdown:
+            try:
+                task = self._queue.get(timeout=1)
+                result = getattr(ai_service, task.func)(*task.args, **task.kwargs)
+                if task.callback:
+                    task.callback(result)
+            except queue.Empty:
+                continue
+```
+
+**Где использовать:**
+- `app.py:detect_lines()` — `priority=HIGH` (интерактивный запрос)
+- `app.py:batch_detect()` — `priority=NORMAL` (фоновая задача)
+
+---
+
+#### 16.5. Обновить `logic.py` для использования батчинга
+
+**Файл:** `logic.py`
+
+**Задача:** Заменить цикл на вызов `detect_lines_batch()`.
+
+**Сейчас:**
+```python
+def run_batch_detection_for_project(project_name, settings, task_id):
+    images = project_service.get_images(project_name)
+    
+    for idx, image_name in enumerate(image_names):
+        regions = ai_service.detect_lines(image_name, settings)  # ← По одной!
+        annotation_data = annotation_service.get_annotation(...)
+        annotation_data['regions'] = regions
+        annotation_service.save_annotation(...)
+        task_service.update_progress(task.id, idx + 1)
+```
+
+**Как должно быть:**
+```python
+def run_batch_detection_for_project(project_name, settings, task_id):
+    images = project_service.get_images(project_name)
+    image_paths = [img.cropped_path for img in images]
+    
+    def on_progress(processed, total):
+        task_service.update_progress(task.id, processed)
+    
+    # ← Пакетная обработка
+    results = ai_service.detect_lines_batch(
+        image_paths=image_paths,
+        settings=settings,
+        progress_callback=on_progress
+    )
+    
+    # Сохранить результаты
+    for image in images:
+        filename = image.filename
+        if filename in results:
+            annotation_data = annotation_service.get_annotation(filename, project_name)
+            annotation_data['regions'] = results[filename]
+            annotation_data['status'] = ImageStatus.SEGMENTED.value
+            annotation_service.save_annotation(filename, annotation_data, project_name)
+```
+
+---
+
+**Ожидаемые улучшения:**
+
+| Метрика | Сейчас | После |
+|---------|--------|-------|
+| 10 картинок (детекция) | ~20 сек | ~5-7 сек |
+| 100 картинок (детекция) | ~200 сек | ~30-50 сек |
+| RAM (после обработки) | Занята постоянно | Освобождается через 5 мин |
+| GPU RAM | Занята постоянно | Освобождается при простое |
+| Приоритеты | Нет | Есть (интерактив > фон) |
+
+---
+
+**Приоритет задач:**
+1. **Высокий:** Добавить `detect_lines_batch()` — 3-4x ускорение
+2. **Средний:** Добавить `unload_models()` — экономия памяти
+3. **Низкий:** Очередь задач — улучшение архитектуры
+4. **Низкий:** Перенос прогресса в AI service — рефакторинг
+
+---
+
+**Файлы для изменения:**
+- `services/ai_service.py` — основная реализация
+- `services/ai_queue.py` — новый файл (опционально)
+- `logic.py` — использование батчинга
+- `app.py` — endpoint'ы для одиночных и пакетных запросов
+- `config.py` — настройки (idle_timeout, max_workers)
+
+---
+
+**Критерии приёмки:**
+- [ ] `detect_lines_batch()` обрабатывает пакет изображений за один вызов YOLO
+- [ ] `unload_models()` освобождает GPU RAM
+- [ ] Прогресс обновляется через callback из AI service
+- [ ] Пакетная обработка 10 изображений работает в 3x быстрее
+- [ ] Модели выгружаются после 5 минут простоя
+
