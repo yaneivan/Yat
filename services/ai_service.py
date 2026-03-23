@@ -216,14 +216,19 @@ class AIService:
                     if simplification_threshold > 0:
                         from logic import simplify_points
                         points = simplify_points(points, simplification_threshold)
-                    
+
                     regions.append({'points': points})
-        
+
         # Optionally merge overlapping regions
         if merge_overlapping:
-            from logic import merge_overlapping_regions
+            from logic import merge_overlapping_regions, remove_duplicate_regions
+            
+            # First remove duplicates (small segments inside large ones)
+            regions = remove_duplicate_regions(regions, containment_threshold=0.9)
+            
+            # Then merge overlapping regions on the same line
             regions = merge_overlapping_regions(regions, overlap_threshold)
-        
+
         return regions
     
     def recognize_text_in_region(
