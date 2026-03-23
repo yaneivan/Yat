@@ -136,11 +136,51 @@ def calculate_polygon_area(points):
     return abs(area) / 2
 
 
-def calculate_overlap_ratio(points1, points2):
+def calculate_overlap_ratio(points1, points2, use_min_area=False):
     """
     Calculate the overlap ratio between two polygons.
-    Uses Jaccard similarity (intersection over union).
+    
+    Args:
+        points1, points2: Polygon points
+        use_min_area: If True, use intersection/min_area instead of IoU.
+                      This is better for detecting when a small segment 
+                      overlaps significantly with a larger one.
+    
+    Returns:
+        Overlap ratio as percentage (0-100)
     """
+    try:
+        from shapely.geometry import Polygon
+        
+        poly1 = Polygon([(p['x'], p['y']) for p in points1])
+        poly2 = Polygon([(p['x'], p['y']) for p in points2])
+        
+        if not poly1.is_valid or not poly2.is_valid:
+            pass  # Fallback to bounding box method below
+        else:
+            intersection = poly1.intersection(poly2).area
+            area1 = poly1.area
+            area2 = poly2.area
+            
+            if area1 <= 0 or area2 <= 0:
+                return 0
+            
+            if use_min_area:
+                # Use min area - better for small-inside-large detection
+                min_area = min(area1, area2)
+                if min_area > 0:
+                    return (intersection / min_area) * 100
+            else:
+                # Use IoU (Jaccard) - symmetric
+                union = poly1.union(poly2).area
+                if union > 0:
+                    return (intersection / union) * 100
+    except ImportError:
+        pass  # Fallback to bounding box method below
+    except Exception:
+        pass  # Fallback to bounding box method below
+    
+    # Fallback: bounding box approximation
     min_x1 = min(p['x'] for p in points1)
     max_x1 = max(p['x'] for p in points1)
     min_y1 = min(p['y'] for p in points1)
@@ -160,11 +200,16 @@ def calculate_overlap_ratio(points1, points2):
         intersection_area = (inter_x2 - inter_x1) * (inter_y2 - inter_y1)
         area1 = calculate_polygon_area(points1)
         area2 = calculate_polygon_area(points2)
-        union_area = area1 + area2 - intersection_area
         
-        if union_area > 0:
-            return (intersection_area / union_area) * 100
-    
+        if use_min_area:
+            min_area = min(area1, area2)
+            if min_area > 0:
+                return (intersection_area / min_area) * 100
+        else:
+            union_area = area1 + area2 - intersection_area
+            if union_area > 0:
+                return (intersection_area / union_area) * 100
+
     return 0
 
 
@@ -216,16 +261,186 @@ def convex_hull(points):
 
 
 def merge_two_polygons(points1, points2):
-    """Merge two polygons using convex hull."""
-    all_points = points1 + points2
-    hull_points = convex_hull(all_points)
-    return {'points': hull_points}
+    """
+    Merge two polygons using shapely.union for proper shape preservation.
+    Returns the unified polygon points or None if merge fails.
+    """
+    try:
+        from shapely.geometry import Polygon, MultiPolygon
+        
+        poly1 = Polygon([(p['x'], p['y']) for p in points1])
+        poly2 = Polygon([(p['x'], p['y']) for p in points2])
+        
+        if not poly1.is_valid or not poly2.is_valid:
+            return None
+        
+        # Perform union
+        result = poly1.union(poly2)
+        
+        # Handle different result types
+        if isinstance(result, Polygon):
+            # Single polygon - extract points
+            if result.is_empty:
+                return None
+            return {'points': [{'x': int(x), 'y': int(y)} for x, y in result.exterior.coords[:-1]]}
+        elif isinstance(result, MultiPolygon):
+            # Multiple polygons - return the largest one (most likely the merged one)
+            largest = max(result.geoms, key=lambda p: p.area)
+            return {'points': [{'x': int(x), 'y': int(y)} for x, y in largest.exterior.coords[:-1]]}
+        else:
+            return None
+            
+    except ImportError:
+        # Fallback to convex hull if shapely not available
+        all_points = points1 + points2
+        hull_points = convex_hull(all_points)
+        return {'points': hull_points}
+    except Exception:
+        return None
 
 
-def merge_overlapping_regions(regions, overlap_threshold=30):
+def _get_polygon_bounds(points):
+    """Get bounding box and centroid of polygon."""
+    xs = [p['x'] for p in points]
+    ys = [p['y'] for p in points]
+    return {
+        'min_x': min(xs),
+        'max_x': max(xs),
+        'min_y': min(ys),
+        'max_y': max(ys),
+        'centroid_x': sum(xs) / len(xs),
+        'centroid_y': sum(ys) / len(ys),
+        'width': max(xs) - min(xs),
+        'height': max(ys) - min(ys)
+    }
+
+
+def _should_merge_horizontally(bounds1, bounds2, height_ratio_threshold=2.0):
+    """
+    Check if two polygons should be merged based on horizontal alignment.
+    
+    Returns True if:
+    - Polygons are horizontally aligned (similar Y positions)
+    - Merging won't create an excessively tall polygon
+    
+    Returns False if:
+    - Polygons are vertically separated (different text lines)
+    - Merging would create a polygon that's too tall
+    """
+    # Check vertical separation - if centroids are far apart in Y, don't merge
+    y_centroid_diff = abs(bounds1['centroid_y'] - bounds2['centroid_y'])
+    avg_height = (bounds1['height'] + bounds2['height']) / 2
+    
+    # If vertical distance between centroids is more than average height,
+    # they're likely on different lines
+    if y_centroid_diff > avg_height * 0.7:
+        return False
+    
+    # Check if bounding boxes overlap significantly in Y dimension
+    y_overlap = max(0, min(bounds1['max_y'], bounds2['max_y']) - max(bounds1['min_y'], bounds2['min_y']))
+    min_y_overlap = min(bounds1['height'], bounds2['height']) * 0.3  # At least 30% height overlap
+    
+    if y_overlap < min_y_overlap:
+        return False
+    
+    return True
+
+
+def calculate_containment(inner, outer):
+    """
+    Calculate how much of the 'inner' polygon is contained within the 'outer' polygon.
+    Uses shapely's covered_by for accurate geometric calculation.
+    
+    Returns:
+        float: Containment ratio (0.0 to 1.0)
+        1.0 = inner is completely inside outer
+        0.0 = inner is completely outside outer
+    """
+    try:
+        from shapely.geometry import Polygon
+        
+        poly_inner = Polygon([(p['x'], p['y']) for p in inner])
+        poly_outer = Polygon([(p['x'], p['y']) for p in outer])
+        
+        if not poly_inner.is_valid or not poly_outer.is_valid:
+            return 0.0
+        
+        # Use shapely's built-in coverage check
+        if poly_inner.covered_by(poly_outer):
+            return 1.0
+        
+        # Partial containment: intersection / inner area
+        intersection = poly_inner.intersection(poly_outer).area
+        inner_area = poly_inner.area
+        
+        if inner_area <= 0:
+            return 0.0
+        
+        return intersection / inner_area
+        
+    except ImportError:
+        return 0.0
+    except Exception:
+        return 0.0
+
+
+def remove_duplicate_regions(regions, containment_threshold=0.9):
+    """
+    Remove segments that are almost completely contained within larger segments.
+    
+    This handles the case where a small segment is inside a large one -
+    instead of merging, we remove the small one as it's likely a detection duplicate.
+    
+    Args:
+        regions: List of region dicts with 'points'
+        containment_threshold: If >90% of region A is inside region B, remove A
+    
+    Returns:
+        Filtered list of regions
+    """
+    if not regions:
+        return regions
+    
+    result = []
+    
+    for i, region in enumerate(regions):
+        is_contained = False
+        region_area = calculate_polygon_area(region['points'])
+        
+        for j, other in enumerate(regions):
+            if i == j:
+                continue
+            
+            other_area = calculate_polygon_area(other['points'])
+            
+            # Only check if 'other' is significantly larger
+            if other_area <= region_area:
+                continue
+            
+            # Check how much 'region' is contained in 'other'
+            containment = calculate_containment(region['points'], other['points'])
+            
+            if containment > containment_threshold:
+                is_contained = True
+                break
+        
+        if not is_contained:
+            result.append(region)
+    
+    return result
+
+
+def merge_overlapping_regions(regions, overlap_threshold=50):
     """
     Merge overlapping regions in the list based on overlap threshold.
-    overlap_threshold: percentage of area overlap required to merge regions
+
+    Key improvements:
+    1. Uses shapely.union instead of convex hull for proper shape preservation
+    2. Prevents vertical merging of different text lines
+    3. Checks aspect ratio to avoid creating "blobs"
+    4. Uses min-area overlap (not IoU) to detect small-inside-large cases
+
+    overlap_threshold: percentage of area overlap required to merge regions (default 50%)
     """
     if not regions:
         return regions
@@ -235,19 +450,43 @@ def merge_overlapping_regions(regions, overlap_threshold=30):
 
     while unprocessed_regions:
         current_region = unprocessed_regions.pop(0)
+        current_bounds = _get_polygon_bounds(current_region['points'])
         regions_to_merge = []
-        
-        for other_region in unprocessed_regions[:]:
-            overlap_ratio = calculate_overlap_ratio(current_region['points'], other_region['points'])
-            is_spatially_close = are_regions_spatially_close(current_region['points'], other_region['points'])
 
-            if overlap_ratio >= overlap_threshold and is_spatially_close:
+        for other_region in unprocessed_regions[:]:
+            # Use min_area=True to detect small-inside-large overlaps
+            overlap_ratio = calculate_overlap_ratio(
+                current_region['points'], 
+                other_region['points'],
+                use_min_area=True
+            )
+            other_bounds = _get_polygon_bounds(other_region['points'])
+
+            # Check if regions should be merged horizontally
+            can_merge_horizontally = _should_merge_horizontally(current_bounds, other_bounds)
+
+            # Only merge if:
+            # 1. Overlap ratio is above threshold
+            # 2. Regions are horizontally aligned (same text line)
+            if overlap_ratio >= overlap_threshold and can_merge_horizontally:
                 regions_to_merge.append(other_region)
 
         final_region = current_region
         for region_to_merge in regions_to_merge:
-            final_region = merge_two_polygons(final_region['points'], region_to_merge['points'])
-            unprocessed_regions.remove(region_to_merge)
+            # Try to merge using shapely
+            merged = merge_two_polygons(final_region['points'], region_to_merge['points'])
+
+            if merged:
+                # Check if merged polygon is reasonable (not too tall)
+                merged_bounds = _get_polygon_bounds(merged['points'])
+                original_max_height = max(current_bounds['height'],
+                                         _get_polygon_bounds(region_to_merge['points'])['height'])
+
+                # If merged height is more than 2x the original, skip this merge
+                if merged_bounds['height'] <= original_max_height * 2.0:
+                    final_region = merged
+                    unprocessed_regions.remove(region_to_merge)
+                # else: don't merge - it would create a "blob"
 
         merged_regions.append(final_region)
 
