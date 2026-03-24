@@ -15,6 +15,8 @@ class TextEditor {
         this.textsHistory = []; // History of text states for undo
         this.historyIndex = -1; // Current position in history
         this.maxHistoryLength = 50; // Maximum history entries
+        this.isSaving = false; // Флаг блокировки сохранения при переключении
+        this.isSwitching = false; // Флаг блокировки переключения при сохранении
 
         // Initialize both canvases
         this.leftCanvas = new fabric.Canvas(leftCanvasId, {
@@ -393,10 +395,6 @@ class TextEditor {
         const infoSpan = document.querySelector('.file-info');
         if (infoSpan) infoSpan.textContent = this.filename;
 
-        // Clear both canvases
-        this.leftCanvas.clear();
-        this.rightCanvas.clear();
-
         // Load image on both canvases
         const timestamp = new Date().getTime();
         const imgUrl = `/data/images/${this.filename}?t=${timestamp}`;
@@ -429,6 +427,7 @@ class TextEditor {
                 this.rightCanvas.requestRenderAll();
 
                 // Load regions after both images are loaded
+                // loadRegions() handles its own cleanup
                 this.loadRegions();
             });
         };
@@ -439,6 +438,24 @@ class TextEditor {
     }
 
     async loadRegions() {
+        // === ОЧИСТКА СТАРЫХ ДАННЫХ ===
+        this.regions = [];
+        this.texts = {};
+
+        // Очищаем левый канвас от полигонов
+        const leftObjects = this.leftCanvas.getObjects('polygon');
+        this.leftCanvas.remove(...leftObjects);
+
+        // Очищаем правый канвас от ВСЕХ объектов (полигоны, текст, прямоугольники)
+        const rightObjects = this.rightCanvas.getObjects();
+        this.rightCanvas.remove(...rightObjects);
+
+        // Сбрасываем notepad mode
+        if (this.notepadMode) {
+            this.toggleNotepadMode();
+        }
+        // ===============================
+
         try {
             const data = await API.loadAnnotation(this.filename);
             let originalRegions = data.regions || [];
@@ -1512,39 +1529,70 @@ class TextEditor {
         this.autoSave();
     }
 
-    goImage(dir) {
-        if (this.autoSaveTimeout) {
-            clearTimeout(this.autoSaveTimeout);
-            this.saveData(); // Сохраняем введенный текст немедленно
+    async goImage(dir) {
+        // Если уже идёт переключение - игнорируем запрос
+        if (this.isSwitching) {
+            return;
         }
-        
-        const idx = this.imageList.indexOf(this.filename);
-        if (idx === -1) return;
-        
-        // Вычисляем новое имя файла
-        const newFilename = this.imageList[(idx + dir + this.imageList.length) % this.imageList.length];
-        
-        // 1. Обновляем переменную класса
-        this.filename = newFilename;
-        
-        // 2. Обновляем текст в тулбаре (визуально)
-        const display = document.getElementById('filename-display');
-        if (display) display.textContent = newFilename;
 
-        // 3. Формируем URL, сохраняя параметр project, если он есть
-        let newUrl = `${window.location.pathname}?image=${newFilename}`;
-        if (this.project) {
-            newUrl += `&project=${this.project}`;
+        // Проверяем, открыта ли модалка - если да, сохраняем текст и закрываем
+        const modal = document.getElementById('text-modal');
+        if (modal && modal.style.display === 'flex') {
+            this.saveCurrentText();  // Сохраняем текст из модалки в this.texts
+            this.closeModal();
         }
-        
-        // 4. Обновляем адресную строку без перезагрузки
-        history.pushState({ filename: newFilename }, '', newUrl);
-        
-        // 5. Загружаем новые данные
-        this.loadImageAndData();
+
+        this.isSwitching = true;
+
+        try {
+            if (this.autoSaveTimeout) {
+                clearTimeout(this.autoSaveTimeout);
+                await this.saveData(); // Сохраняем введенный текст немедленно и ЖДЁМ завершения
+            }
+
+            const idx = this.imageList.indexOf(this.filename);
+            if (idx === -1) return;
+
+            // Вычисляем новое имя файла
+            const newFilename = this.imageList[(idx + dir + this.imageList.length) % this.imageList.length];
+
+            // 1. Обновляем переменную класса
+            this.filename = newFilename;
+
+            // 2. Обновляем текст в тулбаре (визуально)
+            const display = document.getElementById('filename-display');
+            if (display) display.textContent = newFilename;
+
+            // 3. Формируем URL, сохраняя параметр project, если он есть
+            let newUrl = `${window.location.pathname}?image=${newFilename}`;
+            if (this.project) {
+                newUrl += `&project=${this.project}`;
+            }
+
+            // 4. Обновляем адресную строку без перезагрузки
+            history.pushState({ filename: newFilename }, '', newUrl);
+
+            // 5. Очищаем старые данные перед загрузкой новых
+            this.regions = [];
+            this.texts = {};
+            this.textsHistory = [];
+            this.historyIndex = -1;
+            this.notepadFocusedIndex = -1;
+
+            // 6. Загружаем новые данные
+            this.loadImageAndData();
+        } finally {
+            this.isSwitching = false;
+        }
     }
 
     async saveData() {
+        // Если уже идёт сохранение или переключение - пропускаем
+        if (this.isSaving || this.isSwitching) {
+            return;
+        }
+
+        this.isSaving = true;
         const saveStatusEl = document.getElementById('save-status');
         if (saveStatusEl) saveStatusEl.textContent = 'Сохранение...';
 
@@ -1589,6 +1637,8 @@ class TextEditor {
         } catch (error) {
             console.error('Save error:', error);
             if (saveStatusEl) saveStatusEl.textContent = 'Ошибка сохранения';
+        } finally {
+            this.isSaving = false;
         }
     }
 
@@ -1605,8 +1655,15 @@ class TextEditor {
     }
 
     async recognizeText() {
-        const recognitionStatusEl = document.getElementById('recognition-status');
-        if (recognitionStatusEl) recognitionStatusEl.textContent = 'Распознавание... (0%)';
+        const btn = document.getElementById('btn-recognize');
+        if (!btn) return;
+
+        // Сохраняем оригинальный текст кнопки
+        const originalText = btn.textContent;
+        
+        // Блокируем кнопку и показываем прогресс
+        btn.disabled = true;
+        btn.textContent = 'Распознавание... (0%)';
 
         try {
             // Get the original unsorted regions to send to the backend
@@ -1626,18 +1683,20 @@ class TextEditor {
 
             if (data.status === 'success') {
                 // Poll for completion with progress updates
-                this.pollForRecognitionResults(recognitionStatusEl);
+                this.pollForRecognitionResults(btn, originalText);
             } else {
                 console.error('Recognition error:', data.msg);
-                if (recognitionStatusEl) recognitionStatusEl.textContent = 'Ошибка распознавания';
+                btn.disabled = false;
+                btn.textContent = originalText;
             }
         } catch (error) {
             console.error('Recognition API error:', error);
-            if (recognitionStatusEl) recognitionStatusEl.textContent = 'Ошибка распознавания';
+            btn.disabled = false;
+            btn.textContent = originalText;
         }
     }
 
-    pollForRecognitionResults(recognitionStatusEl) {
+    pollForRecognitionResults(btn, originalText) {
         // Check recognition progress using the new endpoint
         const checkStatus = async () => {
             try {
@@ -1646,8 +1705,8 @@ class TextEditor {
 
                 if (progress.status === 'completed') {
                     // Recognition complete, update UI
-                    if (recognitionStatusEl) recognitionStatusEl.textContent = 'Распознано (100%)';
-
+                    btn.textContent = '✓ Распознано';
+                    
                     // Update the local texts data
                     const data = await API.loadAnnotation(this.filename);
                     // Load the text data with the original regions to map correctly to sorted order
@@ -1657,9 +1716,15 @@ class TextEditor {
 
                     // Auto-save after recognition is complete
                     this.autoSave();
+                    
+                    // Разблокируем кнопку через 2 секунды
+                    setTimeout(() => {
+                        btn.disabled = false;
+                        btn.textContent = originalText;
+                    }, 2000);
                 } else {
                     // Update progress indicator
-                    if (recognitionStatusEl) recognitionStatusEl.textContent = `Распознавание... (${progress.percentage}%)`;
+                    btn.textContent = `Распознавание... (${progress.percentage}%)`;
 
                     // Continue polling
                     setTimeout(checkStatus, 1000); // Check every second

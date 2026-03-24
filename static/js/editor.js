@@ -86,24 +86,26 @@ class HistoryManager {
 class HTREditor {
     constructor(canvasId, filename, project = null, snapDist = 15) {
         this.filename = filename;
-        this.project = project; 
+        this.project = project;
         this.snapDist = snapDist;
         this.canvas = new fabric.Canvas(canvasId, {
-            fireRightClick: true, 
-            stopContextMenu: true, 
+            fireRightClick: true,
+            stopContextMenu: true,
             preserveObjectStacking: true,
-            uniformScaling: false, 
-            selection: true, 
+            uniformScaling: false,
+            selection: true,
             backgroundColor: "#151515"
         });
-        
-        this.currentMode = null; 
+
+        this.currentMode = null;
         this.drawPoints = [];
         this.activeLine = null;
         this.editPointsMode = false;
         this.imageList = [];
         this.autoSaveTimer = null;
-        this.savedState = null; 
+        this.savedState = null;
+        this.isSaving = false;      // Флаг блокировки сохранения
+        this.isSwitching = false;   // Флаг блокировки переключения
 
         this.history = new HistoryManager(this.canvas, () => {
             this.restoreSelectionState();
@@ -222,35 +224,46 @@ class HTREditor {
         });
     }
 
-    goImage(dir) {
-        if (this.autoSaveTimer) {
-            clearTimeout(this.autoSaveTimer);
-            this.saveData(); // Сохраняем текущие правки немедленно
+    async goImage(dir) {
+        // Если уже идёт переключение - игнорируем
+        if (this.isSwitching) {
+            return;
         }
 
-        const idx = this.imageList.indexOf(this.filename);
-        if (idx === -1) return;
-        
-        const newFilename = this.imageList[(idx + dir + this.imageList.length) % this.imageList.length];
-        
-        // 1. Обновляем имя в классе
-        this.filename = newFilename;
-        
-        // 2. Обновляем визуальный заголовок по ID
-        const display = document.getElementById('filename-display');
-        if (display) display.textContent = newFilename;
+        this.isSwitching = true;
 
-        // 3. Формируем новый URL с учетом проекта
-        let newUrl = `${window.location.pathname}?image=${newFilename}`;
-        if (this.project) {
-            newUrl += `&project=${this.project}`;
+        try {
+            if (this.autoSaveTimer) {
+                clearTimeout(this.autoSaveTimer);
+                await this.saveData(); // Сохраняем и ЖДЁМ завершения
+            }
+
+            const idx = this.imageList.indexOf(this.filename);
+            if (idx === -1) return;
+
+            const newFilename = this.imageList[(idx + dir + this.imageList.length) % this.imageList.length];
+
+            // 1. Обновляем имя в классе
+            this.filename = newFilename;
+
+            // 2. Обновляем визуальный заголовок по ID
+            const display = document.getElementById('filename-display');
+            if (display) display.textContent = newFilename;
+
+            // 3. Формируем новый URL с учетом проекта
+            let newUrl = `${window.location.pathname}?image=${newFilename}`;
+            if (this.project) {
+                newUrl += `&project=${this.project}`;
+            }
+
+            // 4. Пишем в историю браузера
+            history.pushState({ filename: newFilename }, '', newUrl);
+
+            // 5. Грузим данные
+            this.loadImageAndData();
+        } finally {
+            this.isSwitching = false;
         }
-        
-        // 4. Пишем в историю браузера
-        history.pushState({ filename: newFilename }, '', newUrl);
-        
-        // 5. Грузим данные
-        this.loadImageAndData();
     }
 
     captureSelectionState() {
@@ -628,6 +641,12 @@ class HTREditor {
     }
 
     async saveData() {
+        // Если уже идёт сохранение или переключение - пропускаем
+        if (this.isSaving || this.isSwitching) {
+            return;
+        }
+
+        this.isSaving = true;
         const regions = [];
         this.canvas.getObjects().forEach(obj => {
             if (obj.type === 'polygon' && !obj.class) {
@@ -646,6 +665,8 @@ class HTREditor {
             if(el) el.textContent = 'Сохранено';
         } catch(e) {
             console.error(e);
+        } finally {
+            this.isSaving = false;
         }
     }
 
