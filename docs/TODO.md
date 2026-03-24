@@ -792,7 +792,221 @@ if ai_service.is_trocr_available():
 
 ---
 
-## 📋 НОВЫЕ ЗАДАЧИ (добавлено 2026-03-23)
+## 📋 НОВЫЕ ЗАДАЧИ (добавлено 2026-03-24)
+
+### 17. Вынос CSS из HTML в единый файл
+
+**Статус:** ❌ Не исправлено
+**Приоритет:** 🟠 СРЕДНЕ
+**Время на фикс:** 2 часа
+
+**Описание:**
+Сейчас CSS дублируется в 4 местах, что создаёт проблемы поддержки и вызывает FOUC (Flash of Unstyled Content).
+
+**Проблема:**
+
+| Файл | Inline CSS | Строк |
+|------|------------|-------|
+| `static/css/style.css` | ✅ Основной файл | 572 |
+| `templates/index.html` | ❌ `<style>` в head | ~200 |
+| `templates/text_editor.html` | ❌ `<style>` в head | ~250 |
+| `templates/cropper.html` | ❌ `<style>` в head | ~100 |
+| `templates/editor.html` | ❌ `<style>` в head | ~150 |
+
+**Последствия:**
+1. **Дублирование кода** — при изменении стиля нужно править 5 файлов
+2. **FOUC** — браузер показывает нестилизованную страницу до загрузки inline стилей
+3. **Кэш не работает** — CSS в HTML не кэшируется отдельно
+4. **Увеличенный размер** — одни и те же стили загружаются 5 раз
+
+**Решение:**
+
+**Шаг 1: Создать структуру**
+```
+static/css/
+├── style.css           # Основные стили (уже есть)
+├── editors.css         # Стили редакторов (новый)
+└── dashboard.css       # Стили dashboard (новый)
+```
+
+**Шаг 2: Вынести стили из HTML**
+
+```html
+<!-- Было: templates/text_editor.html -->
+<head>
+    <style>
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; ... }
+        #toolbar { height: 50px; background: #333; ... }
+        /* 250 строк стилей */
+    </style>
+</head>
+
+<!-- Стало: templates/text_editor.html -->
+<head>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/editors.css">
+</head>
+```
+
+**Шаг 3: Обновить все шаблоны**
+
+| Шаблон | Куда вынести |
+|--------|--------------|
+| `index.html` | `dashboard.css` |
+| `editor.html` | `editors.css` |
+| `text_editor.html` | `editors.css` |
+| `cropper.html` | `editors.css` |
+| `project.html` | `dashboard.css` |
+| `login.html` | `auth.css` (опционально) |
+
+**Шаг 4: Удалить дубликаты**
+
+После выноса удалить повторяющиеся стили:
+- `body` — оставить только в `style.css`
+- `.btn` — оставить только в `style.css`
+- `#toolbar` — объединить из 3 файлов
+
+**Файлы для изменения:**
+- `static/css/editors.css` (создать)
+- `static/css/dashboard.css` (создать)
+- `templates/*.html` (удалить `<style>`, добавить `<link>`)
+
+**Критерии приёмки:**
+- [ ] Нет inline `<style>` в HTML (кроме критических)
+- [ ] Все стили в отдельных `.css` файлах
+- [ ] Нет дублирования стилей
+- [ ] FOUC исчез
+- [ ] Размер HTML уменьшился на ~700 строк
+
+**Ветка:** `feature/extract-css`
+
+---
+
+### 18. Фронтенд: рефакторинг и улучшение архитектуры
+
+**Статус:** ❌ Не исправлено
+**Приоритет:** 🟠 СРЕДНЕ
+**Время на фикс:** 8 часов
+
+**Описание:**
+Провести полный рефакторинг фронтенда для улучшения архитектуры, производительности и поддерживаемости.
+
+**Найденные проблемы (аудит от 2026-03-24):**
+
+#### 18.1. Console.log в production (13 штук)
+
+**Файлы:**
+- `static/js/text_editor.js` (6 штук)
+- `static/js/editor.js` (2 штуки)
+- `static/js/project_manager.js` (5 штук)
+
+**Решение:**
+```javascript
+// Заменить на debug-утилиту
+const DEBUG = false;
+const log = DEBUG ? console.log : () => {};
+log('Debug message');
+```
+
+#### 18.2. Отсутствие обработки ошибок в api.js
+
+**Проблема:**
+```javascript
+async listImages() {
+    const res = await fetch('/api/images_list');
+    return res.json();  // ❌ Нет проверки res.ok
+}
+```
+
+**Решение:**
+```javascript
+async listImages() {
+    const res = await fetch('/api/images_list');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+}
+```
+
+#### 18.3. Магические числа
+
+**Проблема:**
+```javascript
+this.snapDist = 15;           // Почему 15?
+this.maxHistory = 50;         // Почему 50?
+setTimeout(checkStatus, 1000); // Почему 1000ms?
+```
+
+**Решение:**
+```javascript
+const CONFIG = {
+    SNAP_DISTANCE: 15,
+    MAX_HISTORY: 50,
+    POLL_INTERVAL: 1000,
+    FONT_SIZE: { MIN: 12, MAX: 60 }
+};
+```
+
+#### 18.4. Нет debounce/throttle
+
+**Проблема:**
+```javascript
+searchInput.addEventListener('input', () => {
+    this.renderProjects();  // ← Перерисовка при каждом нажатии
+});
+```
+
+**Решение:**
+```javascript
+const debouncedRender = debounce(() => this.renderProjects(), 300);
+searchInput.addEventListener('input', debouncedRender);
+```
+
+#### 18.5. Нет индикаторов загрузки
+
+**Проблема:** Пользователь не видит что данные грузятся.
+
+**Решение:**
+```javascript
+async loadProjects() {
+    this.showLoading(true);
+    try {
+        this.projects = await ProjectAPI.getProjects();
+    } finally {
+        this.showLoading(false);
+    }
+}
+```
+
+#### 18.6. Дублирование: editor.js ↔ text_editor.js
+
+**Оба файла имеют:**
+- `HistoryManager` (одинаковый код)
+- `goImage()` (похожая логика)
+- `saveData()` (разная реализация)
+- Обработка canvas событий
+
+**Решение:** Создать базовый класс `BaseEditor`.
+
+**Файлы для изменения:**
+- `static/js/api.js` (обработка ошибок)
+- `static/js/core/` (создать: base_editor.js, config.js, utils.js)
+- `static/js/editor.js` (рефакторинг)
+- `static/js/text_editor.js` (рефакторинг)
+- `static/js/project_manager.js` (debounce, индикаторы)
+- Все JS файлы (удалить console.log)
+
+**Ветка:** `feature/frontend-refactor`
+
+---
+
+## 📋 ЗАДАЧИ В РАБОТЕ
+
+### 17. Вынос CSS из HTML в единый файл
+
+**Статус:** 🟡 В ПРОЦЕССЕ
+**Ветка:** `feature/extract-css`
+
+---
 
 ### 16. Улучшение AI Service: батчинг, очередь, выгрузка моделей
 
