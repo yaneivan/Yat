@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
 </head>
-<body>
+<body class="editor">
     <div id="toolbar">
         <button class="btn" onclick="window.location.href='/'" title="Home">🏠</button>
         {% if project %}
@@ -32,7 +32,7 @@
         <span id="status-badge" class="status-badge" onclick="statusWidget.openPopover()" style="cursor:pointer; padding:4px 8px; border-radius:4px; font-size:0.85em; font-weight:600;">Загрузка...</span>
     </div>
 
-    <div id="workspace">
+    <div id="workspace" class="text-editor">
         <div class="panel left">
             <div class="panel-title">Оригинальное изображение</div>
             <div class="canvas-container">
@@ -86,7 +86,7 @@
     </div>
 
     <!-- Status popover -->
-    <div id="status-popover" class="status-popover">
+    <div id="status-popover" class="status-popover dark">
         <h4>Статус:</h4>
         <label class="status-option">
             <input type="radio" name="status" value="uploaded">

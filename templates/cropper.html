@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
 </head>
-<body>
+<body class="editor">
 
 <div id="toolbar">
     <button class="btn" onclick="window.location.href='/'" title="Home">🏠</button>
@@ -15,10 +15,10 @@
         <button class="btn" onclick="window.location.href='/project/{{ project }}'" title="Назад к проекту">📋 Проект</button>
         <div class="sep"></div>
         <button class="btn" onclick="window.location.href='/editor?image={{ filename }}&project={{ project }}'" title="Редактор сегментов">📋 Сегменты</button>
-        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}&project={{ project }}'" title="Редактор распознавания">🔤 Распознавать</button>
+        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}&project={{ project }}'" title="Редактор распознавания">🔤 Распознать</button>
     {% else %}
         <button class="btn" onclick="window.location.href='/editor?image={{ filename }}'" title="Редактор сегментов">📋 Сегменты</button>
-        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}'" title="Редактор распознавания">🔤 Распознавать</button>
+        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}'" title="Редактор распознавания">🔤 Распознать</button>
     {% endif %}
     <div class="sep"></div>
     <button class="btn" onclick="goImage(-1)">&lt;</button>
@@ -38,7 +38,7 @@
 </div>
 
 <!-- Status popover -->
-<div id="status-popover" class="status-popover">
+<div id="status-popover" class="status-popover dark">
     <h4>Статус:</h4>
     <label class="status-option">
         <input type="radio" name="status" value="uploaded">
@@ -274,7 +274,7 @@
 
     canvas.on('mouse:wheel', (opt) => {
         let zoom = canvas.getZoom();
-        zoom *= 0.999 ** opt.e.deltaY;
+        zoom *= 0.995 ** opt.e.deltaY;
         if (zoom > 20) zoom = 20;
         if (zoom < 0.01) zoom = 0.01;
         canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);

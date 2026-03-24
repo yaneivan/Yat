@@ -19,8 +19,8 @@
             <div class="nav-actions">
                 {% if is_admin %}
                 <a href="#" onclick="openImportModal()">Импорт</a>
+                <a href="#" onclick="openExportModal()">Экспорт</a>
                 {% endif %}
-                <a href="#" onclick="openExportModal()" style="margin-left: 10px;">Экспорт</a>
             </div>
         </div>
     </div>
@@ -66,22 +66,26 @@
             <div class="image-card">
                 <img src="/data/images/{{ image.filename }}" class="image-thumb" alt="{{ image.filename }}">
                 <div class="image-meta">
-                    <div class="image-name" title="{{ image.filename }}">{{ image.filename }}</div>
-                    <div class="image-status status-{{ image.status }} status-badge"
-                         data-filename="{{ image.filename }}"
-                         data-status="{{ image.status }}"
-                         data-comment="{{ image.comment }}"
-                         onclick="toggleStatusPopover(this)">
-                        {{ 'Проверено' if image.status == 'reviewed' else 'Текст распознан' if image.status == 'recognized' else 'Полигоны готовы' if image.status == 'segmented' else 'Обрезано' if image.status == 'cropped' else 'Загружено' }}
+                    <div class="image-info">
+                        <div class="image-title-row">
+                            {% if is_admin %}
+                            <input type="checkbox" class="select-checkbox" data-image="{{ image.filename }}">
+                            {% endif %}
+                            <span class="image-name" title="{{ image.filename }}">{{ image.filename }}</span>
+                            <div class="image-status status-{{ image.status }} status-badge"
+                                 data-filename="{{ image.filename }}"
+                                 data-status="{{ image.status }}"
+                                 data-comment="{{ image.comment }}"
+                                 onclick="toggleStatusPopover(this)">
+                                {{ 'Проверено' if image.status == 'reviewed' else 'Текст распознан' if image.status == 'recognized' else 'Полигоны готовы' if image.status == 'segmented' else 'Обрезано' if image.status == 'cropped' else 'Загружено' }}
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="image-actions">
-                    {% if is_admin %}
-                    <input type="checkbox" class="select-checkbox" data-image="{{ image.filename }}">
-                    {% endif %}
                     <a href="/cropper?project={{ project.name }}&image={{ image.filename }}" class="btn image-action-btn">Обрезка</a>
                     <a href="/editor?project={{ project.name }}&image={{ image.filename }}" class="btn image-action-btn">Сегменты</a>
-                    <a href="/text_editor?project={{ project.name }}&image={{ image.filename }}" class="btn image-action-btn">Распознавать</a>
+                    <a href="/text_editor?project={{ project.name }}&image={{ image.filename }}" class="btn image-action-btn">Распознать</a>
                 </div>
             </div>
             {% endfor %}

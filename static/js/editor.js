@@ -507,7 +507,7 @@ class HTREditor {
 
         this.canvas.on('mouse:wheel', (opt) => {
             let zoom = this.canvas.getZoom();
-            zoom *= 0.999 ** opt.e.deltaY;
+            zoom *= 0.995 ** opt.e.deltaY;
             if (zoom > 20) zoom = 20;
             if (zoom < 0.01) zoom = 0.01;
             this.canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
@@ -756,12 +756,10 @@ class HTREditor {
                         </label>
                     </div>
 
-                    <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 20px;">
-                        <button id="detect-with-settings" class="btn">Сохранить и переразметить</button>
-                        <div>
-                            <button id="cancel-settings" class="btn">Отмена</button>
-                            <button id="save-settings" class="btn">Сохранить</button>
-                        </div>
+                    <div style="display: flex; gap: 10px; margin-top: 20px;">
+                        <button id="detect-with-settings" class="btn btn-primary">Сохранить и переразметить</button>
+                        <button id="save-settings" class="btn">Сохранить</button>
+                        <button id="cancel-settings" class="btn">Отмена</button>
                     </div>
                 </div>
             </div>
