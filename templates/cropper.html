@@ -6,95 +6,8 @@
     <title>Редактор обрезки</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
-    <style>
-        body { margin: 0; background: #222; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-        #toolbar { background: #333; height: 50px; display: flex; align-items: center; padding: 0 15px; border-bottom: 1px solid #444; color: #ccc; gap: 10px; }
-        #workspace { flex: 1; position: relative; background: #111; }
-        
-        /* Status widget styles */
-        .status-badge { cursor: pointer; transition: opacity 0.2s; border: 2px solid transparent; }
-        .status-badge:hover { opacity: 0.8; border-color: #212529; }
-        .status-uploaded { background: #ffc107; color: #212529; font-weight: 600; }
-        .status-cropped { background: #fd7e14; color: white; }
-        .status-segmented { background: #28a745; color: white; }
-        .status-recognized { background: #17a2b8; color: white; }
-        .status-reviewed { background: #6f42c1; color: white; }
-        
-        .status-popover {
-            display: none;
-            position: fixed;
-            background: #2a2a2a;
-            border: 1px solid #444;
-            border-radius: 8px;
-            padding: 15px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-            z-index: 100000;
-            width: 250px;
-            color: #ddd;
-        }
-        .status-popover.show { display: block; }
-        .status-popover h4 { margin: 0 0 10px 0; font-size: 0.9em; color: #fff; }
-        .status-option {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 5px;
-            cursor: pointer;
-            border-radius: 4px;
-            color: #ddd;
-        }
-        .status-option:hover { background: #3a3a3a; }
-        .status-option input[type="radio"] { margin: 0; }
-        .status-popover textarea {
-            width: 100%;
-            min-height: 60px;
-            margin-top: 10px;
-            padding: 8px;
-            border: 1px solid #444;
-            border-radius: 4px;
-            font-family: inherit;
-            font-size: 0.85em;
-            resize: vertical;
-            box-sizing: border-box;
-            background: #333;
-            color: #ddd;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-        .status-popover button {
-            width: 100%;
-            margin-top: 10px;
-            padding: 8px;
-            background: #007bff;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.9em;
-        }
-        .status-popover button:hover { background: #0056b3; }
-        
-        /* Notification styles */
-        .notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 12px 20px;
-            border-radius: 4px;
-            color: white;
-            z-index: 100001;
-            animation: slideIn 0.3s ease;
-        }
-        .notification.success { background: #28a745; }
-        .notification.error { background: #dc3545; }
-        
-        @keyframes slideIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
-    </style>
 </head>
-<body>
+<body class="editor">
 
 <div id="toolbar">
     <button class="btn" onclick="window.location.href='/'" title="Home">🏠</button>
@@ -102,10 +15,10 @@
         <button class="btn" onclick="window.location.href='/project/{{ project }}'" title="Назад к проекту">📋 Проект</button>
         <div class="sep"></div>
         <button class="btn" onclick="window.location.href='/editor?image={{ filename }}&project={{ project }}'" title="Редактор сегментов">📋 Сегменты</button>
-        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}&project={{ project }}'" title="Редактор распознавания">🔤 Распознавать</button>
+        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}&project={{ project }}'" title="Редактор распознавания">🔤 Распознать</button>
     {% else %}
         <button class="btn" onclick="window.location.href='/editor?image={{ filename }}'" title="Редактор сегментов">📋 Сегменты</button>
-        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}'" title="Редактор распознавания">🔤 Распознавать</button>
+        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}'" title="Редактор распознавания">🔤 Распознать</button>
     {% endif %}
     <div class="sep"></div>
     <button class="btn" onclick="goImage(-1)">&lt;</button>
@@ -125,7 +38,7 @@
 </div>
 
 <!-- Status popover -->
-<div id="status-popover" class="status-popover">
+<div id="status-popover" class="status-popover dark">
     <h4>Статус:</h4>
     <label class="status-option">
         <input type="radio" name="status" value="uploaded">
@@ -361,7 +274,7 @@
 
     canvas.on('mouse:wheel', (opt) => {
         let zoom = canvas.getZoom();
-        zoom *= 0.999 ** opt.e.deltaY;
+        zoom *= 0.995 ** opt.e.deltaY;
         if (zoom > 20) zoom = 20;
         if (zoom < 0.01) zoom = 0.01;
         canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);

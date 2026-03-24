@@ -1066,7 +1066,7 @@ class TextEditor {
 
             const delta = e.deltaY;
             const zoom = this.leftCanvas.getZoom();
-            const zoomFactor = delta > 0 ? 0.9 : 1.1; // Zoom out or in
+            const zoomFactor = delta > 0 ? 0.95 : 1.05; // Zoom out or in
             const newZoom = zoom * zoomFactor;
 
             // Limit zoom range
@@ -1151,7 +1151,7 @@ class TextEditor {
 
             const delta = e.deltaY;
             const zoom = this.rightCanvas.getZoom();
-            const zoomFactor = delta > 0 ? 0.9 : 1.1; // Zoom out or in
+            const zoomFactor = delta > 0 ? 0.95 : 1.05; // Zoom out or in
             const newZoom = zoom * zoomFactor;
 
             // Limit zoom range
