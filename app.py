@@ -309,21 +309,32 @@ def crop():
 def import_zip_route():
     # Admin only: import ZIP
     if USE_AUTH and not is_admin():
+        logger.warning(f"[ZIP Import] Access denied: user={get_current_user() if USE_AUTH else 'anonymous'}")
         return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
-    
+
     try:
+        logger.info("[ZIP Import] Request received")
+        logger.debug(f"[ZIP Import] Form keys: {list(request.form.keys())}")
+        logger.debug(f"[ZIP Import] Files keys: {list(request.files.keys())}")
+        
         simp = int(request.form.get('simplify', 0))
         project_name = request.form.get('project_name', None)
+        logger.info(f"[ZIP Import] simplify={simp}, project_name={project_name}")
 
         if 'file' not in request.files:
+            logger.error(f"[ZIP Import] No file in request. Available files: {list(request.files.keys())}")
             return jsonify({'status': 'error', 'msg': 'No file in request'}), 400
 
         uploaded_file = request.files['file']
         if uploaded_file.filename == '':
+            logger.error("[ZIP Import] No file selected")
             return jsonify({'status': 'error', 'msg': 'No file selected'}), 400
+
+        logger.info(f"[ZIP Import] File: {uploaded_file.filename}, size: {uploaded_file.content_length}")
 
         # Use logic function for import (keeps existing ZIP processing)
         count, final_project_name = logic.process_zip_import(uploaded_file, simp, project_name)
+        logger.info(f"[ZIP Import] Success: {count} images imported to '{final_project_name}'")
         return jsonify({
             'status': 'success',
             'count': count,
@@ -331,7 +342,7 @@ def import_zip_route():
         })
 
     except Exception as e:
-        logger.error(f"Import error: {e}", exc_info=True)
+        logger.error(f"[ZIP Import] Error: {e}", exc_info=True)
         return jsonify({'status': 'error', 'msg': str(e)}), 500
 
 # --- API: AI Operations ---

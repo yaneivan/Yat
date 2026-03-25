@@ -548,52 +548,74 @@ def process_zip_import(file, simplify_val=0, project_name=None):
     from services.project_service import project_service
     from services.annotation_service import annotation_service
 
+    logger.info(f"[ZIP Import] Started import: file={file.filename}, project={project_name}, simplify={simplify_val}")
+
     if project_name is None:
         original_filename = file.filename
         project_name = os.path.splitext(original_filename)[0] + "_" + str(uuid.uuid4())[:8]
+        logger.info(f"[ZIP Import] Creating new project: {project_name}")
         result = project_service.create_project(project_name)
 
         if not result:
+            logger.error(f"[ZIP Import] Failed to create project: {project_name}")
             raise Exception(f"Failed to create project: {project_name}")
+        logger.info(f"[ZIP Import] Project created: {project_name}")
+    else:
+        logger.info(f"[ZIP Import] Using existing project: {project_name}")
 
     zip_path = os.path.join(storage.TEMP_FOLDER, 'import.zip')
+    logger.info(f"[ZIP Import] Saving ZIP to: {zip_path}")
     file.save(zip_path)
 
     extract_path = os.path.join(storage.TEMP_FOLDER, 'ext')
     if os.path.exists(extract_path):
         shutil.rmtree(extract_path)
     os.makedirs(extract_path)
+    logger.info(f"[ZIP Import] Extract path: {extract_path}")
 
     count = 0
 
     try:
+        logger.info("[ZIP Import] Opening ZIP archive...")
         with zipfile.ZipFile(zip_path, 'r') as z:
             # Zip Slip vulnerability fix: validate all paths before extraction
             for member in z.namelist():
                 member_path = os.path.join(extract_path, member)
                 # Check that the extracted file will be within extract_path
                 if not os.path.abspath(member_path).startswith(os.path.abspath(extract_path)):
+                    logger.error(f"[ZIP Import] Zip Slip detected: {member}")
                     raise Exception(f"Zip Slip detected: {member}")
-            
-            z.extractall(extract_path)
 
+            logger.info("[ZIP Import] Extracting files...")
+            z.extractall(extract_path)
+            logger.info("[ZIP Import] Extraction complete")
+
+        logger.info("[ZIP Import] Walking through extracted files...")
         for root, _, files in os.walk(extract_path):
             for f in files:
                 if f.lower().endswith(tuple(storage.ALLOWED_EXTENSIONS)):
+                    logger.info(f"[ZIP Import] Processing image: {f}")
                     src = os.path.join(root, f)
                     dest_path = os.path.join(storage.IMAGE_FOLDER, f)
                     shutil.move(src, dest_path)
+                    logger.info(f"[ZIP Import] Moved image to: {dest_path}")
 
                     # Copy to originals folder
                     original_dest = os.path.join(storage.ORIGINALS_FOLDER, f)
                     shutil.copy(dest_path, original_dest)
+                    logger.info(f"[ZIP Import] Copied to originals: {original_dest}")
 
                     xml_cands = [os.path.splitext(src)[0]+'.xml', src+'.xml']
+                    xml_found = False
                     for xc in xml_cands:
                         if os.path.exists(xc):
+                            xml_found = True
+                            logger.info(f"[ZIP Import] Found XML: {xc}")
                             regs, texts = parse_page_xml(xc, simplify_val)
+                            logger.info(f"[ZIP Import] Parsed XML: {len(regs)} regions, {len(texts)} texts")
 
                             # Сначала добавляем изображение в проект (создаётся в БД)
+                            logger.info(f"[ZIP Import] Adding image to project: {f}")
                             project_service.add_image(
                                 project_name=project_name,
                                 filename=f,
@@ -604,6 +626,7 @@ def process_zip_import(file, simplify_val=0, project_name=None):
                             )
 
                             # Потом сохраняем аннотацию (теперь image есть в БД)
+                            logger.info(f"[ZIP Import] Saving annotation for: {f}")
                             annotation_data = {
                                 'image_name': f,
                                 'regions': regs,
@@ -611,14 +634,23 @@ def process_zip_import(file, simplify_val=0, project_name=None):
                                 'status': ImageStatus.SEGMENTED.value
                             }
                             annotation_service.save_annotation(f, annotation_data, project_name)
+                            logger.info(f"[ZIP Import] Annotation saved for: {f}")
                             break
+                    
+                    if not xml_found:
+                        logger.warning(f"[ZIP Import] No XML found for image: {f}")
+                    
                     count += 1
+                    logger.info(f"[ZIP Import] Progress: {count} images processed")
     finally:
         if os.path.exists(zip_path):
             os.remove(zip_path)
+            logger.info(f"[ZIP Import] Cleaned up ZIP file: {zip_path}")
         if os.path.exists(extract_path):
             shutil.rmtree(extract_path)
+            logger.info(f"[ZIP Import] Cleaned up extract path: {extract_path}")
 
+    logger.info(f"[ZIP Import] Complete: {count} images imported to project '{project_name}'")
     return count, project_name
 
 

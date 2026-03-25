@@ -535,11 +535,18 @@
         }
 
         async function submitZipImport() {
+            console.log('[ZIP Import] Starting import...');
             const fileInput = document.getElementById('zipFile');
             const simplifyInput = document.getElementById('simplifyInput');
-            const submitButton = document.querySelector('#importModal .btn-primary'); // Кнопка "Импортировать" в модальном окне
+            const submitButton = document.querySelector('#importModal .btn-primary');
 
-            if (!fileInput.files[0]) {
+            console.log('[ZIP Import] fileInput:', fileInput);
+            console.log('[ZIP Import] simplifyInput:', simplifyInput);
+            console.log('[ZIP Import] fileInput.files:', fileInput?.files);
+            console.log('[ZIP Import] fileInput.files[0]:', fileInput?.files?.[0]);
+
+            if (!fileInput || !fileInput.files[0]) {
+                console.error('[ZIP Import] No file selected');
                 showNotification('Пожалуйста, выберите ZIP файл', 'error');
                 return;
             }
@@ -550,38 +557,44 @@
             submitButton.textContent = 'Импортируется...';
 
             const formData = new FormData();
-            formData.append('file', fileInput.files[0]);  // Изменено с 'zip_file' на 'file' для соответствия серверному коду
+            formData.append('file', fileInput.files[0]);
             formData.append('simplify', simplifyInput.value);
+
+            console.log('[ZIP Import] FormData entries:');
+            for (let [key, value] of formData.entries()) {
+                console.log('  ', key, ':', value);
+            }
 
             // Добавляем имя текущего проекта, чтобы импортировать в существующий проект
             const currentProjectName = "{{ project.name }}";
             formData.append('project_name', currentProjectName);
 
             try {
+                console.log('[ZIP Import] Sending request...');
                 const response = await fetch('/api/import_zip', {
                     method: 'POST',
                     headers: {
                         'X-CSRFToken': API.getCsrfToken()
-                        // Content-Type не указываем — браузер сам поставит multipart/form-data с boundary
+                        // Content-Type не указываем — браузер сам поставит multipart/form-data
                     },
                     body: formData
                 });
 
+                console.log('[ZIP Import] Response status:', response.status);
                 const result = await response.json();
+                console.log('[ZIP Import] Response data:', result);
 
                 if (result.status === 'success') {
                     showNotification(`Изображения успешно добавлены в проект (${result.count} файлов)`, 'success');
                     closeImportModal();
-                    // Reload the page to show new images in the project
                     location.reload();
                 } else {
                     showNotification('Ошибка: ' + result.msg, 'error');
                 }
             } catch (error) {
-                console.error('Error importing project:', error);
+                console.error('[ZIP Import] Error:', error);
                 showNotification('Ошибка при импорте проекта', 'error');
             } finally {
-                // Восстановить первоначальное состояние кнопки
                 submitButton.disabled = false;
                 submitButton.textContent = originalButtonText;
             }

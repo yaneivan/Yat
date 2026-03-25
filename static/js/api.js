@@ -5,11 +5,15 @@ function getCsrfToken() {
 }
 
 // Headers with CSRF token for POST/PUT/DELETE requests
-function getCsrfHeaders() {
-    return {
-        'Content-Type': 'application/json',
+// contentType: 'application/json' для JSON, null для FormData (браузер сам поставит multipart/form-data)
+function getCsrfHeaders(contentType = 'application/json') {
+    const headers = {
         'X-CSRFToken': getCsrfToken()
     };
+    if (contentType) {
+        headers['Content-Type'] = contentType;
+    }
+    return headers;
 }
 
 const API = {

@@ -832,21 +832,29 @@ class ProjectManager {
     }
 
     async submitZipImport() {
+        console.log('[ZIP Import] Starting import from project_manager.js...');
+        
         // Попробуем найти элементы с разными возможными ID
         let fileInput = document.getElementById('zipInput');
         if (!fileInput) {
             fileInput = document.getElementById('zipFile');
         }
-        
+
         let simplifyInput = document.getElementById('simplifyInput');
         if (!simplifyInput) {
             // Если не найден, пробуем другой возможный ID
             simplifyInput = document.getElementById('simplify');
         }
-        
-        const submitButton = document.querySelector('#importModal .btn-primary'); // Кнопка "Импортировать" в модальном окне
+
+        const submitButton = document.querySelector('#importModal .btn-primary');
+
+        console.log('[ZIP Import] fileInput:', fileInput);
+        console.log('[ZIP Import] fileInput.id:', fileInput?.id);
+        console.log('[ZIP Import] fileInput.files:', fileInput?.files);
+        console.log('[ZIP Import] fileInput.files[0]:', fileInput?.files?.[0]);
 
         if (!fileInput || !fileInput.files[0]) {
+            console.error('[ZIP Import] No file selected');
             this.showError('Пожалуйста, выберите ZIP файл');
             return;
         }
@@ -858,7 +866,12 @@ class ProjectManager {
 
         const formData = new FormData();
         formData.append('file', fileInput.files[0]);
-        formData.append('simplify', simplifyInput ? simplifyInput.value : 5); // Используем 5 как значение по умолчанию
+        formData.append('simplify', simplifyInput ? simplifyInput.value : 5);
+
+        console.log('[ZIP Import] FormData entries:');
+        for (let [key, value] of formData.entries()) {
+            console.log('  ', key, ':', value);
+        }
 
         // Проверяем, находимся ли мы на странице проекта
         const pathParts = window.location.pathname.split('/');
@@ -866,16 +879,22 @@ class ProjectManager {
         if (isProjectPage) {
             const projectName = decodeURIComponent(pathParts[2]);
             formData.append('project_name', projectName);
+            console.log('[ZIP Import] Project page, project_name:', projectName);
+        } else {
+            console.log('[ZIP Import] Main page, no project_name');
         }
 
         try {
+            console.log('[ZIP Import] Sending request...');
             const response = await fetch('/api/import_zip', {
                 method: 'POST',
-                headers: API.getCsrfHeaders(),
+                headers: API.getCsrfHeaders(null),  // null = браузер сам поставит multipart/form-data
                 body: formData
             });
 
+            console.log('[ZIP Import] Response status:', response.status);
             const result = await response.json();
+            console.log('[ZIP Import] Response data:', result);
 
             if (result.status === 'success') {
                 if (isProjectPage) {
@@ -884,16 +903,14 @@ class ProjectManager {
                     this.showSuccess(`Проект успешно импортирован (${result.count} файлов)`);
                 }
                 this.closeImportModal();
-                // Reload the page to show new projects or images
                 location.reload();
             } else {
                 this.showError('Ошибка: ' + result.msg);
             }
         } catch (error) {
-            console.error('Error importing project:', error);
+            console.error('[ZIP Import] Error:', error);
             this.showError('Ошибка при импорте проекта');
         } finally {
-            // Восстановить первоначальное состояние кнопки
             submitButton.disabled = false;
             submitButton.textContent = originalButtonText;
         }
