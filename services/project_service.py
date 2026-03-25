@@ -351,7 +351,7 @@ class ProjectService:
 
     def export_to_zip(self, project_name: str) -> Optional[bytes]:
         """
-        Export project to ZIP archive (METS + PageXML format).
+        Export project to ZIP archive with PAGE XML files.
 
         Args:
             project_name: Project name
