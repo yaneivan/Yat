@@ -11,7 +11,7 @@ load_dotenv()
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # Можно переопределить DEVICE, установив USE_CPU в True
-USE_CPU = True  # Установите в True, чтобы принудительно использовать CPU
+USE_CPU = False  # Установите в True, чтобы принудительно использовать CPU
 
 if USE_CPU:
     DEVICE = 'cpu'
