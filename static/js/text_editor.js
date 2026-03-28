@@ -15,6 +15,7 @@ class TextEditor {
         this.textsHistory = []; // History of text states for undo
         this.historyIndex = -1; // Current position in history
         this.maxHistoryLength = 50; // Maximum history entries
+        this.saveHistoryTimeout = null; // Timeout for debounced history saving
         this.isSaving = false; // Флаг блокировки сохранения при переключении
         this.isSwitching = false; // Флаг блокировки переключения при сохранении
 
@@ -630,6 +631,18 @@ class TextEditor {
 
     // Save current state to history
     saveToHistory() {
+        // Debounce history saving - don't save too frequently
+        if (this.saveHistoryTimeout) {
+            clearTimeout(this.saveHistoryTimeout);
+        }
+        
+        this.saveHistoryTimeout = setTimeout(() => {
+            this._saveToHistoryInternal();
+        }, 300); // Save to history after 300ms of inactivity
+    }
+    
+    // Internal method to save to history (called after debounce)
+    _saveToHistoryInternal() {
         // Clone current texts
         const currentState = JSON.parse(JSON.stringify(this.texts));
 
@@ -735,12 +748,21 @@ class TextEditor {
 
             // Input event to update text in memory
             input.addEventListener('input', (e) => {
-                this.texts[index] = e.target.value;
-                if (e.target.value) {
+                const oldValue = this.texts[index];
+                const newValue = e.target.value;
+                
+                this.texts[index] = newValue;
+                if (newValue) {
                     lineDiv.classList.add('has-text');
                 } else {
                     lineDiv.classList.remove('has-text');
                 }
+                
+                // Save to history if text actually changed (for undo support)
+                if (oldValue !== newValue) {
+                    this.saveToHistory();
+                }
+                
                 // Auto-save after text change
                 this.autoSave();
             });
@@ -1299,6 +1321,12 @@ class TextEditor {
         modal.style.display = 'none';
         this.currentRegionIndex = -1;
 
+        // Clear history timeout to prevent saving after close
+        if (this.saveHistoryTimeout) {
+            clearTimeout(this.saveHistoryTimeout);
+            this.saveHistoryTimeout = null;
+        }
+
         // Remove the event listener that was added when opening the modal
         if (this.modalClickHandler) {
             document.removeEventListener('click', this.modalClickHandler, true);
@@ -1595,6 +1623,12 @@ class TextEditor {
             this.textsHistory = [];
             this.historyIndex = -1;
             this.notepadFocusedIndex = -1;
+            
+            // Clear history timeout to prevent saving after switch
+            if (this.saveHistoryTimeout) {
+                clearTimeout(this.saveHistoryTimeout);
+                this.saveHistoryTimeout = null;
+            }
 
             // 6. Загружаем новые данные
             this.loadImageAndData();
