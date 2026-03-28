@@ -47,6 +47,9 @@ class TextEditor {
         window.addEventListener('resize', () => this.resize());
         window.addEventListener('keydown', (e) => this.handleKeyDown(e));
 
+        // Initialize save indicator
+        this.setSaveIndicator('idle');
+
         // Save on page unload/reload
         window.addEventListener('beforeunload', () => {
             if (this.autoSaveTimeout) {
@@ -677,12 +680,13 @@ class TextEditor {
 
             this.showNotification('Действие отменено', 'undo');
         } else if (this.historyIndex === 0) {
-            // First state - clear all
-            this.historyIndex = -1;
-            this.texts = {};
+            // First state - restore to initial state (not clear all!)
+            this.historyIndex = 0;
+            const initialState = this.textsHistory[0];
+            this.texts = JSON.parse(JSON.stringify(initialState));
             this.renderNotepad();
             this.updatePolygonsWithTexts();
-            this.showNotification('Действие отменено', 'undo');
+            this.showNotification('Нет действий для отмены', 'info');
         }
     }
 
@@ -707,6 +711,8 @@ class TextEditor {
             btn.classList.remove('active');
             // Update polygons with current text data
             this.updatePolygonsWithTexts();
+            // Auto-save text changes when exiting notepad mode
+            this.autoSave();
         }
     }
 
@@ -750,32 +756,50 @@ class TextEditor {
             input.addEventListener('input', (e) => {
                 const oldValue = this.texts[index];
                 const newValue = e.target.value;
-                
+
                 this.texts[index] = newValue;
                 if (newValue) {
                     lineDiv.classList.add('has-text');
                 } else {
                     lineDiv.classList.remove('has-text');
                 }
-                
+
                 // Save to history if text actually changed (for undo support)
                 if (oldValue !== newValue) {
                     this.saveToHistory();
                 }
-                
-                // Auto-save after text change
+
+                // Auto-save after text change (with visual feedback)
                 this.autoSave();
             });
 
-            // Indicator dot
-            const indicator = document.createElement('div');
-            indicator.className = 'line-indicator';
-
             lineDiv.appendChild(numberSpan);
             lineDiv.appendChild(input);
-            lineDiv.appendChild(indicator);
             linesContainer.appendChild(lineDiv);
         });
+    }
+
+    // Update save indicator status
+    setSaveIndicator(status) {
+        const indicator = document.getElementById('save-indicator');
+        if (!indicator) return;
+        
+        // Remove all status classes
+        indicator.classList.remove('saving', 'saved', 'error');
+        
+        // Add new status (idle is default - no class needed)
+        if (status && status !== 'idle') {
+            indicator.classList.add(status);
+        }
+        
+        // Update tooltip
+        const titles = {
+            'idle': 'Сохранено',
+            'saving': 'Сохранение...',
+            'saved': 'Сохранено',
+            'error': 'Ошибка сохранения'
+        };
+        indicator.title = titles[status] || titles['idle'];
     }
 
     // Handle focus on notepad line - highlight corresponding polygon
@@ -934,6 +958,9 @@ class TextEditor {
             // Move focus to next line with cursor at the beginning
             nextInput.focus();
             nextInput.setSelectionRange(0, 0);
+            
+            // Auto-save after text change
+            this.autoSave();
         }
     }
 
@@ -973,6 +1000,9 @@ class TextEditor {
             // Move focus to previous line
             prevInput.focus();
             prevInput.setSelectionRange(prevText.length, prevText.length);
+            
+            // Auto-save after text change
+            this.autoSave();
         }
     }
 
@@ -1640,12 +1670,14 @@ class TextEditor {
     async saveData() {
         // Если уже идёт сохранение или переключение - пропускаем
         if (this.isSaving || this.isSwitching) {
+            console.log('[saveData] Skipped - isSaving:', this.isSaving, 'isSwitching:', this.isSwitching);
+            // Don't change indicator - keep showing 'saving'
             return;
         }
 
         this.isSaving = true;
-        const saveStatusEl = document.getElementById('save-status');
-        if (saveStatusEl) saveStatusEl.textContent = 'Сохранение...';
+        
+        console.log('[saveData] Saving...', this.filename, 'texts:', Object.keys(this.texts).length);
 
         try {
             // Prepare data to save - we need to map the texts back to the original region order
@@ -1684,10 +1716,18 @@ class TextEditor {
 
             await API.saveAnnotationWithTexts(this.filename, saveData.regions, saveData.texts, this.project);
 
-            if (saveStatusEl) saveStatusEl.textContent = 'Сохранено';
+            // Show saved indicator
+            this.setSaveIndicator('saved');
+            console.log('[saveData] Saved successfully');
+            
+            // Reset to idle after 2 seconds
+            setTimeout(() => this.setSaveIndicator('idle'), 2000);
         } catch (error) {
-            console.error('Save error:', error);
-            if (saveStatusEl) saveStatusEl.textContent = 'Ошибка сохранения';
+            console.error('[saveData] Error:', error);
+            this.setSaveIndicator('error');
+            
+            // Reset to idle after 3 seconds
+            setTimeout(() => this.setSaveIndicator('idle'), 3000);
         } finally {
             this.isSaving = false;
         }
@@ -1699,6 +1739,9 @@ class TextEditor {
         if (this.autoSaveTimeout) {
             clearTimeout(this.autoSaveTimeout);
         }
+
+        // Show saving indicator immediately
+        this.setSaveIndicator('saving');
 
         this.autoSaveTimeout = setTimeout(() => {
             this.saveData();
