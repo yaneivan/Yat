@@ -1,12 +1,10 @@
 """
 Минимальные тесты для Yat API.
-Используем временную папку для данных — основная не засоряется.
+Используем временную базу и временные папки — основные данные не затрагиваются.
 
 AI сервис замокан через conftest.py — тесты AI отдельно в test_ai.py
 """
 import pytest
-import tempfile
-import shutil
 import os
 
 # Импортируем Flask приложение и storage
@@ -17,56 +15,15 @@ from database.session import engine, Base
 
 
 @pytest.fixture
-def temp_storage():
-    """
-    Фикстура создаёт временную папку для тестов.
-    После теста — всё удаляется.
-    """
-    # Сохраняем оригинальные пути
-    original_projects = storage.PROJECTS_FOLDER
-    original_images = storage.IMAGE_FOLDER
-    original_annotations = storage.ANNOTATION_FOLDER
-    original_originals = storage.ORIGINALS_FOLDER
-
-    # Создаём временную директорию
-    tmpdir = tempfile.mkdtemp()
-
-    # Подменяем пути на временные
-    storage.PROJECTS_FOLDER = os.path.join(tmpdir, 'projects')
-    storage.IMAGE_FOLDER = os.path.join(tmpdir, 'images')
-    storage.ANNOTATION_FOLDER = os.path.join(tmpdir, 'annotations')
-    storage.ORIGINALS_FOLDER = os.path.join(tmpdir, 'originals')
-
-    # Создаём директории
-    os.makedirs(storage.PROJECTS_FOLDER)
-    os.makedirs(storage.IMAGE_FOLDER)
-    os.makedirs(storage.ANNOTATION_FOLDER)
-    os.makedirs(storage.ORIGINALS_FOLDER)
-
-    # Пересоздаём БД для каждого теста
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-
-    yield tmpdir
-
-    # Восстанавливаем оригинальные пути и удаляем временную папку
-    storage.PROJECTS_FOLDER = original_projects
-    storage.IMAGE_FOLDER = original_images
-    storage.ANNOTATION_FOLDER = original_annotations
-    storage.ORIGINALS_FOLDER = original_originals
-    shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-@pytest.fixture
-def client(temp_storage):
+def client():
     """
     Фикстура создаёт тестовый клиент Flask.
-    Отключаем CSRF для тестов.
+    База и папки уже настроены через setup_test_environment (conftest.py).
     """
     app.config['TESTING'] = True
     app.config['WTF_CSRF_ENABLED'] = False  # Отключить CSRF для тестов
-    with app.test_client() as client:
-        yield client
+    with app.test_client() as test_client:
+        yield test_client
 
 
 def test_create_project(client):
