@@ -1001,6 +1001,94 @@ async loadProjects() {
 
 ## 📋 ЗАДАЧИ В РАБОТЕ
 
+### 19. Исправить тесты — не удалять продакшен данные
+
+**Статус:** ❌ Не исправлено
+**Приоритет:** 🔴 КРИТИЧНО
+**Время на фикс:** 1 час
+
+**Описание:**
+Тесты используют ту же базу `database.db` и те же папки `data/images/`, `data/originals/` что и продакшен.
+При запуске тестов данные пользователя **удаляются**.
+
+**Проблема:**
+```python
+# tests/test_api.py (предположительно)
+def setup_module():
+    os.remove('database.db')  # ❌ Удаляет продакшен базу
+    shutil.rmtree('data/images/')  # ❌ Удаляет продакшен картинки
+```
+
+**Последствия:**
+- Пользователь теряет все проекты и изображения после запуска тестов
+- Невозможно разрабатывать и тестировать без риска потери данных
+
+**Решение:**
+1. **Использовать отдельную тестовую базу:**
+   ```python
+   # tests/conftest.py
+   import tempfile
+   import shutil
+   
+   @pytest.fixture(scope='session')
+   def test_db():
+       # Создать временную директорию
+       test_dir = tempfile.mkdtemp()
+       test_db_path = os.path.join(test_dir, 'test_database.db')
+       
+       # Настроить тестовую БД
+       os.environ['TEST_DATABASE_URL'] = f'sqlite:///{test_db_path}'
+       
+       yield test_db_path
+       
+       # Очистить после тестов
+       shutil.rmtree(test_dir)
+   ```
+
+2. **Использовать отдельные папки для данных:**
+   ```python
+   # tests/conftest.py
+   @pytest.fixture
+   def test_data_dir():
+       test_dir = tempfile.mkdtemp()
+       os.makedirs(os.path.join(test_dir, 'images'))
+       os.makedirs(os.path.join(test_dir, 'originals'))
+       
+       yield test_dir
+       
+       shutil.rmtree(test_dir)
+   ```
+
+3. **Помечать тестовые файлы:**
+   ```python
+   # config.py
+   IS_TEST = os.environ.get('TESTING', 'False') == 'True'
+   
+   if IS_TEST:
+       DATABASE_PATH = 'test_database.db'
+       DATA_DIR = tempfile.mkdtemp()
+   else:
+       DATABASE_PATH = 'database.db'
+       DATA_DIR = 'data'
+   ```
+
+**Файлы для изменения:**
+- `tests/conftest.py` (создать фикстуры)
+- `tests/test_api.py` (использовать фикстуры)
+- `config.py` (поддержка тестового режима)
+- `app.py` (использовать config для тестов)
+
+**Критерии приёмки:**
+- [ ] Тесты создают временную базу в `/tmp/`
+- [ ] Тесты создают временные папки для данных
+- [ ] После тестов всё удаляется
+- [ ] Продакшен данные (`database.db`, `data/`) не затрагиваются
+- [ ] Запуск тестов: `pytest --testing`
+
+**Ветка:** `fix/test-isolation`
+
+---
+
 ### 17. Вынос CSS из HTML в единый файл
 
 **Статус:** 🟡 В ПРОЦЕССЕ
