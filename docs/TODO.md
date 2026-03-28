@@ -228,7 +228,7 @@ def validate_filename(filename: str) -> str:
 
 ### 7. Отсутствие индексов БД
 
-**Статус:** ❌ Не исправлено
+**Статус:** ✅ ИСПРАВЛЕНО
 **Приоритет:** 🟠 СРЕДНЕ
 **Время на фикс:** 15 минут
 **Риск:** Медленные запросы к БД
@@ -248,15 +248,9 @@ class Image(Base):
 ```python
 class Image(Base):
     filename = Column(String(255), nullable=False, index=True)
-    
-class Task(Base):
-    __table_args__ = (
-        Index('ix_tasks_status_created', 'status', 'created_at'),
-    )
 ```
 
-**Файлы для изменения:**
-- `database/models.py`
+**✅ ИСПРАВЛЕНО:** Индекс добавлен в `database/models.py:43` (`index=True` на поле `filename`)
 
 ---
 
@@ -354,8 +348,8 @@ MODEL_PATHS = {
 
 ### 8. Нет тестов на AI сервис
 
-**Статус:** ❌ Не исправлено  
-**Приоритет:** 🟢 МЕЛКО  
+**Статус:** ✅ ИСПРАВЛЕНО
+**Приоритет:** 🟢 МЕЛКО
 **Время на фикс:** 4 часа
 
 **Проблема:**
@@ -370,6 +364,8 @@ MODEL_PATHS = {
 
 **Файлы для изменения:**
 - `tests/test_ai_service.py` (создать)
+
+**✅ ИСПРАВЛЕНО:** Тесты созданы в `tests/test_ai.py`
 
 ---
 
@@ -551,6 +547,8 @@ class ProjectService:
 
 **Время:** ~30 минут
 
+**✅ ИСПРАВЛЕНО:** Статус переименован в "Полигоны готовы" в `status_widget.js:63`
+
 ---
 
 ### Страница 404
@@ -568,6 +566,8 @@ class ProjectService:
 - `templates/404.html` (создать)
 
 **Ветка:** `feature/404-page`
+
+**✅ ИСПРАВЛЕНО:** Страница 404 создана (`templates/404.html`), обработчик в `app.py:854`
 
 **Время:** ~30 минут
 
@@ -744,6 +744,8 @@ if ai_service.is_trocr_available():
 **Файлы для изменения:**
 - `logic.py` (recalculate_regions, calculate_overlap_ratio)
 - `pyproject.toml` (опционально: добавить shapely)
+
+**✅ ПРИМЕЧАНИЕ:** `shapely>=2.0.0` уже добавлена в `pyproject.toml:12` и используется в `simplify_points()` (Ramer-Douglas-Peucker)
 
 ---
 

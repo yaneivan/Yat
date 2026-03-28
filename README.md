@@ -54,7 +54,7 @@ HTR Polygon Annotation Tool - это веб-приложение для подг
 
 1. **YOLOv9** — детекция текстовых строк
    - Модель: [yolov9-lines-within-regions-1](https://huggingface.co/Riksarkivet/yolov9-lines-within-regions-1)
-   - Файл модели: `./models/yolo_model.pt`
+   - Файл модели: `./models/model.pt`
    - Используется для автоматической сегментации
 
 2. **TROCR** — распознавание текста внутри полигонов
@@ -97,24 +97,34 @@ htr_tool/
 ├── database/             # База данных и репозитории
 │   ├── __init__.py
 │   ├── models.py         # SQLAlchemy модели (Project, Image, Annotation, Task)
+│   ├── enums.py          # Перечисления (ImageStatus)
 │   ├── session.py        # Инициализация БД
 │   └── repository/       # Репозитории (ProjectRepository, AnnotationRepository, etc.)
 ├── data/                 # Хранилище файлов
 │   ├── images/           # Рабочие (обрезанные) изображения
-│   └── originals/        # Бэкапы оригиналов (для повторной обрезки)
+│   ├── originals/        # Бэкапы оригиналов (для повторной обрезки)
+│   ├── projects/         # Временные файлы проектов
+│   ├── temp_export/      # Временный экспорт (ZIP, PDF)
+│   └── temp_import/      # Временный импорт
 ├── database.db           # SQLite база данных (проекты, изображения, аннотации, задачи)
 ├── static/
 │   ├── css/style.css     # Стили
 │   └── js/
 │       ├── api.js        # API клиент
 │       ├── editor.js     # Логика редактора разметки
-│       └── project_manager.js  # Логика дашборда
-└── templates/            # HTML шаблоны
-    ├── index.html        # Дашборд
-    ├── editor.html       # Редактор сегментации
-    ├── cropper.html      # Инструмент кадрирования
-    ├── text_editor.html  # Редактор текста
-    └── project.html      # Страница проекта
+│       ├── project_manager.js  # Логика дашборда
+│       ├── text_editor.js      # Логика текстового редактора
+│       └── status_widget.js    # Виджет статусов
+├── templates/            # HTML шаблоны
+│   ├── index.html        # Дашборд
+│   ├── editor.html       # Редактор сегментации
+│   ├── cropper.html      # Инструмент кадрирования
+│   ├── text_editor.html  # Редактор текста
+│   ├── project.html      # Страница проекта
+│   ├── login.html        # Страница входа
+│   └── 404.html          # Страница 404
+├── services/
+│   └── pdf_export_service.py  # Экспорт в PDF
 ```
 
 > **Примечание:** Аннотации хранятся в SQLite (`database.db`), а не в JSON-файлах. Папка `data/annotations/` сохранена для обратной совместимости.
@@ -163,23 +173,30 @@ docker compose up
 
 ```json
 {
-  "regions": [
+  "polygons": [
     {
-      "points": [[100, 100], [200, 100], [200, 150], [100, 150]]
+      "points": [{"x": 100, "y": 100}, {"x": 200, "y": 100}, {"x": 200, "y": 150}, {"x": 100, "y": 150}],
+      "text": "Распознанный текст",
+      "confidence": 0.95
     }
-  ],
-  "texts": {
-    "0": "Распознанный текст для региона 0",
-    "1": "Распознанный текст для региона 1"
-  },
-  "status": "segment"
+  ]
 }
 ```
 
 **Поля:**
-- `regions` — массив полигонов (каждый с `points: [[x1,y1], [x2,y2], ...]`)
-- `texts` — словарь `{index_региона: текст}`
-- `status` — статус изображения (`"cropped"`, `"segment"`, `"annotated"`)
+- `polygons` — массив полигонов с точками `[{x, y}, ...]`, текстом и уверенностью
+- `text` — распознанный текст для полигона
+- `confidence` — уверенность модели распознавания
+
+### Статусы изображений
+
+| Статус | Описание |
+|--------|----------|
+| `uploaded` | Загружено |
+| `cropped` | Обрезано |
+| `segmented` | Полигоны готовы |
+| `recognized` | Текст распознан |
+| `reviewed` | Проверено |
 
 ### Файлы изображений
 
