@@ -60,7 +60,7 @@ class TextEditor {
         // Initialize viewport synchronization
         this.initViewportSync();
 
-        // Load image and data
+        // Load image and data (also caches image for preview)
         await this.loadImageAndData();
     }
 
@@ -400,6 +400,7 @@ class TextEditor {
         const imgUrl = `/data/images/${this.filename}?t=${timestamp}`;
 
         const imgEl = new Image();
+        imgEl.crossOrigin = 'Anonymous';
         imgEl.onload = () => {
             const fabricImg = new fabric.Image(imgEl);
 
@@ -425,6 +426,9 @@ class TextEditor {
                 // Set white background for right canvas
                 this.rightCanvas.backgroundColor = "#ffffff";
                 this.rightCanvas.requestRenderAll();
+
+                // Cache the loaded image for region preview (avoid double loading)
+                this.cachedPreviewImage = imgEl;
 
                 // Load regions after both images are loaded
                 // loadRegions() handles its own cleanup
@@ -1227,57 +1231,67 @@ class TextEditor {
             return;
         }
 
-        // Load the main image
-        const img = new Image();
-        img.crossOrigin = 'Anonymous'; // Handle potential CORS issues
-        img.onload = () => {
-            // Create a temporary canvas to extract the region
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
+        // If cached image is not available or not loaded yet, load it first
+        if (!this.cachedPreviewImage || !this.cachedPreviewImage.complete) {
+            // Create and cache the image
+            this.cachedPreviewImage = new Image();
+            this.cachedPreviewImage.crossOrigin = 'Anonymous';
+            this.cachedPreviewImage.onload = () => {
+                // Re-call after image is loaded (will use cached image this time)
+                this.extractRegionImage(regionIndex, imgElement);
+            };
+            this.cachedPreviewImage.src = `/data/images/${this.filename}?t=${new Date().getTime()}`;
+            
+            // Show placeholder while loading
+            imgElement.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+            return;
+        }
 
-            // Calculate the bounding box of the region
-            const xs = region.points.map(p => p.x);
-            const ys = region.points.map(p => p.y);
-            const minX = Math.min(...xs);
-            const maxX = Math.max(...xs);
-            const minY = Math.min(...ys);
-            const maxY = Math.max(...ys);
+        // Use cached image (guaranteed to be loaded)
+        const img = this.cachedPreviewImage;
 
-            // Add a larger padding to show context around the polygon
-            const padding = 50;
-            const width = maxX - minX + padding * 2;
-            const height = maxY - minY + padding * 2;
+        // Create a temporary canvas to extract the region
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
 
-            canvas.width = width;
-            canvas.height = height;
+        // Calculate the bounding box of the region
+        const xs = region.points.map(p => p.x);
+        const ys = region.points.map(p => p.y);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
 
-            // Draw the main image at the correct position to show context
-            ctx.drawImage(img, -minX + padding, -minY + padding);
+        // Add a larger padding to show context around the polygon
+        const padding = 50;
+        const width = maxX - minX + padding * 2;
+        const height = maxY - minY + padding * 2;
 
-            // Draw the polygon with a semi-transparent fill and border to highlight the region
-            ctx.beginPath();
-            ctx.moveTo(region.points[0].x - minX + padding, region.points[0].y - minY + padding);
-            for (let i = 1; i < region.points.length; i++) {
-                ctx.lineTo(region.points[i].x - minX + padding, region.points[i].y - minY + padding);
-            }
-            ctx.closePath();
+        canvas.width = width;
+        canvas.height = height;
 
-            // Fill with semi-transparent color to highlight the polygon
-            ctx.fillStyle = 'rgba(0, 100, 255, 0.3)';
-            ctx.fill();
+        // Draw the main image at the correct position to show context
+        ctx.drawImage(img, -minX + padding, -minY + padding);
 
-            // Draw a border around the polygon
-            ctx.strokeStyle = 'rgba(0, 0, 255, 0.8)';
-            ctx.lineWidth = 2;
-            ctx.stroke();
+        // Draw the polygon with a semi-transparent fill and border to highlight the region
+        ctx.beginPath();
+        ctx.moveTo(region.points[0].x - minX + padding, region.points[0].y - minY + padding);
+        for (let i = 1; i < region.points.length; i++) {
+            ctx.lineTo(region.points[i].x - minX + padding, region.points[i].y - minY + padding);
+        }
+        ctx.closePath();
 
-            // Set the src of the preview image to the data URL of the canvas
-            imgElement.src = canvas.toDataURL('image/png');
-        };
-        img.onerror = () => {
-            imgElement.src = `/data/images/${this.filename}?t=${new Date().getTime()}`;
-        };
-        img.src = `/data/images/${this.filename}?t=${new Date().getTime()}`;
+        // Fill with semi-transparent color to highlight the polygon
+        ctx.fillStyle = 'rgba(0, 100, 255, 0.3)';
+        ctx.fill();
+
+        // Draw a border around the polygon
+        ctx.strokeStyle = 'rgba(0, 0, 255, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Set the src of the preview image to the data URL of the canvas
+        imgElement.src = canvas.toDataURL('image/png');
     }
 
     closeModal() {
@@ -1558,6 +1572,9 @@ class TextEditor {
 
             // 1. Обновляем переменную класса
             this.filename = newFilename;
+
+            // 1.5. Очищаем кэш превью (новое изображение загрузится в loadImageAndData)
+            this.cachedPreviewImage = null;
 
             // 2. Обновляем текст в тулбаре (визуально)
             const display = document.getElementById('filename-display');

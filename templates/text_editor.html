@@ -79,8 +79,11 @@
                 <div class="region-counter">Регион <span id="current-region-index">1</span> из <span id="total-regions">0</span></div>
             </div>
             <div class="modal-footer">
-                <button class="btn" onclick="editor.closeModal()">Отмена</button>
-                <button class="btn btn-primary" onclick="editor.saveTextAndNext()">Сохранить и следующий (Enter)</button>
+                <span class="modal-hotkeys">Ctrl+←/→: навигация | Esc: закрыть</span>
+                <div class="modal-footer-buttons">
+                    <button class="btn" onclick="editor.closeModal()">Отмена</button>
+                    <button class="btn btn-primary" onclick="editor.saveTextAndNext()">Сохранить и следующий (Enter)</button>
+                </div>
             </div>
         </div>
     </div>

@@ -1403,7 +1403,19 @@ body.dashboard {
     padding: 15px;
     border-top: 1px solid #444;
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.modal-hotkeys {
+    font-size: 0.8em;
+    color: #888;
+    white-space: nowrap;
+}
+
+.modal-footer-buttons {
+    display: flex;
     gap: 10px;
 }
 
