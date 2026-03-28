@@ -105,19 +105,41 @@ def recalculate_regions(regions, old_crop, new_crop_params, new_w, new_h):
 # =============================================================================
 
 def simplify_points(points, threshold):
-    """Simplify polygon by removing points closer than threshold."""
-    if not points or threshold <= 0:
+    """
+    Simplify polygon using Ramer-Douglas-Peucker algorithm via Shapely.
+    
+    Args:
+        points: List of dicts with 'x', 'y' coordinates
+        threshold: Simplification threshold in pixels
+    
+    Returns:
+        Simplified list of points (at least 3 for valid polygon)
+    """
+    if not points or threshold <= 0 or len(points) < 3:
         return points
     
-    new_p = [points[0]]
-    for p in points[1:]:
-        if math.hypot(p['x']-new_p[-1]['x'], p['y']-new_p[-1]['y']) >= threshold:
-            new_p.append(p)
+    try:
+        from shapely.geometry import LineString
+        
+        # Convert to coordinate list
+        coords = [(p['x'], p['y']) for p in points]
+        
+        # Create LineString and simplify
+        line = LineString(coords)
+        simplified = line.simplify(tolerance=threshold, preserve_topology=True)
+        
+        # Convert back to list of dicts
+        result = [{'x': x, 'y': y} for x, y in simplified.coords]
+        
+        # Ensure at least 3 points for valid polygon
+        if len(result) < 3:
+            return points
+        
+        return result
     
-    if points[-1] != new_p[-1]:
-        new_p.append(points[-1])
-    
-    return new_p
+    except Exception as e:
+        logger.warning(f"[simplify_points] Shapely error: {e}, falling back to original points")
+        return points
 
 
 def calculate_polygon_area(points):
