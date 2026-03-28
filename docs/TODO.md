@@ -1005,7 +1005,7 @@ async loadProjects() {
 
 ### 19. Исправить тесты — не удалять продакшен данные
 
-**Статус:** ❌ Не исправлено
+**Статус:** ✅ ИСПРАВЛЕНО
 **Приоритет:** 🔴 КРИТИЧНО
 **Время на фикс:** 1 час
 
@@ -1013,26 +1013,41 @@ async loadProjects() {
 Тесты используют ту же базу `database.db` и те же папки `data/images/`, `data/originals/` что и продакшен.
 При запуске тестов данные пользователя **удаляются**.
 
-**Проблема:**
-```python
-# tests/test_api.py (предположительно)
-def setup_module():
-    os.remove('database.db')  # ❌ Удаляет продакшен базу
-    shutil.rmtree('data/images/')  # ❌ Удаляет продакшен картинки
-```
-
-**Последствия:**
-- Пользователь теряет все проекты и изображения после запуска тестов
-- Невозможно разрабатывать и тестировать без риска потери данных
-
 **Решение:**
 1. **Использовать отдельную тестовую базу:**
    ```python
    # tests/conftest.py
    import tempfile
    import shutil
-   
+
    @pytest.fixture(scope='session')
+   def temp_test_dir():
+       tmpdir = tempfile.mkdtemp(prefix="yat_test_")
+       # Patch database.session и storage
+       # Создать временную БД и папки
+       yield tmpdir
+       shutil.rmtree(tmpdir)
+   ```
+
+2. **Патчить модули до импорта app:**
+   - `pytest_configure()` вызывается ДО импорта тестов
+   - Патчит `database.session.DB_PATH`, `database.session.engine`
+   - Патчит `storage.PROJECTS_FOLDER` и другие пути
+
+**Файлы для изменения:**
+- `tests/conftest.py` (создать фикстуры)
+- `tests/test_api.py` (удалить дублирующую фикстуру temp_storage)
+
+**Критерии приёмки:**
+- [x] Тесты создают временную базу в `/tmp/yat_test_*/`
+- [x] Тесты создают временные папки для данных
+- [x] После тестов всё удаляется
+- [x] Продакшен данные (`database.db`, `data/`) не затрагиваются
+- [x] Запуск тестов: `pytest tests/test_api.py`
+
+**Ветка:** `fix/test-isolation`
+
+**✅ ИСПРАВЛЕНО:** Задача #19 выполнена в коммите `fix: изолировать тесты от продакшен данных`
    def test_db():
        # Создать временную директорию
        test_dir = tempfile.mkdtemp()
