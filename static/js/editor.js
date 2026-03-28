@@ -128,6 +128,10 @@ class HTREditor {
         });
         this.setupInputHandlers();
         this.setupCanvasEvents();
+        
+        // Initialize save indicator
+        this.setSaveIndicator('idle');
+        
         await this.loadImageAndData();
     }
 
@@ -634,10 +638,33 @@ class HTREditor {
     }
 
     triggerAutoSave() {
-        const el = document.getElementById('status');
-        if(el) el.textContent = 'Сохранение...';
+        // Show saving indicator
+        this.setSaveIndicator('saving');
         clearTimeout(this.autoSaveTimer);
         this.autoSaveTimer = setTimeout(() => this.saveData(), 800);
+    }
+
+    // Update save indicator status
+    setSaveIndicator(status) {
+        const indicator = document.getElementById('save-indicator');
+        if (!indicator) return;
+        
+        // Remove all status classes
+        indicator.classList.remove('saving', 'saved', 'error');
+        
+        // Add new status (idle is default - no class needed)
+        if (status && status !== 'idle') {
+            indicator.classList.add(status);
+        }
+        
+        // Update tooltip
+        const titles = {
+            'idle': 'Сохранено',
+            'saving': 'Сохранение...',
+            'saved': 'Сохранено',
+            'error': 'Ошибка сохранения'
+        };
+        indicator.title = titles[status] || titles['idle'];
     }
 
     async saveData() {
@@ -647,6 +674,7 @@ class HTREditor {
         }
 
         this.isSaving = true;
+
         const regions = [];
         this.canvas.getObjects().forEach(obj => {
             if (obj.type === 'polygon' && !obj.class) {
@@ -661,10 +689,16 @@ class HTREditor {
 
         try {
             await API.saveAnnotation(this.filename, regions, this.project);
-            const el = document.getElementById('status');
-            if(el) el.textContent = 'Сохранено';
+            this.setSaveIndicator('saved');
+            
+            // Reset to idle after 2 seconds
+            setTimeout(() => this.setSaveIndicator('idle'), 2000);
         } catch(e) {
-            console.error(e);
+            console.error('Save error:', e);
+            this.setSaveIndicator('error');
+            
+            // Reset to idle after 3 seconds
+            setTimeout(() => this.setSaveIndicator('idle'), 3000);
         } finally {
             this.isSaving = false;
         }
