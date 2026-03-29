@@ -218,7 +218,7 @@ body.dashboard {
    Dashboard Styles
    ======================================== */
 .container {
-    max-width: 1000px;
+    max-width: 1400px;
     margin: 0 auto;
     background: white;
     padding: 30px;
@@ -912,7 +912,6 @@ body.dashboard {
     background: white;
     transition: transform 0.2s, box-shadow 0.2s;
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    max-width: 250px;
 }
 
 .image-card:hover {
@@ -1008,6 +1007,21 @@ body.dashboard {
 .status-badge:hover {
     opacity: 0.8;
     border-color: #212529;
+}
+
+/* Processing indicator - subtle pulsing blue */
+.status-badge.processing {
+    background: linear-gradient(45deg, #007bff, #0056b3) !important;
+    animation: pulse-processing 2s ease-in-out infinite;
+}
+
+@keyframes pulse-processing {
+    0%, 100% {
+        box-shadow: 0 0 4px #007bff;
+    }
+    50% {
+        box-shadow: 0 0 8px #007bff;
+    }
 }
 
 /* Save indicator - glowing dot */
@@ -1275,6 +1289,251 @@ body.dashboard {
 .export-option-desc {
     font-size: 0.85em;
     color: #666;
+}
+
+/* Batch Processing Modal Styles */
+
+/* Batch Block Styles */
+.batch-block {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+    overflow: hidden;
+}
+
+.batch-block-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: #f8f9fa;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.batch-block-header:hover {
+    background: #e9ecef;
+}
+
+.batch-block-content {
+    padding: 16px;
+    border-top: 1px solid #e9ecef;
+}
+
+.batch-actions {
+    margin-bottom: 20px;
+}
+
+.batch-actions h3 {
+    margin-bottom: 10px;
+}
+.batch-options {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.batch-option {
+    display: flex;
+    align-items: center;
+    padding: 15px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: white;
+    margin-bottom: 10px;  /* Additional spacing between options */
+}
+
+.batch-option:hover {
+    border-color: #007bff;
+    background: #f0f7ff;
+    transform: translateX(5px);
+}
+
+.batch-option input[type="radio"] {
+    margin-right: 12px;
+    pointer-events: none;
+}
+
+.batch-option label {
+    flex: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.batch-status-select {
+    margin-left: 15px;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.9em;
+    background: white;
+    cursor: pointer;
+}
+
+.batch-status-select:hover {
+    border-color: #007bff;
+}
+
+/* Task Panel Styles */
+.task-panel {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+    overflow: hidden;
+}
+
+.task-panel.collapsed .task-list {
+    display: none;
+}
+
+.task-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: #f8f9fa;
+    cursor: pointer;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.task-panel-header:hover {
+    background: #e9ecef;
+}
+
+.task-list {
+    padding: 0;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.task-item {
+    padding: 15px;
+    border-bottom: 1px solid #e9ecef;
+    transition: background 0.2s;
+}
+
+.task-item:last-child {
+    border-bottom: none;
+}
+
+.task-item:hover {
+    background: #f8f9fa;
+}
+
+.task-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.task-item-title {
+    font-weight: 600;
+    color: #333;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.task-item-status {
+    font-size: 0.85em;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.task-item-status.running {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.task-item-status.completed {
+    background: #d4edda;
+    color: #155724;
+}
+
+.task-item-status.failed {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.task-progress-bar {
+    height: 8px;
+    background: #e9ecef;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+
+.task-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #007bff, #0056b3);
+    transition: width 0.3s ease;
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+}
+
+.task-progress-fill.running::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 50%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(200%);
+    }
+}
+
+.task-progress-fill.running {
+    /* animation disabled - using shimmer effect instead */
+}
+
+.task-progress-fill.completed {
+    background: linear-gradient(90deg, #28a745, #1e7e34);
+}
+
+.task-progress-fill.failed {
+    background: linear-gradient(90deg, #dc3545, #c82333);
+}
+
+.task-progress-text {
+    font-size: 0.85em;
+    color: #666;
+    display: flex;
+    justify-content: space-between;
+}
+
+.task-item-meta {
+    font-size: 0.85em;
+    color: #666;
+    margin-top: 8px;
+}
+
+/* Loading animation for tasks - disabled to prevent jitter on re-render */
+@keyframes taskPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+.task-item.running {
+    /* animation: taskPulse 2s infinite; */ /* Disabled - causes visual jitter when task panel re-renders */
 }
 
 /* Loading animation for export */

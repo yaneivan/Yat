@@ -706,15 +706,33 @@ def batch_detect(project_name):
     # Admin only: batch detection
     if USE_AUTH and not is_admin():
         return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
-    
+
+    logger.info(f"POST /api/projects/{project_name}/batch_detect")
+
     # Sanitize project name to prevent path traversal
     sanitized_name = project_service._sanitize_name(project_name)
 
     settings = request.json.get('settings', {})
-    images = project_service.get_images(sanitized_name)
+    selected_images = request.json.get('images', [])  # Empty list = all images
+    
+    logger.info(f"  selected_images: {len(selected_images)} images")
+    
+    # Get all images from project
+    all_images = project_service.get_images(sanitized_name)
+
+    if not all_images:
+        return jsonify({'status': 'error', 'msg': 'No images in project'}), 400
+
+    # Filter images if specific ones were selected
+    if selected_images:
+        images = [img for img in all_images if (img['filename'] if isinstance(img, dict) else img) in selected_images]
+    else:
+        images = all_images
 
     if not images:
-        return jsonify({'status': 'error', 'msg': 'No images in project'}), 400
+        return jsonify({'status': 'error', 'msg': 'No images selected'}), 400
+
+    logger.info(f"  processing {len(images)} images")
 
     # Get project for project_id
     project = project_service.get_project(sanitized_name)
@@ -729,6 +747,7 @@ def batch_detect(project_name):
             db_project = repo.get_by_name(sanitized_name)
             if db_project:
                 project_id = db_project.id
+                logger.info(f"  project_id: {project_id}")
         finally:
             session.close()
 
@@ -738,8 +757,10 @@ def batch_detect(project_name):
         project_name=sanitized_name,
         project_id=project_id,
         images=[img['filename'] if isinstance(img, dict) else img for img in images],
-        description=f"Batch detection for project {sanitized_name}"
+        description=f"Batch detection for {len(images)} images"
     )
+
+    logger.info(f"  created task {task.id}")
 
     task_service.run_background(
         task=task,
@@ -761,14 +782,26 @@ def batch_recognize(project_name):
     # Admin only: batch recognition
     if USE_AUTH and not is_admin():
         return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
-    
+
     # Sanitize project name to prevent path traversal
     sanitized_name = project_service._sanitize_name(project_name)
 
-    images = project_service.get_images(sanitized_name)
+    selected_images = request.json.get('images', [])  # Empty list = all images
+    
+    # Get all images from project
+    all_images = project_service.get_images(sanitized_name)
+
+    if not all_images:
+        return jsonify({'status': 'error', 'msg': 'No images in project'}), 400
+
+    # Filter images if specific ones were selected
+    if selected_images:
+        images = [img for img in all_images if (img['filename'] if isinstance(img, dict) else img) in selected_images]
+    else:
+        images = all_images
 
     if not images:
-        return jsonify({'status': 'error', 'msg': 'No images in project'}), 400
+        return jsonify({'status': 'error', 'msg': 'No images selected'}), 400
 
     # Get project_id
     from database.session import SessionLocal
@@ -789,7 +822,7 @@ def batch_recognize(project_name):
         project_name=sanitized_name,
         project_id=project_id,
         images=[img['filename'] if isinstance(img, dict) else img for img in images],
-        description=f"Batch recognition for project {sanitized_name}"
+        description=f"Batch recognition for {len(images)} images"
     )
 
     task_service.run_background(
@@ -810,6 +843,9 @@ def batch_recognize(project_name):
 @app.route('/api/tasks', methods=['GET'])
 def get_tasks():
     tasks = task_service.get_all_tasks()
+    logger.info(f"GET /api/tasks: returning {len(tasks)} tasks")
+    for task in tasks:
+        logger.info(f"  Task {task.id}: type={task.type}, project={task.project_name}, status={task.status}")
     return jsonify({'tasks': [t.to_dict() for t in tasks]})
 
 

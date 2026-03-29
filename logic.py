@@ -695,13 +695,7 @@ def run_batch_detection_for_project(project_name, settings=None, task_id=None):
     # Use project_service to get images from database
     from services import project_service, task_service, ai_service, annotation_service
 
-    images = project_service.get_images(project_name)
-    
-    if not images:
-        logger.warning(f"No images found in project {project_name}")
-        return
-
-    # Get task by ID (passed from app.py)
+    # Get task to find which images to process
     if not task_id:
         logger.error("Error: task_id not provided for batch detection")
         return
@@ -711,20 +705,17 @@ def run_batch_detection_for_project(project_name, settings=None, task_id=None):
         logger.error(f"Error: task {task_id} not found")
         return
 
-    # Extract image names from image data dicts
-    image_names = [img.get('filename') or img.get('name') if isinstance(img, dict) else img for img in images]
+    # Use images from task (may be a subset if user selected specific images)
+    image_names = task.images or []
+    
+    if not image_names:
+        logger.warning(f"No images found in task {task_id}")
+        return
 
     try:
         task_service.update_progress(task.id, 0, status=TaskStatus.RUNNING)
 
         for idx, image_name in enumerate(image_names):
-            # Check if annotation already has regions using annotation_service
-            annotation_data = annotation_service.get_annotation(image_name, project_name)
-
-            if annotation_data.get('regions'):
-                task_service.update_progress(task.id, idx + 1)
-                continue
-
             try:
                 regions = ai_service.detect_lines(image_name, settings)
 
@@ -757,13 +748,8 @@ def run_batch_recognition_for_project(project_name, task_id=None):
         project_name: Project name
         task_id: Task ID from task_service (passed by app.py)
     """
-    # Use project_service to get images from database
-    from services import project_service, task_service, ai_service, annotation_service
-
-    images = project_service.get_images(project_name)
-    if not images:
-        logger.warning(f"No images found in project {project_name}")
-        return
+    # Import services
+    from services import task_service, ai_service
 
     # Get task by ID (passed from app.py)
     if not task_id:
@@ -775,28 +761,17 @@ def run_batch_recognition_for_project(project_name, task_id=None):
         logger.error(f"Error: task {task_id} not found")
         return
 
-    # Extract image names from image data dicts
-    image_names = [img.get('filename') or img.get('name') if isinstance(img, dict) else img for img in images]
+    # Use images from task (may be a subset if user selected specific images)
+    image_names = task.images or []
+
+    if not image_names:
+        logger.warning(f"No images found in task {task_id}")
+        return
 
     try:
         task_service.update_progress(task.id, 0, status=TaskStatus.RUNNING)
 
         for idx, image_name in enumerate(image_names):
-            # Check if annotation already has texts using annotation_service
-            annotation_data = annotation_service.get_annotation(image_name, project_name)
-
-            # Skip if no polygons (nothing to recognize)
-            regions = annotation_data.get('regions', [])
-            if not regions:
-                logger.warning(f"Skip {image_name}: no polygons for recognition")
-                task_service.update_progress(task.id, idx + 1)
-                continue
-
-            # Skip if text already recognized
-            if annotation_data.get('texts') and any(annotation_data.get('texts', {}).values()):
-                task_service.update_progress(task.id, idx + 1)
-                continue
-
             try:
                 ai_service.recognize_text(image_name, None)
                 task_service.update_progress(task.id, idx + 1)

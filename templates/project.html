@@ -43,12 +43,35 @@
 
         {% if is_admin %}
         <div class="batch-actions">
-            <h3>Пакетная обработка</h3>
-            <div class="batch-controls">
-                <button class="btn" onclick="startBatchDetection()">Запустить детекцию полигонов</button>
-                <button class="btn" onclick="startBatchRecognition()">Запустить распознавание текста</button>
-                <button class="btn btn-primary" onclick="toggleSelectAll()">Выбрать все</button>
-                <button class="btn danger" onclick="deleteSelected()">Удалить выбранные</button>
+        <!-- Batch Processing Block -->
+        <div class="batch-block">
+            <div class="batch-block-header" onclick="toggleBatchBlock()">
+                <h3 style="margin: 0; flex: 1;">
+                    <span>⚙️ Пакетная обработка</span>
+                    <span id="batchBlockIcon" style="margin-left: 8px; cursor: pointer; font-size: 1.2em;">▶</span>
+                </h3>
+            </div>
+            <div id="batchBlockContent" class="batch-block-content" style="display: none;">
+                <div class="batch-controls">
+                    <button class="btn" onclick="startBatchDetection()">Запустить детекцию полигонов</button>
+                    <button class="btn" onclick="startBatchRecognition()">Запустить распознавание текста</button>
+                    <button class="btn btn-primary" onclick="toggleSelectAll()">Выбрать все</button>
+                    <button class="btn danger" onclick="deleteSelected()">Удалить выбранные</button>
+                </div>
+                
+                <!-- Task Manager Panel -->
+                <div class="task-panel" id="taskPanel" style="margin-top: 15px;">
+                    <div class="task-panel-header" onclick="toggleTaskPanel()">
+                        <h4 style="margin: 0; flex: 1;">
+                            <span>📋 Задачи</span>
+                            <span id="taskCountBadge" style="background: #007bff; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.85em; margin-left: 8px;">0</span>
+                        </h4>
+                        <span id="taskPanelIcon" style="cursor: pointer; font-size: 1.2em;">▼</span>
+                    </div>
+                    <div id="taskList" class="task-list">
+                        <p style="color: #666; font-size: 0.9em; padding: 15px;">Задач нет</p>
+                    </div>
+                </div>
             </div>
         </div>
         {% endif %}
@@ -224,60 +247,430 @@
                 notification.remove();
             }, 3000);
         }
-        
+
         // Batch processing functions
+        let batchMode = null;  // 'selected', 'status', 'all'
+        let batchType = null;  // 'detect' or 'recognize'
+        
+        function openBatchModal(type) {
+            batchType = type;
+            batchMode = null;
+            
+            // Update title
+            document.getElementById('batchModalTitle').textContent = 
+                type === 'detect' ? 'Пакетная детекция полигонов' : 'Пакетное распознавание текста';
+            
+            // Count images
+            const totalImages = document.querySelectorAll('.select-checkbox').length;
+            const selectedImages = document.querySelectorAll('.select-checkbox:checked').length;
+            
+            document.getElementById('batchAllCount').textContent = `(${totalImages} изображений)`;
+            document.getElementById('batchSelectedCount').textContent = `(${selectedImages} изображений)`;
+            
+            // Disable 'selected' option if no images selected
+            const selectedOption = document.getElementById('batchOptionSelected');
+            const selectedRadio = document.getElementById('batchModeSelected');
+            if (selectedImages === 0) {
+                selectedOption.style.opacity = '0.5';
+                selectedOption.style.cursor = 'not-allowed';
+                selectedRadio.disabled = true;
+                document.getElementById('batchSelectedCount').textContent = '(нет выбранных)';
+            } else {
+                selectedOption.style.opacity = '1';
+                selectedOption.style.cursor = 'pointer';
+                selectedRadio.disabled = false;
+            }
+            
+            // Reset radio buttons
+            document.querySelectorAll('input[name="batchMode"]').forEach(r => r.checked = false);
+            
+            // Show modal
+            document.getElementById('batchModal').style.display = 'flex';
+        }
+        
+        function selectBatchOption(option) {
+            batchMode = option;
+            document.getElementById(`batchMode${option.charAt(0).toUpperCase() + option.slice(1)}`).checked = true;
+        }
+        
+        function closeBatchModal() {
+            document.getElementById('batchModal').style.display = 'none';
+        }
+        
+        function confirmBatchProcessing() {
+            if (!batchMode) {
+                showNotification('Выберите режим обработки', 'error');
+                return;
+            }
+            
+            const totalImages = document.querySelectorAll('.select-checkbox').length;
+            const selectedImages = document.querySelectorAll('.select-checkbox:checked').length;
+            
+            let count, message;
+            
+            if (batchMode === 'selected') {
+                count = selectedImages;
+                message = `Это затронет ${count} выбранных изображений. Продолжить?`;
+            } else if (batchMode === 'status') {
+                const status = document.getElementById('batchStatusSelect').value;
+                // Count images with this status
+                const statusImages = document.querySelectorAll(`.image-status.status-${status}`);
+                count = statusImages.length;
+                message = `Это затронет ~${count} изображений со статусом "${getStatusName(status)}". Продолжить?`;
+            } else { // all
+                count = totalImages;
+                message = `Это затронет ВСЕ ${count} изображений в проекте. Продолжить?`;
+            }
+            
+            if (!confirm(message)) {
+                return;
+            }
+            
+            // Execute batch processing
+            executeBatchProcessing();
+        }
+        
+        function getStatusName(status) {
+            const names = {
+                'uploaded': 'Загружено',
+                'cropped': 'Обрезано',
+                'segmented': 'Полигоны готовы',
+                'recognized': 'Текст распознан',
+                'reviewed': 'Проверено'
+            };
+            return names[status] || status;
+        }
+        
+        async function executeBatchProcessing() {
+            closeBatchModal();
+            
+            const projectName = "{{ project.name }}";
+            let url, images = [];
+            
+            if (batchMode === 'selected') {
+                images = Array.from(document.querySelectorAll('.select-checkbox:checked')).map(cb => cb.dataset.image);
+            } else if (batchMode === 'status') {
+                const status = document.getElementById('batchStatusSelect').value;
+                images = Array.from(document.querySelectorAll(`.image-status.status-${status}`)).map(el => {
+                    const card = el.closest('.image-card');
+                    return card.querySelector('.image-name').textContent.trim();
+                });
+            }
+            // batchMode === 'all' - images array is empty, server will process all
+            
+            url = batchType === 'detect' 
+                ? `/api/projects/${encodeURIComponent(projectName)}/batch_detect`
+                : `/api/projects/${encodeURIComponent(projectName)}/batch_recognize`;
+            
+            console.log('[executeBatchProcessing] Sending request:', {
+                url,
+                batchType,
+                batchMode,
+                projectName,
+                imagesCount: images.length,
+                images: images.slice(0, 5) // First 5 only
+            });
+            
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: API.getCsrfHeaders(),
+                    body: JSON.stringify({ images })
+                });
+
+                const result = await response.json();
+                console.log('[executeBatchProcessing] Response:', result);
+
+                if (result.status === 'success') {
+                    showNotification(result.msg, 'success');
+                    // Refresh tasks immediately after starting
+                    console.log('[executeBatchProcessing] Scheduling refreshTasks in 500ms...');
+                    setTimeout(() => refreshTasks(), 500);
+                } else {
+                    showNotification('Ошибка: ' + result.msg, 'error');
+                }
+            } catch (error) {
+                console.error('Error starting batch processing:', error);
+                showNotification('Ошибка при запуске обработки', 'error');
+            }
+        }
+        
         async function startBatchDetection() {
-            if (!confirm('Запустить детекцию полигонов для всех изображений в проекте?')) {
-                return;
-            }
-
-            try {
-                const projectName = "{{ project.name }}";
-                const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/batch_detect`, {
-                    method: 'POST',
-                    headers: API.getCsrfHeaders(),
-                    body: JSON.stringify({})
-                });
-                
-                const result = await response.json();
-                
-                if (result.status === 'success') {
-                    showNotification(result.msg, 'success');
-                } else {
-                    showNotification('Ошибка: ' + result.msg, 'error');
-                }
-            } catch (error) {
-                console.error('Error starting batch detection:', error);
-                showNotification('Ошибка при запуске детекции', 'error');
-            }
+            openBatchModal('detect');
         }
-        
+
         async function startBatchRecognition() {
-            if (!confirm('Запустить распознавание текста для всех изображений в проекте?')) {
+            openBatchModal('recognize');
+        }
+
+        // Task Manager Functions
+        let taskPollingInterval = null;
+        let taskPanelExpanded = false;
+        let batchBlockExpanded = false;
+
+        // Initialize task manager on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            // Restore expanded state from localStorage
+            const savedBatchState = localStorage.getItem('batchBlockExpanded');
+            const savedTaskState = localStorage.getItem('taskPanelExpanded');
+            
+            if (savedBatchState === 'true') {
+                batchBlockExpanded = true;
+                document.getElementById('batchBlockContent').style.display = 'block';
+                document.getElementById('batchBlockIcon').textContent = '▼';
+            }
+            
+            if (savedTaskState === 'true') {
+                taskPanelExpanded = true;
+                document.getElementById('taskPanel').classList.remove('collapsed');
+                document.getElementById('taskPanelIcon').textContent = '▼';
+            }
+            
+            refreshTasks();
+            startTaskPolling();
+        });
+
+        function toggleBatchBlock() {
+            const batchBlockContent = document.getElementById('batchBlockContent');
+            const batchBlockIcon = document.getElementById('batchBlockIcon');
+            
+            batchBlockExpanded = !batchBlockExpanded;
+            
+            if (batchBlockExpanded) {
+                batchBlockContent.style.display = 'block';
+                batchBlockIcon.textContent = '▼';
+                localStorage.setItem('batchBlockExpanded', 'true');
+            } else {
+                batchBlockContent.style.display = 'none';
+                batchBlockIcon.textContent = '▶';
+                localStorage.setItem('batchBlockExpanded', 'false');
+            }
+        }
+
+        function startTaskPolling() {
+            // Poll every 3 seconds
+            taskPollingInterval = setInterval(refreshTasks, 3000);
+        }
+
+        function stopTaskPolling() {
+            if (taskPollingInterval) {
+                clearInterval(taskPollingInterval);
+                taskPollingInterval = null;
+            }
+        }
+
+        async function refreshTasks() {
+            try {
+                const response = await fetch('/api/tasks');
+                const data = await response.json();
+                const tasks = data.tasks || [];
+
+                console.log('[refreshTasks] All tasks:', tasks.length);
+                console.log('[refreshTasks] Tasks:', tasks.map(t => ({
+                    id: t.id,
+                    type: t.type,
+                    project_name: t.project_name,
+                    status: t.status,
+                    progress: t.progress
+                })));
+
+                // Filter tasks for current project
+                const projectName = "{{ project.name }}";
+                console.log('[refreshTasks] Current project:', projectName);
+                const projectTasks = tasks.filter(t => {
+                    const match = t.project_name === projectName;
+                    console.log('[refreshTasks] Task', t.id, t.project_name, '===', projectName, '?', match);
+                    return match;
+                });
+
+                console.log('[refreshTasks] Project tasks:', projectTasks.length, projectTasks.map(t => t.id));
+
+                updateTaskPanel(projectTasks);
+                checkForCompletedTasks(projectTasks);
+            } catch (error) {
+                console.error('Error loading tasks:', error);
+            }
+        }
+
+        function updateTaskPanel(tasks) {
+            const taskPanel = document.getElementById('taskPanel');
+            const taskList = document.getElementById('taskList');
+            const taskCountBadge = document.getElementById('taskCountBadge');
+            const taskPanelIcon = document.getElementById('taskPanelIcon');
+
+            // Update count
+            taskCountBadge.textContent = tasks.length;
+
+            // Auto-expand batch block if there are active tasks
+            const hasActiveTasks = tasks.some(t => t.status === 'running' || t.status === 'pending');
+            
+            if (hasActiveTasks && !batchBlockExpanded) {
+                batchBlockExpanded = true;
+                document.getElementById('batchBlockContent').style.display = 'block';
+                document.getElementById('batchBlockIcon').textContent = '▼';
+                localStorage.setItem('batchBlockExpanded', 'true');
+            }
+            
+            // Auto-expand task panel if there are active tasks
+            if (hasActiveTasks && !taskPanelExpanded) {
+                taskPanelExpanded = true;
+                taskPanel.classList.remove('collapsed');
+                taskPanelIcon.textContent = '▼';
+                localStorage.setItem('taskPanelExpanded', 'true');
+            }
+
+            // Render tasks
+            if (tasks.length === 0) {
+                taskList.innerHTML = '<p style="color: #666; font-size: 0.9em; padding: 15px;">Задач нет</p>';
+                // Don't auto-collapse if user manually expanded
                 return;
             }
 
-            try {
-                const projectName = "{{ project.name }}";
-                const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/batch_recognize`, {
-                    method: 'POST',
-                    headers: API.getCsrfHeaders(),
-                    body: JSON.stringify({})
+            // Sort tasks: running first, then by created_at descending
+            tasks.sort((a, b) => {
+                if (a.status === 'running' && b.status !== 'running') return -1;
+                if (a.status !== 'running' && b.status === 'running') return 1;
+                return new Date(b.created_at) - new Date(a.created_at);
+            });
+
+            taskList.innerHTML = tasks.map(task => renderTaskItem(task)).join('');
+            
+            // Update image statuses based on running tasks
+            updateImageStatusesFromTasks(tasks);
+        }
+
+        function updateImageStatusesFromTasks(tasks) {
+            const runningTasks = tasks.filter(t => t.status === 'running');
+            if (runningTasks.length === 0) return;
+
+            runningTasks.forEach(task => {
+                const total = task.total || task.images?.length || 0;
+                const current = total > 0 ? Math.round((task.progress / 100) * total) : 0;
+                const processedImages = task.images?.slice(0, current) || [];
+
+                // Mark processed images with a temporary class
+                processedImages.forEach(filename => {
+                    const statusBadge = document.querySelector(`.image-status[data-filename="${filename}"]`);
+                    if (statusBadge) {
+                        statusBadge.classList.add('processing');
+                    }
+                });
+            });
+        }
+
+        function renderTaskItem(task) {
+            const titles = {
+                'batch_detection': 'Детекция полигонов',
+                'batch_recognition': 'Распознавание текста',
+                'batch-detection': 'Детекция полигонов',
+                'batch-recognition': 'Распознавание текста'
+            };
+
+            const statusTexts = {
+                'pending': 'Ожидает',
+                'running': 'Выполняется',
+                'completed': 'Завершено',
+                'failed': 'Ошибка'
+            };
+
+            const baseTitle = titles[task.task_type] || task.task_type || 'Задача';
+            const imageCount = task.images?.length || 0;
+            const title = `${baseTitle} (${imageCount} изобр.)`;
+            const statusClass = task.status;
+            const statusText = statusTexts[task.status] || task.status;
+
+            const total = task.total || task.images?.length || 0;
+            // Вычисляем completed из progress и total
+            const current = total > 0 ? Math.round((task.progress / 100) * total) : 0;
+            const progress = task.progress || 0;
+
+            const isRunning = task.status === 'running';
+            const isCompleted = task.status === 'completed';
+            const isFailed = task.status === 'failed';
+
+            return `
+                <div class="task-item ${isRunning ? 'running' : ''}">
+                    <div class="task-item-header">
+                        <div class="task-item-title">
+                            <span>${title}</span>
+                        </div>
+                        <span class="task-item-status ${statusClass}">${statusText}</span>
+                    </div>
+                    <div class="task-progress-bar">
+                        <div class="task-progress-fill ${statusClass} ${isRunning ? 'running' : ''}" style="width: ${progress}%"></div>
+                    </div>
+                    <div class="task-progress-text">
+                        <span>${current}/${total} изображений</span>
+                        <span>${progress}%</span>
+                    </div>
+                    ${task.description ? `<div class="task-item-meta">${task.description}</div>` : ''}
+                    ${task.completed_at ? `<div class="task-item-meta">Завершено: ${formatTimeAgo(task.completed_at)}</div>` : ''}
+                </div>
+            `;
+        }
+
+        function formatTimeAgo(timestamp) {
+            if (!timestamp) return '';
+            const completed = new Date(timestamp);
+            const now = new Date();
+            const diffMs = now - completed;
+            const diffSecs = Math.floor(diffMs / 1000);
+            const diffMins = Math.floor(diffSecs / 60);
+
+            if (diffSecs < 60) return 'только что';
+            if (diffMins < 60) return `${diffMins} мин назад`;
+            const diffHours = Math.floor(diffMins / 60);
+            if (diffHours < 24) return `${diffHours} ч назад`;
+            return completed.toLocaleDateString('ru-RU');
+        }
+
+        function checkForCompletedTasks(tasks) {
+            const completedTasks = tasks.filter(t => t.status === 'completed');
+            const currentCompletedCount = completedTasks.length;
+
+            // Check if we already reloaded for this set of tasks (using sessionStorage)
+            const lastReloadCount = sessionStorage.getItem('taskReloadCount');
+
+            // If new tasks completed and we haven't reloaded yet, refresh page after 2 seconds
+            if (currentCompletedCount > 0 && currentCompletedCount !== parseInt(lastReloadCount)) {
+                console.log('[checkForCompletedTasks] New tasks completed:', currentCompletedCount, 'vs', lastReloadCount);
+                sessionStorage.setItem('taskReloadCount', currentCompletedCount.toString());
+                
+                // Update UI to show completed status immediately
+                updateTaskPanel(tasks);
+                
+                // Remove processing classes from completed tasks
+                completedTasks.forEach(task => {
+                    task.images?.forEach(filename => {
+                        const statusBadge = document.querySelector(`.image-status[data-filename="${filename}"]`);
+                        if (statusBadge) {
+                            statusBadge.classList.remove('processing');
+                        }
+                    });
                 });
                 
-                const result = await response.json();
-                
-                if (result.status === 'success') {
-                    showNotification(result.msg, 'success');
-                } else {
-                    showNotification('Ошибка: ' + result.msg, 'error');
-                }
-            } catch (error) {
-                console.error('Error starting batch recognition:', error);
-                showNotification('Ошибка при запуске распознавания', 'error');
+                setTimeout(() => {
+                    console.log('[checkForCompletedTasks] Reloading page...');
+                    window.location.reload();
+                }, 2000);
             }
         }
-        
+
+        function toggleTaskPanel() {
+            const taskPanel = document.getElementById('taskPanel');
+            const taskPanelIcon = document.getElementById('taskPanelIcon');
+            
+            taskPanelExpanded = !taskPanelExpanded;
+            
+            if (taskPanelExpanded) {
+                taskPanel.classList.remove('collapsed');
+                taskPanelIcon.textContent = '▼';
+            } else {
+                taskPanel.classList.add('collapsed');
+                taskPanelIcon.textContent = '▲';
+            }
+        }
+
         // Selection functionality
         function toggleSelectAll() {
             const checkboxes = document.querySelectorAll('.select-checkbox');
@@ -408,6 +801,51 @@
             <div class="form-actions">
                 <div class="btn-group">
                     <button class="btn" onclick="closeExportModal()">Отмена</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Batch Processing Modal -->
+    <div id="batchModal" class="modal">
+        <div class="modal-content">
+            <h3 id="batchModalTitle">Пакетная обработка</h3>
+            <p style="color: #666; margin-bottom: 20px;">Выберите режим обработки:</p>
+            
+            <div class="batch-option" onclick="selectBatchOption('selected')" id="batchOptionSelected">
+                <input type="radio" name="batchMode" id="batchModeSelected" value="selected">
+                <label for="batchModeSelected">
+                    <strong>Для выбранных</strong>
+                    <span id="batchSelectedCount" style="color: #666; font-size: 0.9em;">(0 изображений)</span>
+                </label>
+            </div>
+            
+            <div class="batch-option" onclick="selectBatchOption('status')" id="batchOptionStatus">
+                <input type="radio" name="batchMode" id="batchModeStatus" value="status">
+                <label for="batchModeStatus">
+                    <strong>Для статуса</strong>
+                </label>
+                <select id="batchStatusSelect" class="batch-status-select" onclick="event.stopPropagation()">
+                    <option value="uploaded">Загружено</option>
+                    <option value="cropped">Обрезано</option>
+                    <option value="segmented">Полигоны готовы</option>
+                    <option value="recognized">Текст распознан</option>
+                    <option value="reviewed">Проверено</option>
+                </select>
+            </div>
+            
+            <div class="batch-option" onclick="selectBatchOption('all')" id="batchOptionAll">
+                <input type="radio" name="batchMode" id="batchModeAll" value="all">
+                <label for="batchModeAll">
+                    <strong>Для всех в проекте</strong>
+                    <span id="batchAllCount" style="color: #666; font-size: 0.9em;">(0 изображений)</span>
+                </label>
+            </div>
+            
+            <div class="form-actions">
+                <div class="btn-group">
+                    <button class="btn" onclick="closeBatchModal()">Отмена</button>
+                    <button class="btn btn-primary" id="batchConfirmBtn" onclick="confirmBatchProcessing()">Продолжить</button>
                 </div>
             </div>
         </div>

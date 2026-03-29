@@ -24,6 +24,10 @@ class TaskRepository:
         result: Optional[dict] = None
     ) -> Task:
         """Create a new task."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"TaskRepository.create: task_id={task_id}, result={result}")
         task = Task(
             id=task_id,
             type=task_type,
@@ -35,6 +39,7 @@ class TaskRepository:
         self.session.add(task)
         self.session.commit()
         self.session.refresh(task)
+        logger.info(f"TaskRepository.create: after commit task.result={task.result}")
         return task
     
     def get_by_id(self, task_id: str) -> Optional[Task]:

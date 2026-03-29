@@ -214,13 +214,21 @@ class ProjectService:
             True if deleted, False if not found
         """
         sanitized_name = self._sanitize_name(name)
-        
+
         session, project_repo, image_repo = self._get_session()
         try:
             project = project_repo.get_by_name(sanitized_name)
             if not project:
                 return False
-            
+
+            # Delete all tasks for this project
+            from database.repository.task_repository import TaskRepository
+            task_repo = TaskRepository(session)
+            tasks = task_repo.get_all()
+            for task in tasks:
+                if task.project_id == project.id:
+                    task_repo.delete(task)
+
             return project_repo.delete(project)
         finally:
             session.close()
