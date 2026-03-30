@@ -101,7 +101,7 @@ def check_auth():
         return  # No password - open access, everyone is admin
 
     # Skip login page, static files, and auth API
-    if request.path in ['/login', '/static', '/favicon.ico', '/api/auth/me']:
+    if request.path in ['/login', '/favicon.ico', '/api/auth/me'] or request.path.startswith('/static/'):
         return
 
     # No session - redirect to login
