@@ -18,6 +18,7 @@ dependencies = [
     "torch==2.3.0",
     "torchvision==0.18.0",
     "rapidfuzz>=3.10.0",
+    "numpy<2",  # torch 2.3.0 не совместим с NumPy 2.x на Windows
 ]
 
 # PyTorch CUDA index

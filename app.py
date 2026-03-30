@@ -50,20 +50,35 @@ app = Flask(__name__)
 # =============================================================================
 # CSRF Protection
 # =============================================================================
-app.config['WTF_CSRF_ENABLED'] = True
-app.config['WTF_CSRF_TIME_LIMIT'] = None  # Token doesn't expire
-csrf = CSRFProtect(app)
+# CSRF can be enabled/disabled via .env file
+# For development over HTTP (external IP), set CSRF_ENABLED=false in .env
+# For production (HTTPS or localhost), set CSRF_ENABLED=true in .env
+CSRF_ENABLED = os.environ.get('CSRF_ENABLED', 'true').lower() == 'true'
 
-# Whitelist API endpoints from CSRF (they use session-based auth instead)
-# CSRF protection is bypassed for API endpoints that are already protected
-# by role-based access control and session validation
-csrf.exempt('api_blueprint') if 'api_blueprint' in dir() else None
+if CSRF_ENABLED:
+    app.config['WTF_CSRF_ENABLED'] = True
+    app.config['WTF_CSRF_TIME_LIMIT'] = None
+    app.config['WTF_CSRF_SSL_STRICT'] = False  # Allow non-HTTPS for development
+    app.config['WTF_CSRF_HEADERS'] = ['X-CSRFToken', 'X-Requested-With', 'X-Csrf-Token']
+    csrf = CSRFProtect(app)
+    logger.info("CSRF protection ENABLED")
+else:
+    app.config['WTF_CSRF_ENABLED'] = False
+    csrf = CSRFProtect(app)  # Keep reference but disabled
+    logger.info("CSRF protection DISABLED")
 
 # =============================================================================
 # Password Protection with Role-based Access
 # =============================================================================
 # Set secret key for sessions (required for auth)
-app.secret_key = os.environ.get('SECRET_KEY', 'change-this-secret-key-in-production')
+# IMPORTANT: Use a fixed secret key in production to persist sessions across restarts
+app.secret_key = os.environ.get('SECRET_KEY', 'yat-htr-annotation-tool-secret-key-2026')
+
+# Session cookie settings for development (HTTP)
+# In production with HTTPS, set SESSION_COOKIE_SECURE = True
+app.config['SESSION_COOKIE_SECURE'] = False  # Allow HTTP
+app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent JavaScript access
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # Allow cross-site for navigation
 
 # Determine authentication mode
 # Two modes only:
@@ -146,6 +161,16 @@ def inject_auth():
         'user_role': get_user_role(),
         'is_admin': is_admin()
     }
+
+# Make csrf_token available even when CSRF is disabled
+@app.context_processor
+def inject_csrf():
+    def csrf_token():
+        if CSRF_ENABLED:
+            from flask_wtf.csrf import generate_csrf
+            return generate_csrf()
+        return ''
+    return {'csrf_token': csrf_token}
 
 
 # =============================================================================
@@ -361,8 +386,10 @@ def detect_lines():
         regions = ai_service.detect_lines(validated, settings)
         return jsonify({'status': 'success', 'regions': regions})
     except ValueError:
+        logger.error(f"detect_lines: Invalid filename - {filename}")
         return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
     except Exception as e:
+        logger.error(f"detect_lines error: {e}", exc_info=True)
         return jsonify({'status': 'error', 'msg': str(e)}), 500
 
 # Global dict for recognition progress (kept for backward compatibility)
