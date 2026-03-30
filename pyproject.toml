@@ -17,48 +17,60 @@ dependencies = [
     "ultralytics>=8.3.0",
     "rapidfuzz>=3.10.0",
     "numpy<2",
+    
+    # =============================================================================
+    # PyTorch Configuration - ВЫБЕРИТЕ ОДИН ВАРИАНТ ПОД ВАШУ СИСТЕМУ
+    # =============================================================================
+    
+    # ВАРИАНТ 1: CPU (по умолчанию, работает везде без NVIDIA GPU)
+    # Раскомментируйте для CPU:
+    # "torch>=2.5.0",
+    # "torchvision>=0.20.0",
+    
+    # ВАРИАНТ 2: CUDA 12.1 (драйверы NVIDIA 470.x - 535.x)
+    # Для видеокарт: P102, GTX 10xx, RTX 20xx, RTX 30xx (старые драйверы)
+    # Раскомментируйте для CUDA 12.1:
+    # "torch==2.5.1+cu121",
+    # "torchvision==0.20.1+cu121",
+    
+    # ВАРИАНТ 3: CUDA 12.4 (драйверы NVIDIA 545.x+)
+    # Для видеокарт: GTX 16xx, RTX 30xx, RTX 40xx (новые драйверы)
+    # Активно для этой машины (GTX 1660 Super, драйвер 560.x):
+    "torch==2.6.0+cu124",
+    "torchvision==0.21.0+cu124",
 ]
+
+# Индекс для PyTorch CUDA 12.4
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu124"
+
+# =============================================================================
+# Альтернативные индексы для других версий CUDA
+# =============================================================================
+# Для CUDA 12.1 (раскомментируйте если используете Вариант 2):
+# [[tool.uv.index]]
+# name = "pytorch-cuda-121"
+# url = "https://download.pytorch.org/whl/cu121"
 
 # =============================================================================
 # PyTorch GPU Configuration
 # =============================================================================
 # По умолчанию: CPU версия (работает везде)
-# 
-# Для GPU выбери нужную версию CUDA:
-#   CPU:       uv sync
-#   CUDA 12.1: uv pip install --extra cuda121 torch torchvision
-#   CUDA 12.4: uv pip install --extra cuda124 torch torchvision
+#
+# Для GPU выбери нужную версию CUDA (устанавливается напрямую через pip):
+#   CUDA 12.1: uv pip install torch==2.5.1+cu121 torchvision==0.20.1+cu121 \
+#              --index-url https://download.pytorch.org/whl/cu121
+#   CUDA 12.4: uv pip install torch==2.6.0+cu124 torchvision==0.21.0+cu124 \
+#              --index-url https://download.pytorch.org/whl/cu124
 # =============================================================================
 
 [project.optional-dependencies]
-# CPU версия (по умолчанию)
+# CPU версия (берётся с PyPI)
 cpu = [
-    "torch>=2.6.0",
-    "torchvision>=0.21.0",
+    "torch>=2.5.0",
+    "torchvision>=0.20.0",
 ]
-
-# GPU версия: CUDA 12.1 (для драйверов 470.x - 535.x)
-cuda121 = [
-    "torch>=2.6.0",
-    "torchvision>=0.21.0",
-]
-
-# GPU версия: CUDA 12.4 (для драйверов 545.x+)
-cuda124 = [
-    "torch>=2.6.0",
-    "torchvision>=0.21.0",
-]
-
-# Индексы для разных версий CUDA
-[[tool.uv.index]]
-name = "pytorch-cuda-121"
-url = "https://download.pytorch.org/whl/cu121"
-extra = "cuda121"
-
-[[tool.uv.index]]
-name = "pytorch-cuda-124"
-url = "https://download.pytorch.org/whl/cu124"
-extra = "cuda124"
 
 [dependency-groups]
 dev = [
