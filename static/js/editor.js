@@ -707,6 +707,13 @@ class HTREditor {
 
     async detectTextLines() {
         const statusEl = document.getElementById('status');
+        const btnDetect = document.getElementById('btn-detect');
+        
+        // Блокируем кнопку на время выполнения
+        if (btnDetect) {
+            btnDetect.disabled = true;
+            btnDetect.textContent = '⏳ Обработка...';
+        }
         if (statusEl) statusEl.textContent = 'Обнаружение строк...';
 
         try {
@@ -744,14 +751,20 @@ class HTREditor {
                 this.history.save();
                 this.triggerAutoSave();
 
-                if (statusEl) statusEl.textContent = `Найдено ${data.regions.length} строк`;
+                if (statusEl) statusEl.textContent = `✅ Найдено ${data.regions.length} строк`;
             } else {
-                if (statusEl) statusEl.textContent = 'Ошибка: ' + (data.msg || 'Неизвестная ошибка');
+                if (statusEl) statusEl.textContent = '❌ Ошибка: ' + (data.msg || 'Неизвестная ошибка');
                 console.error('Detection error:', data.msg);
             }
         } catch (error) {
             console.error('Detection API error:', error);
-            if (statusEl) statusEl.textContent = 'Ошибка при обнаружении строк';
+            if (statusEl) statusEl.textContent = '❌ Ошибка при обнаружении строк';
+        } finally {
+            // Разблокируем кнопку
+            if (btnDetect) {
+                btnDetect.disabled = false;
+                btnDetect.textContent = 'Авто-разметка';
+            }
         }
     }
 
