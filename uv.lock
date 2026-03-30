@@ -1076,6 +1076,12 @@ dependencies = [
     { name = "ultralytics" },
 ]
 
+[package.optional-dependencies]
+cpu = [
+    { name = "torch" },
+    { name = "torchvision" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
@@ -1095,11 +1101,14 @@ requires-dist = [
     { name = "reportlab", specifier = ">=4.0.0" },
     { name = "shapely", specifier = ">=2.0.0" },
     { name = "sqlalchemy", specifier = ">=2.0.48" },
-    { name = "torch", specifier = ">=2.6.0" },
-    { name = "torchvision", specifier = ">=0.21.0" },
+    { name = "torch", specifier = "==2.6.0+cu124" },
+    { name = "torch", marker = "extra == 'cpu'", specifier = ">=2.5.0" },
+    { name = "torchvision", specifier = "==0.21.0+cu124" },
+    { name = "torchvision", marker = "extra == 'cpu'", specifier = ">=0.20.0" },
     { name = "transformers", specifier = ">=4.48.0,<5.0.0" },
     { name = "ultralytics", specifier = ">=8.3.0" },
 ]
+provides-extras = ["cpu"]
 
 [package.metadata.requires-dev]
 dev = [
