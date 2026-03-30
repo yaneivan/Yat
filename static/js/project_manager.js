@@ -172,27 +172,26 @@ class ProjectManager {
         // Get user role first
         this.userRole = await AuthAPI.getUserRole();
         console.log('User role:', this.userRole);
-        
+
         await this.loadProjects();
         await this.loadTasks();
         await this.loadImages();
         this.updateStats();
         this.setupEventListeners();
 
-        // Restore view preference from localStorage only on the main projects page
-        if (window.location.pathname === '/') {
-            this.restoreViewPreference();
-        }
+        // Render projects in the preferred view
+        this.restoreViewPreference();
     }
 
     restoreViewPreference() {
         const container = document.getElementById('projects-container');
+        if (!container) return;
 
         // Always use list view
         container.classList.remove('projects-grid');
         container.classList.add('projects-container-list');
 
-        // Re-render projects in list view
+        // Render projects in list view
         this.renderProjectsAsList();
     }
 
@@ -218,7 +217,7 @@ class ProjectManager {
             });
 
             this.projects = await Promise.all(projectPromises);
-            this.renderProjects();
+            // Don't render here - restoreViewPreference() will render after checking view preference
         } catch (error) {
             console.error('Error loading projects:', error);
             this.showError('Ошибка при загрузке проектов');
