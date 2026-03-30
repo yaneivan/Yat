@@ -131,13 +131,54 @@ htr_tool/
 
 ## Установка и запуск
 
+### Настройка конфигурации
+
+Приложение поддерживает различные конфигурации через файл `.env`:
+
+```bash
+# Скопируйте пример
+cp .env.example .env
+
+# Отредактируйте .env под ваши нужды
+```
+
+**Основные параметры:**
+
+| Переменная | Описание | Пример |
+|------------|----------|--------|
+| `ADMIN_PASSWORD` | Пароль администратора | `my_admin_password` |
+| `USER_PASSWORD` | Пароль пользователя | `my_user_password` |
+| `SECRET_KEY` | Ключ шифрования сессий | `unique-secret-key` |
+| `CSRF_ENABLED` | Защита CSRF (true/false) | `false` для HTTP |
+| `USE_CPU` | Принудительно CPU | `false` (по умолчанию) |
+
+> 📖 **Подробно:** см. [.env.example](.env.example)
+
 ### Установка через uv (рекомендуется)
 
 1. Убедитесь, что у вас установлен [uv](https://github.com/astral-sh/uv)
 2. Установите зависимости:
    ```bash
+   # CPU версия (по умолчанию, работает везде)
    uv sync
+   
+   # GPU версия (NVIDIA CUDA 12.1)
+   uv pip install --extra cuda121 torch torchvision
+   
+   # GPU версия (NVIDIA CUDA 12.4)
+   uv pip install --extra cuda124 torch torchvision
    ```
+   
+   **Выбор версии CUDA:**
+   
+   | Версия CUDA | Драйвер NVIDIA | Команда |
+   |-------------|----------------|---------|
+   | CPU | Любая | `uv sync` |
+   | 12.1 | 470.x - 535.x | `uv pip install --extra cuda121 ...` |
+   | 12.4 | 545.x+ | `uv pip install --extra cuda124 ...` |
+   
+   > 💡 Проверить версию драйвера: `nvidia-smi`
+
 3. Инициализируйте базу данных (если не создана автоматически):
    ```bash
    uv run python init_db.py
@@ -150,11 +191,11 @@ htr_tool/
 
 ### Docker
 
-```
+```bash
 docker compose up
 ```
 
-Конфигурация в `docker-compose.yml` уже включает настройки для использования GPU. 
+Конфигурация в `docker-compose.yml` уже включает настройки для использования GPU.
 
 Совместимость версий проверялась на машине: P102-100, Driver version 535.288.01, CUDA 12.2, ubuntu 22.04.
 
