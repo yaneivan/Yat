@@ -15,18 +15,50 @@ dependencies = [
     "sqlalchemy>=2.0.48",
     "transformers>=4.48.0,<5.0.0",
     "ultralytics>=8.3.0",
-    "torch==2.3.0",
-    "torchvision==0.18.0",
     "rapidfuzz>=3.10.0",
-    "numpy<2",  # torch 2.3.0 не совместим с NumPy 2.x на Windows
+    "numpy<2",
 ]
 
-# PyTorch CUDA index
-# Install with: uv pip install --index pytorch-cuda torch torchvision
+# =============================================================================
+# PyTorch GPU Configuration
+# =============================================================================
+# По умолчанию: CPU версия (работает везде)
+# 
+# Для GPU выбери нужную версию CUDA:
+#   CPU:       uv sync
+#   CUDA 12.1: uv pip install --extra cuda121 torch torchvision
+#   CUDA 12.4: uv pip install --extra cuda124 torch torchvision
+# =============================================================================
+
+[project.optional-dependencies]
+# CPU версия (по умолчанию)
+cpu = [
+    "torch>=2.6.0",
+    "torchvision>=0.21.0",
+]
+
+# GPU версия: CUDA 12.1 (для драйверов 470.x - 535.x)
+cuda121 = [
+    "torch>=2.6.0",
+    "torchvision>=0.21.0",
+]
+
+# GPU версия: CUDA 12.4 (для драйверов 545.x+)
+cuda124 = [
+    "torch>=2.6.0",
+    "torchvision>=0.21.0",
+]
+
+# Индексы для разных версий CUDA
 [[tool.uv.index]]
-name = "pytorch-cuda"
+name = "pytorch-cuda-121"
 url = "https://download.pytorch.org/whl/cu121"
-explicit = true
+extra = "cuda121"
+
+[[tool.uv.index]]
+name = "pytorch-cuda-124"
+url = "https://download.pytorch.org/whl/cu124"
+extra = "cuda124"
 
 [dependency-groups]
 dev = [
