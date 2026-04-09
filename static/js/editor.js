@@ -166,23 +166,32 @@ class HTREditor {
 
         this.canvas.clear();
         this.canvas.setBackgroundColor("#151515", this.canvas.renderAll.bind(this.canvas));
-        
+
+        // Сохраняем версию загрузки для обнаружения race condition
+        const loadVersion = this._loadVersion = (this._loadVersion || 0) + 1;
+
         const timestamp = new Date().getTime();
         const projectParam = this.project ? `&project=${this.project}` : '';
         const imgUrl = `/data/images/${this.filename}?t=${timestamp}${projectParam}`;
-        
+
         const imgEl = new Image();
         imgEl.onload = () => {
+            // Проверяем что версия всё ещё актуальна
+            if (loadVersion !== this._loadVersion) {
+                console.log(`Image load skipped: version ${loadVersion} != ${this._loadVersion}`);
+                return;
+            }
             const fabricImg = new fabric.Image(imgEl);
-            
+
             this.canvas.setBackgroundImage(fabricImg, () => {
+                if (loadVersion !== this._loadVersion) return;
                 const scale = (this.canvas.width / fabricImg.width) * 0.9;
                 this.canvas.setZoom(scale);
                 const newW = fabricImg.width * scale;
                 this.canvas.viewportTransform[4] = (this.canvas.width - newW) / 2;
                 this.canvas.viewportTransform[5] = 20;
-                
-                this.canvas.requestRenderAll(); 
+
+                this.canvas.requestRenderAll();
                 this.setMode('edit');
                 this.history.reset();
                 this.preloadNeighbors();
@@ -194,6 +203,13 @@ class HTREditor {
         imgEl.src = imgUrl;
 
         const data = await API.loadAnnotation(this.filename, this.project);
+        
+        // Проверяем что версия всё ещё актуальна перед добавлением полигонов
+        if (loadVersion !== this._loadVersion) {
+            console.log(`Annotation load skipped: version ${loadVersion} != ${this._loadVersion}`);
+            return;
+        }
+        
         if (data.regions) {
             data.regions.forEach(r => {
                 const p = new fabric.Polygon(r.points);
@@ -202,7 +218,7 @@ class HTREditor {
             });
             this.history.save();
         }
-        
+
         // Обновляем статус при переключении изображения
         if (window.statusWidget && typeof window.statusWidget.loadStatus === 'function') {
             window.statusWidget.filename = this.filename;

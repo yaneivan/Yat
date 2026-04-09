@@ -377,13 +377,22 @@ class TextEditor {
         const projectParam = this.project ? `&project=${this.project}` : '';
         const imgUrl = `/data/images/${this.filename}?t=${timestamp}${projectParam}`;
 
+        // Сохраняем версию загрузки для обнаружения race condition
+        const loadVersion = this._loadVersion = (this._loadVersion || 0) + 1;
+
         const imgEl = new Image();
         imgEl.crossOrigin = 'Anonymous';
         imgEl.onload = () => {
+            // Проверяем что версия всё ещё актуальна
+            if (loadVersion !== this._loadVersion) {
+                console.log(`Image load skipped: version ${loadVersion} != ${this._loadVersion}`);
+                return;
+            }
             const fabricImg = new fabric.Image(imgEl);
 
             // Load image on left canvas
             this.leftCanvas.setBackgroundImage(fabricImg, () => {
+                if (loadVersion !== this._loadVersion) return;
                 const scale = (this.leftCanvas.width / fabricImg.width) * 0.9;
                 this.leftCanvas.setZoom(scale);
                 const newW = fabricImg.width * scale;
@@ -395,6 +404,7 @@ class TextEditor {
 
             // Load image on right canvas with white background
             this.rightCanvas.setBackgroundImage(fabricImg, () => {
+                if (loadVersion !== this._loadVersion) return;
                 const scale = (this.rightCanvas.width / fabricImg.width) * 0.9;
                 this.rightCanvas.setZoom(scale);
                 const newW = fabricImg.width * scale;
@@ -410,7 +420,7 @@ class TextEditor {
 
                 // Load regions after both images are loaded
                 // loadRegions() handles its own cleanup
-                this.loadRegions();
+                this.loadRegions(loadVersion);
             });
         };
         imgEl.onerror = () => {
@@ -419,7 +429,7 @@ class TextEditor {
         imgEl.src = imgUrl;
     }
 
-    async loadRegions() {
+    async loadRegions(expectedVersion) {
         // === ОЧИСТКА СТАРЫХ ДАННЫХ ===
         this.regions = [];
         this.texts = {};
@@ -440,6 +450,13 @@ class TextEditor {
 
         try {
             const data = await API.loadAnnotation(this.filename, this.project);
+            
+            // Проверяем что версия всё ещё актуальна
+            if (expectedVersion !== this._loadVersion) {
+                console.log(`Regions load skipped: version ${expectedVersion} != ${this._loadVersion}`);
+                return;
+            }
+            
             let originalRegions = data.regions || [];
 
             // Create a mapping from sorted indices back to original indices
