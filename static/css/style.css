@@ -2036,6 +2036,74 @@ body.dashboard {
     white-space: nowrap;
 }
 
+/* Zoom controls */
+.zoom-btn {
+    padding: 4px 8px;
+    font-size: 0.85em;
+    min-width: 32px;
+}
+
+/* Zoom overlay on canvas (like Google Maps) */
+.zoom-overlay {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    z-index: 100;
+    background: rgba(30, 30, 30, 0.85);
+    border-radius: 8px;
+    padding: 6px 4px;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.zoom-overlay-btn {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: rgba(68, 68, 68, 0.9);
+    color: #e0e0e0;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+}
+
+.zoom-overlay-btn:hover {
+    background: rgba(90, 90, 90, 0.95);
+}
+
+.zoom-slider {
+    writing-mode: vertical-lr;
+    direction: rtl;
+    width: 20px;
+    height: 120px;
+    accent-color: #6a9;
+    cursor: pointer;
+}
+
+.zoom-indicator {
+    font-size: 0.75em;
+    color: #aaa;
+    text-align: center;
+    padding: 2px 4px;
+    cursor: pointer;
+    user-select: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    margin-top: 2px;
+}
+
+.zoom-indicator:hover {
+    color: #ddd;
+}
+
 /* ========================================
    Login Page Background
    ======================================== */

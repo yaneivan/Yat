@@ -27,7 +27,7 @@
 
     <div style="flex:1"></div>
     <div style="font-size:0.8em; color:#888; margin-right:15px;">
-        Shift: Пропорции | ПКМ: Обзор
+        Space: Пан | Shift: Пропорции | ПКМ: Обзор
     </div>
     <button class="btn btn-primary" onclick="applyCrop()">✂️ Сохранить</button>
     <span id="status-badge" class="status-badge" onclick="statusWidget.openPopover()" style="cursor:pointer; padding:4px 8px; border-radius:4px; font-size:0.85em; font-weight:600; margin-left:10px;">Загрузка...</span>
@@ -113,6 +113,9 @@
             canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
 
             fitImageHeight(img);
+            if (typeof zoomCtrl !== 'undefined') {
+                zoomCtrl.setBaseZoom(canvas.getZoom());
+            }
             loadExistingCropData();
         });
     })();
@@ -369,6 +372,12 @@
             : `?image=${imageList[newIdx]}`;
         window.location.href = newUrl;
     }
+</script>
+<script src="/static/js/zoom-controller.js"></script>
+<script>
+    const zoomCtrl = new ZoomController(canvas, {
+        wrapper: document.getElementById('workspace')
+    });
 </script>
 </body>
 </html>

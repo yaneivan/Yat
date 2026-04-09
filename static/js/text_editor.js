@@ -399,6 +399,10 @@ class TextEditor {
                 this.leftCanvas.viewportTransform[4] = (this.leftCanvas.width - newW) / 2;
                 this.leftCanvas.viewportTransform[5] = 20;
 
+                if (typeof zoomCtrl !== 'undefined') {
+                    zoomCtrl.setBaseZoom(scale);
+                }
+
                 this.leftCanvas.requestRenderAll();
             });
 
@@ -1145,6 +1149,9 @@ class TextEditor {
             vpt[5] = offsetY - point.y * newZoom; // ty
 
             this.leftCanvas.requestRenderAll();
+
+            // Sync right canvas
+            this.syncViewports(this.leftCanvas, this.rightCanvas);
         });
 
         // Right canvas events
@@ -1233,6 +1240,9 @@ class TextEditor {
             vpt[5] = offsetY - point.y * newZoom; // ty
 
             this.rightCanvas.requestRenderAll();
+
+            // Sync left canvas
+            this.syncViewports(this.rightCanvas, this.leftCanvas);
         });
     }
 
