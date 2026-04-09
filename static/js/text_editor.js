@@ -439,7 +439,7 @@ class TextEditor {
         // ===============================
 
         try {
-            const data = await API.loadAnnotation(this.filename);
+            const data = await API.loadAnnotation(this.filename, this.project);
             let originalRegions = data.regions || [];
 
             // Create a mapping from sorted indices back to original indices
@@ -509,7 +509,7 @@ class TextEditor {
 
     async loadTextData(originalRegions = null) {
         try {
-            const data = await API.loadAnnotation(this.filename);
+            const data = await API.loadAnnotation(this.filename, this.project);
             if (data.texts) {
                 // If originalRegions is provided, we need to map the texts from original indices to sorted indices
                 if (originalRegions) {
@@ -1666,7 +1666,7 @@ class TextEditor {
         try {
             // Prepare data to save - we need to map the texts back to the original region order
             // Get the original regions to create the mapping
-            const originalData = await API.loadAnnotation(this.filename);
+            const originalData = await API.loadAnnotation(this.filename, this.project);
             const originalRegions = originalData.regions || [];
 
             // Create a mapping of texts in the original region order
@@ -1745,7 +1745,7 @@ class TextEditor {
 
         try {
             // Get the original unsorted regions to send to the backend
-            const originalData = await API.loadAnnotation(this.filename);
+            const originalData = await API.loadAnnotation(this.filename, this.project);
             const originalRegions = originalData.regions || [];
 
             const response = await fetch('/api/recognize_text', {
@@ -1787,9 +1787,9 @@ class TextEditor {
                     btn.textContent = '✓ Распознано';
                     
                     // Update the local texts data
-                    const data = await API.loadAnnotation(this.filename);
+                    const data = await API.loadAnnotation(this.filename, this.project);
                     // Load the text data with the original regions to map correctly to sorted order
-                    const originalData = await API.loadAnnotation(this.filename);
+                    const originalData = await API.loadAnnotation(this.filename, this.project);
                     const originalRegions = originalData.regions || [];
                     this.loadTextData(originalRegions);
 
