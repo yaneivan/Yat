@@ -186,6 +186,9 @@ class ImageService:
                 image_path = self.get_image_path(validated, project_name)
                 img_cropped.save(image_path)
 
+                # Regenerate thumbnail for cropped image
+                image_storage_service.generate_thumbnail(validated, project_name)
+
             # Recalculate regions if needed
             if update_regions and old_regions:
                 from logic import recalculate_regions
@@ -244,6 +247,9 @@ class ImageService:
             # Copy to project-specific originals folder
             original_path = self.get_original_path(filename, project_name)
             shutil.copy(image_path, original_path)
+
+            # Generate thumbnail
+            image_storage_service.generate_thumbnail(filename, project_name)
 
             # Add to project if specified
             if project_name or project_id:
@@ -323,6 +329,9 @@ class ImageService:
             if os.path.exists(original_path):
                 os.remove(original_path)
                 deleted = True
+
+            # Delete thumbnail
+            image_storage_service.delete_thumbnail(validated, project_name)
 
             # Delete annotation (DB will cascade)
             annotation_service.delete_annotation(validated, project_name)

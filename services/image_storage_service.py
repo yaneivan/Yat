@@ -27,7 +27,7 @@ Image Storage Service — единый сервис для управления 
 import os
 import shutil
 
-from storage import IMAGE_FOLDER, ORIGINALS_FOLDER, ALLOWED_EXTENSIONS
+from storage import IMAGE_FOLDER, ORIGINALS_FOLDER, THUMBNAILS_FOLDER, ALLOWED_EXTENSIONS
 
 
 class ImageStorageService:
@@ -284,17 +284,109 @@ class ImageStorageService:
     def get_original_url(self, filename: str, project_name: str = None, cache_bust: str = None) -> str:
         """
         Get URL for original image to be used in frontend.
-        
+
         Args:
             filename: Image filename
             project_name: Project name
             cache_bust: Optional cache busting parameter (timestamp)
-            
+
         Returns:
             URL string for frontend
         """
         validated = self._validate_filename(filename)
         url = f"/data/originals/{validated}"
+        params = []
+        if project_name:
+            params.append(f"project={project_name}")
+        if cache_bust:
+            params.append(f"t={cache_bust}")
+        if params:
+            url += "?" + "&".join(params)
+        return url
+
+    # --- Миниатюры ---
+
+    def get_thumbnail_folder(self, project_name: str = None) -> str:
+        """Get thumbnails folder path, optionally project-specific."""
+        if project_name:
+            folder = os.path.join(THUMBNAILS_FOLDER, project_name)
+            os.makedirs(folder, exist_ok=True)
+            return folder
+        return THUMBNAILS_FOLDER
+
+    def get_thumbnail_path(self, filename: str, project_name: str = None) -> str:
+        """Get full path to thumbnail file."""
+        validated = self._validate_filename(filename)
+        folder = self.get_thumbnail_folder(project_name)
+        name, _ = os.path.splitext(validated)
+        return os.path.join(folder, f"{name}_thumb.jpg")
+
+    def generate_thumbnail(self, filename: str, project_name: str = None, max_size: int = 300) -> bool:
+        """
+        Generate thumbnail for an image.
+
+        Args:
+            filename: Source image filename
+            project_name: Project name
+            max_size: Maximum width/height of thumbnail
+
+        Returns:
+            True if thumbnail was generated, False otherwise
+        """
+        from PIL import Image, ImageOps
+        try:
+            validated = self._validate_filename(filename)
+            src_path = self.get_image_path(validated, project_name)
+
+            if not os.path.exists(src_path):
+                return False
+
+            thumb_path = self.get_thumbnail_path(validated, project_name)
+
+            img = Image.open(src_path)
+            img = ImageOps.exif_transpose(img)
+
+            # Конвертируем в RGB если RGBA/Grayscale (JPEG не поддерживает альфа)
+            if img.mode in ('RGBA', 'LA', 'P'):
+                img = img.convert('RGB')
+            elif img.mode == 'L':
+                img = img.convert('RGB')
+
+            img.thumbnail((max_size, max_size), Image.LANCZOS)
+            img.save(thumb_path, 'JPEG', quality=85, optimize=True)
+            return True
+        except (ValueError, Exception) as e:
+            print(f"ImageStorageService.generate_thumbnail error: {e}")
+            return False
+
+    def thumbnail_exists(self, filename: str, project_name: str = None) -> bool:
+        """Check if thumbnail exists."""
+        try:
+            validated = self._validate_filename(filename)
+            path = self.get_thumbnail_path(validated, project_name)
+            return os.path.exists(path)
+        except ValueError:
+            return False
+
+    def delete_thumbnail(self, filename: str, project_name: str = None) -> bool:
+        """Delete thumbnail file."""
+        try:
+            validated = self._validate_filename(filename)
+            thumb_path = self.get_thumbnail_path(validated, project_name)
+            if os.path.exists(thumb_path):
+                os.remove(thumb_path)
+                return True
+            return False
+        except (ValueError, Exception) as e:
+            print(f"ImageStorageService.delete_thumbnail error: {e}")
+            return False
+
+    def get_thumbnail_url(self, filename: str, project_name: str = None, cache_bust: str = None) -> str:
+        """Get URL for thumbnail to be used in frontend."""
+        validated = self._validate_filename(filename)
+        name, _ = os.path.splitext(validated)
+        thumb_name = f"{name}_thumb.jpg"
+        url = f"/data/thumbnails/{thumb_name}"
         params = []
         if project_name:
             params.append(f"project={project_name}")

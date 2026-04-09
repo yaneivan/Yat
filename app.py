@@ -262,6 +262,36 @@ def serve_original(filename):
     except ValueError:
         return jsonify({'error': 'Invalid filename'}), 400
 
+@app.route('/data/thumbnails/<path:filename>')
+def serve_thumbnail(filename):
+    try:
+        validated = image_storage_service._validate_filename(filename)
+        project_name = request.args.get('project')
+
+        # filename приходит как "ProjectName/name_thumb.jpg" или "name_thumb.jpg"
+        # Нужно извлечь оригинальное имя файла
+        thumb_basename = os.path.basename(validated)
+        # Убрать "_thumb.jpg" чтобы получить оригинальное имя
+        if thumb_basename.endswith('_thumb.jpg'):
+            original_name = thumb_basename[:-10]  # убрать "_thumb.jpg"
+        else:
+            original_name = thumb_basename
+
+        file_path = image_storage_service.get_thumbnail_path(original_name, project_name)
+
+        if not os.path.exists(file_path):
+            # Fallback: сгенерировать на лету
+            for ext in ['.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.webp']:
+                if image_storage_service.image_exists(original_name + ext, project_name):
+                    image_storage_service.generate_thumbnail(original_name + ext, project_name)
+                    break
+
+            if not os.path.exists(file_path):
+                return jsonify({'error': 'Thumbnail not found'}), 404
+        return send_from_directory(os.path.dirname(file_path), os.path.basename(file_path))
+    except ValueError:
+        return jsonify({'error': 'Invalid filename'}), 400
+
 # --- API: Annotations ---
 @app.route('/api/load/<filename>')
 def load_data(filename):
