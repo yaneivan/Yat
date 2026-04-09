@@ -347,50 +347,23 @@ class TextEditor {
 
     // Initialize viewport synchronization
     initViewportSync() {
-        // Add event listeners to synchronize viewport changes
-        this.leftCanvas.on('mouse:wheel', (opt) => {
-            // Synchronize zoom on mouse wheel
+        // Sync on zoom (wheel) — left to right
+        this.leftCanvas.on('mouse:wheel', () => {
             this.syncViewports(this.leftCanvas, this.rightCanvas);
         });
 
-        this.leftCanvas.on('mouse:up', (opt) => {
-            // Synchronize panning after mouse release
-            this.syncViewports(this.leftCanvas, this.rightCanvas);
-        });
-
-        this.leftCanvas.on('mouse:down', (opt) => {
-            // Set up continuous synchronization during dragging
-            this.leftCanvas.on('after:render', () => {
-                this.syncViewports(this.leftCanvas, this.rightCanvas);
-            });
-        });
-
-        this.leftCanvas.on('mouse:up', (opt) => {
-            // Stop continuous synchronization after dragging
-            this.leftCanvas.off('after:render');
-            this.syncViewports(this.leftCanvas, this.rightCanvas);
-        });
-
-        this.rightCanvas.on('mouse:wheel', (opt) => {
-            // Synchronize zoom on mouse wheel
+        // Sync on zoom (wheel) — right to left
+        this.rightCanvas.on('mouse:wheel', () => {
             this.syncViewports(this.rightCanvas, this.leftCanvas);
         });
 
-        this.rightCanvas.on('mouse:up', (opt) => {
-            // Synchronize panning after mouse release
-            this.syncViewports(this.rightCanvas, this.leftCanvas);
+        // Sync on mouse up (after panning) — left to right
+        this.leftCanvas.on('mouse:up', () => {
+            this.syncViewports(this.leftCanvas, this.rightCanvas);
         });
 
-        this.rightCanvas.on('mouse:down', (opt) => {
-            // Set up continuous synchronization during dragging
-            this.rightCanvas.on('after:render', () => {
-                this.syncViewports(this.rightCanvas, this.leftCanvas);
-            });
-        });
-
-        this.rightCanvas.on('mouse:up', (opt) => {
-            // Stop continuous synchronization after dragging
-            this.rightCanvas.off('after:render');
+        // Sync on mouse up (after panning) — right to left
+        this.rightCanvas.on('mouse:up', () => {
             this.syncViewports(this.rightCanvas, this.leftCanvas);
         });
     }
@@ -1062,9 +1035,11 @@ class TextEditor {
     // ==================== END NOTEPAD MODE METHODS ====================
 
     setupCanvasEvents() {
-        // Variables for panning
-        let isRightClickPanning = false;
-        let lastPosX, lastPosY;
+        // Variables for panning — separate for each canvas to avoid conflicts
+        let leftPanning = false;
+        let leftLastPosX, leftLastPosY;
+        let rightPanning = false;
+        let rightLastPosX, rightLastPosY;
 
         // Left canvas events
         this.leftCanvas.on('mouse:down', (opt) => {
@@ -1079,19 +1054,19 @@ class TextEditor {
                     console.log("Clicked on canvas but not on a polygon"); // Debug print
                 }
             } else if (opt.e.button === 2) { // Right click
-                isRightClickPanning = true;
-                lastPosX = opt.e.clientX;
-                lastPosY = opt.e.clientY;
+                leftPanning = true;
+                leftLastPosX = opt.e.clientX;
+                leftLastPosY = opt.e.clientY;
                 this.leftCanvas.defaultCursor = 'grab';
                 opt.e.preventDefault();
             }
         });
 
         this.leftCanvas.on('mouse:move', (opt) => {
-            if (isRightClickPanning) {
+            if (leftPanning) {
                 const e = opt.e;
-                const deltaX = e.clientX - lastPosX;
-                const deltaY = e.clientY - lastPosY;
+                const deltaX = e.clientX - leftLastPosX;
+                const deltaY = e.clientY - leftLastPosY;
 
                 // Pan the canvas
                 const vpt = this.leftCanvas.viewportTransform;
@@ -1099,13 +1074,16 @@ class TextEditor {
                 vpt[5] += deltaY; // ty
                 this.leftCanvas.requestRenderAll();
 
-                lastPosX = e.clientX;
-                lastPosY = e.clientY;
+                // Sync right canvas in real-time
+                this.syncViewports(this.leftCanvas, this.rightCanvas);
+
+                leftLastPosX = e.clientX;
+                leftLastPosY = e.clientY;
             }
         });
 
         this.leftCanvas.on('mouse:up', () => {
-            isRightClickPanning = false;
+            leftPanning = false;
             this.leftCanvas.defaultCursor = 'default';
         });
 
@@ -1164,19 +1142,19 @@ class TextEditor {
                     console.log("Clicked on right canvas but not on a polygon"); // Debug print
                 }
             } else if (opt.e.button === 2) { // Right click for panning
-                isRightClickPanning = true;
-                lastPosX = opt.e.clientX;
-                lastPosY = opt.e.clientY;
+                rightPanning = true;
+                rightLastPosX = opt.e.clientX;
+                rightLastPosY = opt.e.clientY;
                 this.rightCanvas.defaultCursor = 'grab';
                 opt.e.preventDefault();
             }
         });
 
         this.rightCanvas.on('mouse:move', (opt) => {
-            if (isRightClickPanning) {
+            if (rightPanning) {
                 const e = opt.e;
-                const deltaX = e.clientX - lastPosX;
-                const deltaY = e.clientY - lastPosY;
+                const deltaX = e.clientX - rightLastPosX;
+                const deltaY = e.clientY - rightLastPosY;
 
                 // Pan the canvas
                 const vpt = this.rightCanvas.viewportTransform;
@@ -1184,13 +1162,16 @@ class TextEditor {
                 vpt[5] += deltaY; // ty
                 this.rightCanvas.requestRenderAll();
 
-                lastPosX = e.clientX;
-                lastPosY = e.clientY;
+                // Sync left canvas in real-time
+                this.syncViewports(this.rightCanvas, this.leftCanvas);
+
+                rightLastPosX = e.clientX;
+                rightLastPosY = e.clientY;
             }
         });
 
         this.rightCanvas.on('mouse:up', () => {
-            isRightClickPanning = false;
+            rightPanning = false;
             this.rightCanvas.defaultCursor = 'default';
         });
 
