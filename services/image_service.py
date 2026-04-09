@@ -4,7 +4,10 @@ Image Service for managing images.
 Provides centralized image operations with validation,
 file management, and project integration.
 
-Files are stored on disk, metadata in database.
+Files are managed by ImageStorageService, this service handles:
+- Business logic (crop, upload with checks)
+- Database integration
+- Project coordination
 """
 
 import os
@@ -17,6 +20,7 @@ from database.repository.image_repository import ImageRepository
 from database.repository.project_repository import ProjectRepository
 from database.enums import ImageStatus
 from services.annotation_service import annotation_service
+from services.image_storage_service import image_storage_service
 
 
 class ImageService:
@@ -28,6 +32,8 @@ class ImageService:
     - Automatic backup to originals
     - Crop operations with region recalculation
     - Project integration checks
+    
+    File operations are delegated to ImageStorageService.
     """
 
     ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.webp'}
@@ -44,14 +50,7 @@ class ImageService:
 
     def _validate_filename(self, filename: str) -> str:
         """Validate filename for security."""
-        if not filename:
-            raise ValueError("Filename cannot be empty")
-
-        # Check for path traversal
-        if '..' in filename or '/' in filename or '\\' in filename:
-            raise ValueError("Invalid filename: path traversal detected")
-
-        return filename
+        return image_storage_service._validate_filename(filename)
 
     def _get_extension(self, filename: str) -> str:
         """Get lowercase file extension."""
@@ -59,106 +58,68 @@ class ImageService:
 
     def is_allowed_extension(self, filename: str) -> bool:
         """Check if file extension is allowed."""
-        return self._get_extension(filename) in self.ALLOWED_EXTENSIONS
+        return image_storage_service.is_allowed_extension(filename)
 
-    def get_image_path(self, filename: str) -> str:
+    def get_image_path(self, filename: str, project_name: str = None) -> str:
         """Get full path to image in images folder."""
-        from storage import IMAGE_FOLDER
-        validated = self._validate_filename(filename)
-        return os.path.join(IMAGE_FOLDER, validated)
+        return image_storage_service.get_image_path(filename, project_name)
 
-    def get_original_path(self, filename: str) -> str:
+    def get_original_path(self, filename: str, project_name: str = None) -> str:
         """Get full path to original image backup."""
-        from storage import ORIGINALS_FOLDER
-        validated = self._validate_filename(filename)
-        return os.path.join(ORIGINALS_FOLDER, validated)
+        return image_storage_service.get_original_path(filename, project_name)
 
     def image_exists(self, filename: str) -> bool:
         """Check if image exists in images folder."""
         try:
-            validated = self._validate_filename(filename)
-            path = self.get_image_path(validated)
-            return os.path.exists(path)
+            return image_storage_service.image_exists(filename)
         except ValueError:
             return False
 
     def original_exists(self, filename: str) -> bool:
         """Check if original backup exists."""
         try:
-            validated = self._validate_filename(filename)
-            path = self.get_original_path(validated)
-            return os.path.exists(path)
+            return image_storage_service.original_exists(filename)
         except ValueError:
             return False
 
-    def ensure_original_exists(self, filename: str) -> bool:
+    def ensure_original_exists(self, filename: str, project_name: str = None) -> bool:
         """
         Ensure original backup exists, copy from images if needed.
 
         Args:
             filename: The image filename
+            project_name: Optional project name for project-specific path
 
         Returns:
             True if original exists or was copied, False otherwise
         """
-        try:
-            validated = self._validate_filename(filename)
-        except ValueError:
-            return False
+        return image_storage_service.ensure_original_exists(filename, project_name)
 
-        src = self.get_image_path(validated)
-        dst = self.get_original_path(validated)
-
-        if not os.path.exists(dst) and os.path.exists(src):
-            shutil.copy(src, dst)
-
-        return os.path.exists(dst)
-
-    def get_image(self, filename: str) -> Optional[Image.Image]:
+    def get_image(self, filename: str, project_name: str = None) -> Optional[Image.Image]:
         """
         Load image from images folder.
 
         Args:
             filename: The image filename
+            project_name: Optional project name for project-specific path
 
         Returns:
             PIL Image object or None if not found
         """
-        try:
-            validated = self._validate_filename(filename)
-            path = self.get_image_path(validated)
+        return image_storage_service.load_image(filename, project_name)
 
-            if not os.path.exists(path):
-                return None
-
-            img = Image.open(path)
-            img = ImageOps.exif_transpose(img)
-            return img
-        except (ValueError, FileNotFoundError, Exception):
-            return None
-
-    def get_original(self, filename: str) -> Optional[Image.Image]:
+    def get_original(self, filename: str, project_name: str = None) -> Optional[Image.Image]:
         """
         Load original image from backup.
 
         Args:
             filename: The image filename
+            project_name: Optional project name for project-specific path
 
         Returns:
             PIL Image object or None if not found
         """
-        try:
-            validated = self._validate_filename(filename)
-            path = self.get_original_path(validated)
-
-            if not os.path.exists(path):
-                return None
-
-            img = Image.open(path)
-            img = ImageOps.exif_transpose(img)
-            return img
-        except (ValueError, FileNotFoundError, Exception):
-            return None
+        return image_storage_service.load_original(filename, project_name)
 
     def crop_image(
         self,
@@ -173,7 +134,7 @@ class ImageService:
         Args:
             filename: The image filename
             box: Crop box with 'corners' array [TL, BL, BR, TR]
-            project_name: Optional project name to scope annotation lookup
+            project_name: Project name for project-specific file paths
             update_regions: Whether to recalculate regions
 
         Returns:
@@ -182,8 +143,8 @@ class ImageService:
         try:
             validated = self._validate_filename(filename)
 
-            # Ensure original exists
-            if not self.ensure_original_exists(validated):
+            # Ensure original exists for this project
+            if not self.ensure_original_exists(validated, project_name):
                 return False
 
             # Load current annotation data with project scope
@@ -191,8 +152,8 @@ class ImageService:
             old_crop = annotation_data.get('crop_params')
             old_regions = annotation_data.get('regions', [])
 
-            # Get original image
-            original_path = self.get_original_path(validated)
+            # Get original image from project-specific folder
+            original_path = self.get_original_path(validated, project_name)
             with Image.open(original_path) as img:
                 img = ImageOps.exif_transpose(img)
 
@@ -221,8 +182,8 @@ class ImageService:
                     Image.BICUBIC
                 )
 
-                # Save cropped image
-                image_path = self.get_image_path(validated)
+                # Save cropped image to project-specific folder
+                image_path = self.get_image_path(validated, project_name)
                 img_cropped.save(image_path)
 
             # Recalculate regions if needed
@@ -276,12 +237,13 @@ class ImageService:
             return None
 
         try:
-            # Save to images folder
-            image_path = self.get_image_path(filename)
+            # Save to project-specific images folder
+            image_path = self.get_image_path(filename, project_name)
             file_storage.save(image_path)
 
-            # Copy to originals folder
-            shutil.copy(image_path, self.get_original_path(filename))
+            # Copy to project-specific originals folder
+            original_path = self.get_original_path(filename, project_name)
+            shutil.copy(image_path, original_path)
 
             # Add to project if specified
             if project_name or project_id:
@@ -300,11 +262,11 @@ class ImageService:
                             if img.filename == filename:
                                 # Duplicate found - skip this file
                                 return None
-                        
+
                         image_repo.create(
                             project_id=project.id,
                             filename=filename,
-                            original_path=self.get_original_path(filename),
+                            original_path=original_path,
                             cropped_path=image_path,
                             status=ImageStatus.UPLOADED
                         )
@@ -320,6 +282,7 @@ class ImageService:
     def delete_image(
         self,
         filename: str,
+        project_name: str = None,
         skip_project_check: bool = False
     ) -> bool:
         """
@@ -327,6 +290,7 @@ class ImageService:
 
         Args:
             filename: The image filename
+            project_name: Project name for project-specific paths
             skip_project_check: Skip checking if image is used in projects
 
         Returns:
@@ -346,9 +310,9 @@ class ImageService:
                 finally:
                     session.close()
 
-            # Delete image files
-            image_path = self.get_image_path(validated)
-            original_path = self.get_original_path(validated)
+            # Delete project-specific image files
+            image_path = self.get_image_path(validated, project_name)
+            original_path = self.get_original_path(validated, project_name)
 
             deleted = False
 
@@ -361,7 +325,7 @@ class ImageService:
                 deleted = True
 
             # Delete annotation (DB will cascade)
-            annotation_service.delete_annotation(validated)
+            annotation_service.delete_annotation(validated, project_name)
 
             return deleted
 
@@ -369,24 +333,37 @@ class ImageService:
             print(f"ImageService.delete_image error: {e}")
             return False
 
-    def get_all_images(self) -> List[Dict[str, Any]]:
+    def get_all_images(self, project_name: str = None) -> List[Dict[str, Any]]:
         """
         Get all images with their status (optimized query, no N+1).
+
+        Args:
+            project_name: Optional project name to filter images
 
         Returns:
             List of dictionaries with 'name' and 'status' fields
         """
         session, image_repo, project_repo = self._get_session()
         try:
-            # Получить ВСЕ изображения одним запросом
-            images = image_repo.get_all()
-            
+            # Получить ВСЕ изображения (или для конкретного проекта) одним запросом
+            if project_name:
+                project = project_repo.get_by_name(project_name)
+                if not project:
+                    return []
+                images = image_repo.get_by_project(project.id)
+            else:
+                images = image_repo.get_all()
+
             # Получить ВСЕ аннотации одним запросом (вместо N запросов)
             all_annotations = annotation_service._get_all_annotations_raw(session)
-            
+
+            # Получить ВСЕ проекты для маппинга project_id -> project_name
+            all_projects = project_repo.get_all()
+            project_name_by_id = {p.id: p.name for p in all_projects}
+
             # Сгруппировать аннотации по image_id в памяти
             annotations_by_image = {ann['image_id']: ann for ann in all_annotations}
-            
+
             # Сформировать результат без дополнительных запросов к БД
             result = []
             for image in images:
@@ -400,12 +377,13 @@ class ImageService:
                     status = ImageStatus.CROPPED.value
                 else:
                     status = ImageStatus.UPLOADED.value
-                
+
                 result.append({
                     'id': image.id,
                     'name': image.filename,
                     'status': status,
-                    'project_id': image.project_id
+                    'project_id': image.project_id,
+                    'project_name': project_name_by_id.get(image.project_id)
                 })
 
             return result

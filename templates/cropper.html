@@ -107,7 +107,8 @@
 
         imageList = await API.listImages(project || null);
 
-        fabric.Image.fromURL(`/data/originals/${filename}`, img => {
+        const projectParam = project ? `?project=${encodeURIComponent(project)}` : '';
+        fabric.Image.fromURL(`/data/originals/${filename}${projectParam}`, img => {
             imgObj = img;
             canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
 

@@ -26,7 +26,9 @@ const API = {
             ? `/api/images_list?project=${encodeURIComponent(project)}`
             : '/api/images_list';
         const res = await fetch(url);
-        return res.json();
+        const data = await res.json();
+        // Return just filenames for backward compatibility with editor.js/text_editor.js
+        return data.map(img => typeof img === 'object' ? img.name : img);
     },
     async loadAnnotation(filename, projectName = null) {
         const url = projectName 

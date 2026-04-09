@@ -374,7 +374,8 @@ class TextEditor {
 
         // Load image on both canvases
         const timestamp = new Date().getTime();
-        const imgUrl = `/data/images/${this.filename}?t=${timestamp}`;
+        const projectParam = this.project ? `&project=${this.project}` : '';
+        const imgUrl = `/data/images/${this.filename}?t=${timestamp}${projectParam}`;
 
         const imgEl = new Image();
         imgEl.crossOrigin = 'Anonymous';
@@ -1260,7 +1261,8 @@ class TextEditor {
         // Get the region polygon
         const region = this.regions[regionIndex];
         if (!region || !region.points || region.points.length < 3) {
-            imgElement.src = `/data/images/${this.filename}?t=${new Date().getTime()}`;
+            const projectParam = this.project ? `?project=${this.project}` : '';
+            imgElement.src = `/data/images/${this.filename}?t=${new Date().getTime()}${projectParam}`;
             return;
         }
 
@@ -1273,8 +1275,9 @@ class TextEditor {
                 // Re-call after image is loaded (will use cached image this time)
                 this.extractRegionImage(regionIndex, imgElement);
             };
-            this.cachedPreviewImage.src = `/data/images/${this.filename}?t=${new Date().getTime()}`;
-            
+            const projectParam = this.project ? `?project=${this.project}` : '';
+            this.cachedPreviewImage.src = `/data/images/${this.filename}?t=${new Date().getTime()}${projectParam}`;
+
             // Show placeholder while loading
             imgElement.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
             return;
@@ -1750,7 +1753,8 @@ class TextEditor {
                 headers: API.getCsrfHeaders(),
                 body: JSON.stringify({
                     image_name: this.filename,
-                    regions: originalRegions  // Send original unsorted regions
+                    regions: originalRegions,
+                    project: this.project
                 })
             });
 

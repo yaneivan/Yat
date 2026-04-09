@@ -618,12 +618,15 @@ def process_zip_import(file, simplify_val=0, project_name=None):
                 if f.lower().endswith(tuple(storage.ALLOWED_EXTENSIONS)):
                     logger.info(f"[ZIP Import] Processing image: {f}")
                     src = os.path.join(root, f)
-                    dest_path = os.path.join(storage.IMAGE_FOLDER, f)
+
+                    # Use image_storage_service for project-specific paths
+                    from services.image_storage_service import image_storage_service
+                    dest_path = image_storage_service.get_image_path(f, project_name)
                     shutil.move(src, dest_path)
                     logger.info(f"[ZIP Import] Moved image to: {dest_path}")
 
                     # Copy to originals folder
-                    original_dest = os.path.join(storage.ORIGINALS_FOLDER, f)
+                    original_dest = image_storage_service.get_original_path(f, project_name)
                     shutil.copy(dest_path, original_dest)
                     logger.info(f"[ZIP Import] Copied to originals: {original_dest}")
 
@@ -717,7 +720,7 @@ def run_batch_detection_for_project(project_name, settings=None, task_id=None):
 
         for idx, image_name in enumerate(image_names):
             try:
-                regions = ai_service.detect_lines(image_name, settings)
+                regions = ai_service.detect_lines(image_name, settings, project_name)
 
                 # Use annotation_service instead of old storage layer
                 annotation_data = annotation_service.get_annotation(image_name, project_name)
@@ -773,7 +776,7 @@ def run_batch_recognition_for_project(project_name, task_id=None):
 
         for idx, image_name in enumerate(image_names):
             try:
-                ai_service.recognize_text(image_name, None)
+                ai_service.recognize_text(image_name, None, project_name=project_name)
                 task_service.update_progress(task.id, idx + 1)
 
             except Exception as e:
