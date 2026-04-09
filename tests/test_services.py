@@ -545,3 +545,96 @@ class TestRecognitionProgressLeak:
         # Этот тест подтверждает что данные корректно записываются
         # а очистка реализована в app.py (finally блок)
         assert recognition_progress["test.png"]["status"] == "completed"
+
+
+# =============================================================================
+# Тесты на миниатюры (ImageStorageService)
+# =============================================================================
+
+class TestImageStorageServiceThumbnails:
+    """Тесты генерации и отдачи миниатюр."""
+
+    def test_generate_thumbnail_creates_file(self, tmp_path):
+        """Тест: generate_thumbnail создаёт файл."""
+        from services.image_storage_service import ImageStorageService, THUMBNAILS_FOLDER
+        from PIL import Image
+        import os
+
+        # Создать временную структуру
+        img_folder = tmp_path / "images"
+        thumb_folder = tmp_path / "thumbnails"
+        img_folder.mkdir()
+        thumb_folder.mkdir()
+
+        # Создать тестовое изображение
+        test_img = Image.new('RGB', (1000, 800), color='red')
+        img_path = img_folder / "test.jpg"
+        test_img.save(img_path)
+
+        # Патчим THUMBNAILS_FOLDER
+        with patch('services.image_storage_service.THUMBNAILS_FOLDER', str(thumb_folder)):
+            with patch('services.image_storage_service.IMAGE_FOLDER', str(img_folder)):
+                svc = ImageStorageService()
+
+                result = svc.generate_thumbnail("test.jpg")
+                assert result is True
+
+                thumb_path = svc.get_thumbnail_path("test.jpg")
+                assert os.path.exists(thumb_path)
+
+                # Проверить размер — миниатюра должна быть <= 300px
+                thumb = Image.open(thumb_path)
+                assert max(thumb.size) <= 300
+
+    def test_get_thumbnail_url(self):
+        """Тест: get_thumbnail_url возвращает правильный URL."""
+        from services.image_storage_service import image_storage_service
+
+        url = image_storage_service.get_thumbnail_url("scan.jpg", "ProjectA")
+        assert "/data/thumbnails/" in url
+        assert "_thumb.jpg" in url
+        assert "project=ProjectA" in url
+
+    def test_thumbnail_does_not_exist_initially(self):
+        """Тест: thumbnail_exists возвращает False для несуществующего файла."""
+        from services.image_storage_service import image_storage_service
+
+        result = image_storage_service.thumbnail_exists("nonexistent.jpg", "NonexistentProject")
+        assert result is False
+
+    def test_delete_thumbnail_nonexistent(self):
+        """Тест: delete_thumbnail возвращает False если файла нет."""
+        from services.image_storage_service import image_storage_service
+
+        result = image_storage_service.delete_thumbnail("nonexistent.jpg", "NonexistentProject")
+        assert result is False
+
+    def test_generate_thumbnail_from_rgba(self, tmp_path):
+        """Тест: конвертация RGBA в RGB при генерации миниатюры."""
+        from services.image_storage_service import ImageStorageService
+        from PIL import Image
+        import os
+
+        img_folder = tmp_path / "images"
+        thumb_folder = tmp_path / "thumbnails"
+        img_folder.mkdir()
+        thumb_folder.mkdir()
+
+        # RGBA изображение
+        test_img = Image.new('RGBA', (500, 500), color=(255, 0, 0, 128))
+        img_path = img_folder / "rgba_test.png"
+        test_img.save(img_path)
+
+        with patch('services.image_storage_service.THUMBNAILS_FOLDER', str(thumb_folder)):
+            with patch('services.image_storage_service.IMAGE_FOLDER', str(img_folder)):
+                svc = ImageStorageService()
+
+                result = svc.generate_thumbnail("rgba_test.png")
+                assert result is True
+
+                thumb_path = svc.get_thumbnail_path("rgba_test.png")
+                assert os.path.exists(thumb_path)
+
+                # JPEG не поддерживает альфа — проверить что сохранилось
+                thumb = Image.open(thumb_path)
+                assert thumb.mode == 'RGB'

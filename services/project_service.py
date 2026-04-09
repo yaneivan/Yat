@@ -318,18 +318,27 @@ class ProjectService:
             project_name: Project name
 
         Returns:
-            List of image data dicts
+            List of image data dicts with thumbnail_url
         """
+        from services.image_storage_service import image_storage_service
+
         sanitized_name = self._sanitize_name(project_name)
-        
+
         session, project_repo, image_repo = self._get_session()
         try:
             project = project_repo.get_by_name(sanitized_name)
             if not project:
                 return []
-            
+
             images = image_repo.get_by_project(project.id)
-            return [img.to_dict() for img in images]
+            result = []
+            for img in images:
+                data = img.to_dict()
+                data['thumbnail_url'] = image_storage_service.get_thumbnail_url(
+                    img.filename, project_name
+                )
+                result.append(data)
+            return result
         finally:
             session.close()
 
