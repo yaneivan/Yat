@@ -538,7 +538,10 @@ class HTREditor {
         });
         
         const onObjectChanged = (e) => {
-            if(!e.target.class && e.target.type==='polygon') {
+            if (!e.target || e.target.class) return;
+            
+            // Проверяем: это полигон или группа выделенных полигонов
+            if (e.target.type === 'polygon' || e.target.type === 'activeSelection') {
                 this.history.save();
                 this.triggerAutoSave();
             }
