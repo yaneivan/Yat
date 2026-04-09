@@ -4,6 +4,7 @@
 Эти тесты проверяют критичные места которые не покрываются test_api.py:
 1. TaskService - работа с базой данных
 2. recognition_progress утечка — память не очищается
+3. AnnotationService - автосмена статуса при заполнении полигонов
 
 AI тесты перенесены в test_ai.py
 """
@@ -204,6 +205,261 @@ class TestTaskServiceUsage:
         assert 'task_service' in recognition_source, (
             "run_batch_recognition_for_project should use task_service"
         )
+
+
+class TestAnnotationServiceAutoRecognize:
+    """
+    Тесты для автоматической смены статуса на recognized
+    при заполнении всех полигонов текстом.
+    """
+
+    def test_all_polygons_filled_returns_true_when_all_have_text(self):
+        """Тест: _all_polygons_filled возвращает True когда все полигоны с текстом."""
+        from services.annotation_service import annotation_service
+
+        polygons = [
+            {'points': [[0, 0], [100, 0], [100, 50], [0, 50]], 'text': 'строка 1'},
+            {'points': [[0, 60], [100, 60], [100, 110], [0, 110]], 'text': 'строка 2'},
+        ]
+
+        assert annotation_service._all_polygons_filled(polygons) is True
+
+    def test_all_polygons_filled_returns_false_when_one_empty(self):
+        """Тест: _all_polygons_filled возвращает False если хоть один полигон без текста."""
+        from services.annotation_service import annotation_service
+
+        polygons = [
+            {'points': [[0, 0], [100, 0], [100, 50], [0, 50]], 'text': 'строка 1'},
+            {'points': [[0, 60], [100, 60], [100, 110], [0, 110]], 'text': ''},
+        ]
+
+        assert annotation_service._all_polygons_filled(polygons) is False
+
+    def test_all_polygons_filled_returns_false_when_whitespace_only(self):
+        """Тест: полигон с пробелами считается пустым."""
+        from services.annotation_service import annotation_service
+
+        polygons = [
+            {'points': [[0, 0], [100, 0], [100, 50], [0, 50]], 'text': '   '},
+        ]
+
+        assert annotation_service._all_polygons_filled(polygons) is False
+
+    def test_all_polygons_filled_returns_false_for_empty_list(self):
+        """Тест: пустой список полигонов не считается заполненным."""
+        from services.annotation_service import annotation_service
+
+        assert annotation_service._all_polygons_filled([]) is False
+
+    def test_all_polygons_filled_returns_false_for_missing_text_field(self):
+        """Тест: полигон без поля text считается пустым."""
+        from services.annotation_service import annotation_service
+
+        polygons = [
+            {'points': [[0, 0], [100, 0], [100, 50], [0, 50]]},
+        ]
+
+        assert annotation_service._all_polygons_filled(polygons) is False
+
+    def test_save_annotation_auto_sets_status_to_recognized(self):
+        """
+        Тест: при сохранении аннотации с заполненными полигонами
+        статус изображения автоматически меняется на recognized.
+        """
+        from services.annotation_service import annotation_service
+        from database.session import SessionLocal
+        from database.models import Image, Project
+        from database.enums import ImageStatus
+
+        # Создать тестовые данные в БД
+        session = SessionLocal()
+
+        # Создать проект
+        project = Project(name='AutoRecognizeTest', description='Test')
+        session.add(project)
+        session.commit()
+
+        # Создать изображение со статусом segmented
+        image = Image(
+            project_id=project.id,
+            filename='test_img.png',
+            original_path='/tmp/test.png',
+            cropped_path='/tmp/test_cropped.png',
+            status=ImageStatus.SEGMENTED.value
+        )
+        session.add(image)
+        session.commit()
+
+        # Сохранить аннотацию с заполненными полигонами
+        data = {
+            'regions': [
+                {'points': [[0, 0], [100, 0], [100, 50], [0, 50]]},
+                {'points': [[0, 60], [100, 60], [100, 110], [0, 110]]},
+            ],
+            'texts': {
+                '0': 'распознанный текст 1',
+                '1': 'распознанный текст 2',
+            }
+        }
+
+        result = annotation_service.save_annotation('test_img.png', data, project_name='AutoRecognizeTest')
+        assert result is True
+
+        # Проверить что статус изменился на recognized
+        session.refresh(image)
+        assert image.status == ImageStatus.RECOGNIZED.value
+
+        # Cleanup
+        session.delete(image)
+        session.delete(project)
+        session.commit()
+        session.close()
+
+    def test_save_annotation_does_not_change_status_when_explicit(self):
+        """
+        Тест: если статус явно указан в данных, он НЕ меняется автоматически.
+        """
+        from services.annotation_service import annotation_service
+        from database.session import SessionLocal
+        from database.models import Image, Project
+        from database.enums import ImageStatus
+
+        session = SessionLocal()
+
+        project = Project(name='NoAutoChangeTest', description='Test')
+        session.add(project)
+        session.commit()
+
+        image = Image(
+            project_id=project.id,
+            filename='test_img2.png',
+            original_path='/tmp/test2.png',
+            cropped_path='/tmp/test2_cropped.png',
+            status=ImageStatus.SEGMENTED.value
+        )
+        session.add(image)
+        session.commit()
+
+        # Сохранить аннотацию с явно указанным статусом cropped
+        data = {
+            'regions': [
+                {'points': [[0, 0], [100, 0], [100, 50], [0, 50]]},
+            ],
+            'texts': {
+                '0': 'распознанный текст',
+            },
+            'status': ImageStatus.CROPPED.value  # Явно указанный статус
+        }
+
+        result = annotation_service.save_annotation('test_img2.png', data, project_name='NoAutoChangeTest')
+        assert result is True
+
+        # Статус должен остаться тем что был указан явно (cropped)
+        session.refresh(image)
+        assert image.status == ImageStatus.CROPPED.value
+
+        # Cleanup
+        session.delete(image)
+        session.delete(project)
+        session.commit()
+        session.close()
+
+    def test_save_annotation_does_not_change_status_when_already_recognized(self):
+        """
+        Тест: если статус уже recognized, он не меняется.
+        """
+        from services.annotation_service import annotation_service
+        from database.session import SessionLocal
+        from database.models import Image, Project
+        from database.enums import ImageStatus
+
+        session = SessionLocal()
+
+        project = Project(name='AlreadyRecognizedTest', description='Test')
+        session.add(project)
+        session.commit()
+
+        image = Image(
+            project_id=project.id,
+            filename='test_img3.png',
+            original_path='/tmp/test3.png',
+            cropped_path='/tmp/test3_cropped.png',
+            status=ImageStatus.RECOGNIZED.value
+        )
+        session.add(image)
+        session.commit()
+
+        # Сохранить аннотацию с пустым текстом (но статус уже recognized)
+        data = {
+            'regions': [
+                {'points': [[0, 0], [100, 0], [100, 50], [0, 50]]},
+            ],
+            'texts': {
+                '0': '',
+            }
+        }
+
+        result = annotation_service.save_annotation('test_img3.png', data, project_name='AlreadyRecognizedTest')
+        assert result is True
+
+        # Статус должен остаться recognized
+        session.refresh(image)
+        assert image.status == ImageStatus.RECOGNIZED.value
+
+        # Cleanup
+        session.delete(image)
+        session.delete(project)
+        session.commit()
+        session.close()
+
+    def test_save_annotation_does_not_downgrade_from_reviewed(self):
+        """
+        Тест: если статус reviewed, он НЕ понижается до recognized
+        даже если все полигоны заполнены.
+        """
+        from services.annotation_service import annotation_service
+        from database.session import SessionLocal
+        from database.models import Image, Project
+        from database.enums import ImageStatus
+
+        session = SessionLocal()
+
+        project = Project(name='NoDowngradeTest', description='Test')
+        session.add(project)
+        session.commit()
+
+        image = Image(
+            project_id=project.id,
+            filename='test_img4.png',
+            original_path='/tmp/test4.png',
+            cropped_path='/tmp/test4_cropped.png',
+            status=ImageStatus.REVIEWED.value
+        )
+        session.add(image)
+        session.commit()
+
+        # Сохранить аннотацию с заполненными полигонами
+        data = {
+            'regions': [
+                {'points': [[0, 0], [100, 0], [100, 50], [0, 50]]},
+            ],
+            'texts': {
+                '0': 'распознанный текст',
+            }
+        }
+
+        result = annotation_service.save_annotation('test_img4.png', data, project_name='NoDowngradeTest')
+        assert result is True
+
+        # Статус должен остаться reviewed
+        session.refresh(image)
+        assert image.status == ImageStatus.REVIEWED.value
+
+        # Cleanup
+        session.delete(image)
+        session.delete(project)
+        session.commit()
+        session.close()
 
 
 # =============================================================================

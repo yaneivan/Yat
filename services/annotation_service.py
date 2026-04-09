@@ -126,6 +126,25 @@ class AnnotationService:
         finally:
             session.close()
 
+    def _all_polygons_filled(self, polygons: List[Dict[str, Any]]) -> bool:
+        """
+        Проверить, все ли полигоны заполнены текстом.
+
+        Args:
+            polygons: Список полигонов с текстом
+
+        Returns:
+            True если все полигоны имеют непустой текст
+        """
+        if not polygons:
+            return False
+
+        for polygon in polygons:
+            text = polygon.get('text', '').strip()
+            if not text:
+                return False
+        return True
+
     def save_annotation(self, filename: str, data: Dict[str, Any], project_name: str = None) -> bool:
         """
         Save annotation data for an image.
@@ -188,6 +207,16 @@ class AnnotationService:
                 else:
                     annotation_repo.create(image_id=image.id, polygons=polygons)
                     print("[AnnotationService] Created new annotation")
+
+                # Автоматическая смена статуса на recognized если все полигоны заполнены
+                if 'status' not in data and self._all_polygons_filled(polygons):
+                    # Статус не был явно указан, но все полигоны заполнены
+                    # Не понижаем статус: reviewed > recognized > segmented > ...
+                    current_status = image.status
+                    if current_status not in (ImageStatus.RECOGNIZED.value, ImageStatus.REVIEWED.value):
+                        image_repo.update(image, status=ImageStatus.RECOGNIZED)
+                        print(f"[AnnotationService] Auto-set status to recognized for {filename}")
+
                 return True
             except Exception as e:
                 print(f"[AnnotationService] DB error: {e}")
