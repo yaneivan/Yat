@@ -168,7 +168,8 @@ class HTREditor {
         this.canvas.setBackgroundColor("#151515", this.canvas.renderAll.bind(this.canvas));
         
         const timestamp = new Date().getTime();
-        const imgUrl = `/data/images/${this.filename}?t=${timestamp}`;
+        const projectParam = this.project ? `&project=${this.project}` : '';
+        const imgUrl = `/data/images/${this.filename}?t=${timestamp}${projectParam}`;
         
         const imgEl = new Image();
         imgEl.onload = () => {
@@ -223,7 +224,8 @@ class HTREditor {
         if (idx === -1) return;
         [(idx + 1) % this.imageList.length, (idx - 1 + this.imageList.length) % this.imageList.length].forEach(i => {
             const fname = this.imageList[i];
-            new Image().src = `/data/images/${fname}`;
+            const projectParam = this.project ? `?project=${this.project}` : '';
+            new Image().src = `/data/images/${fname}${projectParam}`;
             API.loadAnnotation(fname, this.project);
         });
     }
@@ -724,7 +726,8 @@ class HTREditor {
 
             console.log('Sending settings to API:', settings); // Отладочный вывод
 
-            const response = await fetch('/api/detect_lines', {
+            const projectParam = this.project ? `?project=${encodeURIComponent(this.project)}` : '';
+            const response = await fetch(`/api/detect_lines${projectParam}`, {
                 method: 'POST',
                 headers: API.getCsrfHeaders(),
                 body: JSON.stringify({

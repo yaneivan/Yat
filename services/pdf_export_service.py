@@ -27,7 +27,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # Import services
 from services.project_service import project_service
-from services.image_service import image_service
+from services.image_storage_service import image_storage_service
 from services.annotation_service import annotation_service
 
 
@@ -402,7 +402,7 @@ class PDFExportService:
 
             for img_idx, img_data in enumerate(images):
                 filename = img_data['filename']
-                image_path = image_service.get_image_path(filename)
+                image_path = image_storage_service.get_image_path(filename, project_name)
 
                 if not os.path.exists(image_path):
                     continue
@@ -478,7 +478,7 @@ class PDFExportService:
 
             for img_idx, img_data in enumerate(images):
                 filename = img_data['filename']
-                image_path = image_service.get_image_path(filename)
+                image_path = image_storage_service.get_image_path(filename, project_name)
 
                 if not os.path.exists(image_path):
                     continue
@@ -578,7 +578,7 @@ class PDFExportService:
 
             for img_idx, img_data in enumerate(images):
                 filename = img_data['filename']
-                image_path = image_service.get_image_path(filename)
+                image_path = image_storage_service.get_image_path(filename, project_name)
 
                 if not os.path.exists(image_path):
                     continue
@@ -680,9 +680,9 @@ class PDFExportService:
             
             for img_data in images:
                 filename = img_data['filename']
-                
+
                 # Get annotation
-                annotation = annotation_service.get_annotation(filename)
+                annotation = annotation_service.get_annotation(filename, project_name)
                 texts = annotation.get('texts', {})
                 
                 # Add title

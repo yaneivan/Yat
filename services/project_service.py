@@ -16,7 +16,7 @@ from database.repository.project_repository import ProjectRepository
 from database.repository.image_repository import ImageRepository
 
 # Import services for export functionality
-from services.image_service import image_service
+from services.image_storage_service import image_storage_service
 from services.annotation_service import annotation_service
 
 
@@ -386,7 +386,7 @@ class ProjectService:
                 for image_item in images:
                     image_name = image_item['filename']
 
-                    image_path = image_service.get_image_path(image_name)
+                    image_path = image_storage_service.get_image_path(image_name, project_name)
 
                     if not os.path.exists(image_path):
                         continue

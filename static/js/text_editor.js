@@ -374,7 +374,8 @@ class TextEditor {
 
         // Load image on both canvases
         const timestamp = new Date().getTime();
-        const imgUrl = `/data/images/${this.filename}?t=${timestamp}`;
+        const projectParam = this.project ? `&project=${this.project}` : '';
+        const imgUrl = `/data/images/${this.filename}?t=${timestamp}${projectParam}`;
 
         const imgEl = new Image();
         imgEl.crossOrigin = 'Anonymous';
@@ -438,7 +439,7 @@ class TextEditor {
         // ===============================
 
         try {
-            const data = await API.loadAnnotation(this.filename);
+            const data = await API.loadAnnotation(this.filename, this.project);
             let originalRegions = data.regions || [];
 
             // Create a mapping from sorted indices back to original indices
@@ -508,7 +509,7 @@ class TextEditor {
 
     async loadTextData(originalRegions = null) {
         try {
-            const data = await API.loadAnnotation(this.filename);
+            const data = await API.loadAnnotation(this.filename, this.project);
             if (data.texts) {
                 // If originalRegions is provided, we need to map the texts from original indices to sorted indices
                 if (originalRegions) {
@@ -1260,7 +1261,8 @@ class TextEditor {
         // Get the region polygon
         const region = this.regions[regionIndex];
         if (!region || !region.points || region.points.length < 3) {
-            imgElement.src = `/data/images/${this.filename}?t=${new Date().getTime()}`;
+            const projectParam = this.project ? `?project=${this.project}` : '';
+            imgElement.src = `/data/images/${this.filename}?t=${new Date().getTime()}${projectParam}`;
             return;
         }
 
@@ -1273,8 +1275,9 @@ class TextEditor {
                 // Re-call after image is loaded (will use cached image this time)
                 this.extractRegionImage(regionIndex, imgElement);
             };
-            this.cachedPreviewImage.src = `/data/images/${this.filename}?t=${new Date().getTime()}`;
-            
+            const projectParam = this.project ? `?project=${this.project}` : '';
+            this.cachedPreviewImage.src = `/data/images/${this.filename}?t=${new Date().getTime()}${projectParam}`;
+
             // Show placeholder while loading
             imgElement.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
             return;
@@ -1663,7 +1666,7 @@ class TextEditor {
         try {
             // Prepare data to save - we need to map the texts back to the original region order
             // Get the original regions to create the mapping
-            const originalData = await API.loadAnnotation(this.filename);
+            const originalData = await API.loadAnnotation(this.filename, this.project);
             const originalRegions = originalData.regions || [];
 
             // Create a mapping of texts in the original region order
@@ -1742,7 +1745,7 @@ class TextEditor {
 
         try {
             // Get the original unsorted regions to send to the backend
-            const originalData = await API.loadAnnotation(this.filename);
+            const originalData = await API.loadAnnotation(this.filename, this.project);
             const originalRegions = originalData.regions || [];
 
             const response = await fetch('/api/recognize_text', {
@@ -1750,7 +1753,8 @@ class TextEditor {
                 headers: API.getCsrfHeaders(),
                 body: JSON.stringify({
                     image_name: this.filename,
-                    regions: originalRegions  // Send original unsorted regions
+                    regions: originalRegions,
+                    project: this.project
                 })
             });
 
@@ -1783,9 +1787,9 @@ class TextEditor {
                     btn.textContent = '✓ Распознано';
                     
                     // Update the local texts data
-                    const data = await API.loadAnnotation(this.filename);
+                    const data = await API.loadAnnotation(this.filename, this.project);
                     // Load the text data with the original regions to map correctly to sorted order
-                    const originalData = await API.loadAnnotation(this.filename);
+                    const originalData = await API.loadAnnotation(this.filename, this.project);
                     const originalRegions = originalData.regions || [];
                     this.loadTextData(originalRegions);
 

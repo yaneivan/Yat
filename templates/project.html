@@ -87,7 +87,7 @@
         <div class="image-grid" id="imageGrid">
             {% for image in project.images %}
             <div class="image-card">
-                <img src="/data/images/{{ image.filename }}" class="image-thumb" alt="{{ image.filename }}">
+                <img src="/data/images/{{ image.filename }}?project={{ project.name }}" class="image-thumb" alt="{{ image.filename }}">
                 <div class="image-meta">
                     <div class="image-info">
                         <div class="image-title-row">

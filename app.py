@@ -8,7 +8,6 @@ import threading
 import time
 
 import logic
-import storage
 import config
 
 # Import services
@@ -18,6 +17,7 @@ from services import (
     image_service,
     project_service,
     ai_service,
+    image_storage_service,
 )
 
 # Import database
@@ -178,7 +178,8 @@ def inject_csrf():
 # --- Pages ---
 @app.route('/')
 def index():
-    return render_template('index.html', files=storage.get_images_with_status())
+    images = image_service.get_all_images()
+    return render_template('index.html', files=images)
 
 @app.route('/editor')
 def editor():
@@ -186,9 +187,6 @@ def editor():
     project_name = request.args.get('project')
     if not filename:
         return redirect(url_for('index'))
-    # Проверка существования файла
-    if not os.path.exists(os.path.join(storage.IMAGE_FOLDER, filename)):
-        abort(404)
     return render_template('editor.html', filename=filename, project=project_name)
 
 @app.route('/text_editor')
@@ -197,9 +195,6 @@ def text_editor():
     project_name = request.args.get('project')
     if not filename:
         return redirect(url_for('index'))
-    # Проверка существования файла
-    if not os.path.exists(os.path.join(storage.IMAGE_FOLDER, filename)):
-        abort(404)
     return render_template('text_editor.html', filename=filename, project=project_name)
 
 @app.route('/cropper')
@@ -209,7 +204,7 @@ def cropper():
     if not filename:
         return redirect(url_for('index'))
     # Проверка существования файла
-    if not os.path.exists(os.path.join(storage.IMAGE_FOLDER, filename)):
+    if not image_service.get_original_path(filename, project_name):
         abort(404)
     return render_template('cropper.html', filename=filename, project=project_name)
 
@@ -218,35 +213,54 @@ def cropper():
 def list_images():
     project = request.args.get('project')
     if project:
-        images = image_service.get_images_by_project(project)
+        images = image_service.get_all_images(project_name=project)
     else:
         images = image_service.get_all_images()
-    return jsonify([img['name'] for img in images])
+    return jsonify(images)
+
+@app.route('/api/image_url')
+def image_url():
+    """Get URL for an image, optionally scoped to a project."""
+    filename = request.args.get('filename')
+    project = request.args.get('project')
+    image_type = request.args.get('type', 'image')  # 'image' or 'original'
+    cache_bust = request.args.get('t')
+
+    if not filename:
+        return jsonify({'error': 'No filename provided'}), 400
+
+    try:
+        if image_type == 'original':
+            url = image_storage_service.get_original_url(filename, project, cache_bust)
+        else:
+            url = image_storage_service.get_image_url(filename, project, cache_bust)
+        return jsonify({'url': url})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
 
 @app.route('/data/images/<path:filename>')
 def serve_image(filename):
     try:
-        # Validate filename to prevent path traversal
-        validated = image_service._validate_filename(filename)
-        return send_from_directory(storage.IMAGE_FOLDER, validated)
+        validated = image_storage_service._validate_filename(filename)
+        project_name = request.args.get('project')
+        file_path = image_storage_service.get_image_path(validated, project_name)
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'Image not found'}), 404
+        return send_from_directory(os.path.dirname(file_path), os.path.basename(file_path))
     except ValueError:
         return jsonify({'error': 'Invalid filename'}), 400
 
 @app.route('/data/originals/<path:filename>')
 def serve_original(filename):
     try:
-        # Validate filename to prevent path traversal
-        validated = image_service._validate_filename(filename)
-        return send_from_directory(storage.ORIGINALS_FOLDER, validated)
+        validated = image_storage_service._validate_filename(filename)
+        project_name = request.args.get('project')
+        file_path = image_storage_service.get_original_path(validated, project_name)
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'Original not found'}), 404
+        return send_from_directory(os.path.dirname(file_path), os.path.basename(file_path))
     except ValueError:
         return jsonify({'error': 'Invalid filename'}), 400
-    except Exception:
-        # Fallback to images folder only if filename is valid
-        try:
-            validated = image_service._validate_filename(filename)
-            return send_from_directory(storage.IMAGE_FOLDER, validated)
-        except ValueError:
-            return jsonify({'error': 'Invalid filename'}), 400
 
 # --- API: Annotations ---
 @app.route('/api/load/<filename>')
@@ -380,6 +394,7 @@ def detect_lines():
     data = request.json
     filename = data.get('image_name')
     settings = data.get('settings', {})
+    project_name = request.args.get('project')
 
     if not filename:
         return jsonify({'status': 'error', 'msg': 'No image name provided'}), 400
@@ -387,7 +402,7 @@ def detect_lines():
     try:
         # Validate filename to prevent path traversal
         validated = image_service._validate_filename(filename)
-        regions = ai_service.detect_lines(validated, settings)
+        regions = ai_service.detect_lines(validated, settings, project_name)
         return jsonify({'status': 'success', 'regions': regions})
     except ValueError:
         logger.error(f"detect_lines: Invalid filename - {filename}")
@@ -435,7 +450,7 @@ def recognize_text():
             }
 
         try:
-            ai_service.recognize_text(validated, regions, progress_callback=update_progress)
+            ai_service.recognize_text(validated, regions, progress_callback=update_progress, project_name=project_name)
             recognition_progress[validated] = {
                 'processed': total_regions,
                 'total': total_regions,

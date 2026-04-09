@@ -144,33 +144,35 @@ class AIService:
     def detect_lines(
         self,
         filename: str,
-        settings: Dict[str, Any] = None
+        settings: Dict[str, Any] = None,
+        project_name: str = None
     ) -> List[Dict[str, Any]]:
         """
         Detect text lines in an image using YOLOv9.
-        
+
         Args:
             filename: Image filename
             settings: Detection settings (threshold, simplification, merge)
-        
+            project_name: Project name for project-specific file paths
+
         Returns:
             List of regions (polygons)
         """
         if settings is None:
             settings = {}
-        
+
         if not YOLO_AVAILABLE:
             raise Exception("YOLOv9 not available. Install ultralytics and torch.")
-        
+
         model = self._get_yolo_model()
-        
+
         if model is None:
             raise Exception("YOLO model not loaded")
-        
+
         # Get image path
-        from services.image_service import image_service
-        image_path = image_service.get_image_path(filename)
-        
+        from services.image_storage_service import image_storage_service
+        image_path = image_storage_service.get_image_path(filename, project_name)
+
         if not os.path.exists(image_path):
             raise Exception(f"Image file does not exist: {image_path}")
         
@@ -302,7 +304,7 @@ class AIService:
         from database.enums import ImageStatus
 
         # Load image
-        image = image_service.get_image(filename)
+        image = image_service.get_image(filename, project_name)
 
         if image is None:
             raise Exception(f"Image not found: {filename}")

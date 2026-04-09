@@ -471,24 +471,24 @@ def test_serve_image(client):
     """
     from io import BytesIO
     from PIL import Image
-    
+
     # 1. Загружаем изображение
     client.post('/api/projects', json={'name': 'ServeProj', 'description': ''})
-    
+
     data = BytesIO()
     img = Image.new('RGB', (10, 10), color='red')
     img.save(data, format='PNG')
     data.seek(0)
-    
+
     client.post(
         '/api/projects/ServeProj/upload_images',
         data={'images': [(data, 'serve_test.png')]},
         content_type='multipart/form-data'
     )
-    
-    # 2. Получаем изображение
-    response = client.get('/data/images/serve_test.png')
-    
+
+    # 2. Получаем изображение с project параметром
+    response = client.get('/data/images/serve_test.png?project=ServeProj')
+
     assert response.status_code == 200
     assert response.content_type == 'image/png'
 
@@ -519,24 +519,24 @@ def test_serve_original_image(client):
     """
     from io import BytesIO
     from PIL import Image
-    
+
     # 1. Создаём проект и загружаем изображение (оно копируется в originals)
     client.post('/api/projects', json={'name': 'OriginalProj', 'description': ''})
-    
+
     data = BytesIO()
     img = Image.new('RGB', (10, 10), color='green')
     img.save(data, format='PNG')
     data.seek(0)
-    
+
     client.post(
         '/api/projects/OriginalProj/upload_images',
         data={'images': [(data, 'original_test.png')]},
         content_type='multipart/form-data'
     )
-    
-    # 2. Получаем оригинал изображения
-    response = client.get('/data/originals/original_test.png')
-    
+
+    # 2. Получаем оригинал изображения с project параметром
+    response = client.get('/data/originals/original_test.png?project=OriginalProj')
+
     assert response.status_code == 200
     assert response.content_type == 'image/png'
 
@@ -546,7 +546,7 @@ def test_editor_page(client):
     Тест: страница редактора сегментов возвращает 200
     """
     # Требуется параметр image
-    response = client.get('/editor?image=test.png')
+    response = client.get('/editor?image=test.png&project=TestProj')
     assert response.status_code == 200
 
 
@@ -555,7 +555,7 @@ def test_text_editor_page(client):
     Тест: страница текстового редактора возвращает 200
     """
     # Требуется параметр image
-    response = client.get('/text_editor?image=test.png')
+    response = client.get('/text_editor?image=test.png&project=TestProj')
     assert response.status_code == 200
 
 
@@ -564,7 +564,7 @@ def test_cropper_page(client):
     Тест: страница кроппера возвращает 200
     """
     # Требуется параметр image
-    response = client.get('/cropper?image=test.png')
+    response = client.get('/cropper?image=test.png&project=TestProj')
     assert response.status_code == 200
 
 
@@ -636,15 +636,17 @@ def test_crop_image(client):
         content_type='multipart/form-data'
     )
 
-    # 2. Проверяем, что изображение есть в originals и images
-    print(f"Originals folder: {ORIGINALS_FOLDER}")
-    print(f"Images folder: {IMAGE_FOLDER}")
-    print(f"Original exists: {os.path.exists(os.path.join(ORIGINALS_FOLDER, 'crop_test.png'))}")
-    print(f"Image exists: {os.path.exists(os.path.join(IMAGE_FOLDER, 'crop_test.png'))}")
+    # 2. Проверяем, что изображение есть в project-specific originals и images
+    proj_orig = os.path.join(ORIGINALS_FOLDER, 'CropProj')
+    proj_img = os.path.join(IMAGE_FOLDER, 'CropProj')
+    print(f"Project originals folder: {proj_orig}")
+    print(f"Project images folder: {proj_img}")
+    print(f"Original exists: {os.path.exists(os.path.join(proj_orig, 'crop_test.png'))}")
+    print(f"Image exists: {os.path.exists(os.path.join(proj_img, 'crop_test.png'))}")
 
-    # 3. Отправляем запрос на обрезку (формат с corners)
+    # 3. Отправляем запрос на обрезку с project параметром
     response = client.post(
-        '/api/crop',
+        '/api/crop?project=CropProj',
         json={
             'image_name': 'crop_test.png',
             'box': {
@@ -665,8 +667,8 @@ def test_crop_image(client):
     # 4. Ждём завершения фоновой обработки (5 секунд)
     time.sleep(5)
 
-    # 5. Проверяем аннотацию
-    response = client.get('/api/load/crop_test.png')
+    # 5. Проверяем аннотацию с project параметром
+    response = client.get('/api/load/crop_test.png?project=CropProj')
     result = response.get_json()
 
     print(f"Annotation folder: {ANNOTATION_FOLDER}")

@@ -388,12 +388,17 @@ class ProjectManager {
         const imageCard = document.createElement('div');
         imageCard.className = 'file-card';
 
+        // Support both string (filename) and object (from updated API)
+        const filename = typeof image === 'string' ? image : image.name;
+        const projectName = typeof image === 'object' ? image.project_name : null;
+
         // Create elements safely to prevent XSS
         const imageContainer = document.createElement('div');
         imageContainer.style.position = 'relative';
 
         const img = document.createElement('img');
-        img.src = `/data/images/${encodeURIComponent(image)}`;  // Safe: URL encoded
+        const projectParam = projectName ? `?project=${encodeURIComponent(projectName)}` : '';
+        img.src = `/data/images/${encodeURIComponent(filename)}${projectParam}`;
         img.className = 'thumb';
         img.loading = 'lazy';
         img.style.cursor = 'pointer';
@@ -404,12 +409,12 @@ class ProjectManager {
         metaDiv.className = 'meta';
 
         const nameSpan = document.createElement('span');
-        nameSpan.title = image;  // Safe: attribute
+        nameSpan.title = filename;  // Safe: attribute
         nameSpan.style.whiteSpace = 'nowrap';
         nameSpan.style.overflow = 'hidden';
         nameSpan.style.textOverflow = 'ellipsis';
         nameSpan.style.maxWidth = '80px';
-        nameSpan.textContent = image;  // Safe: textContent
+        nameSpan.textContent = filename;  // Safe: textContent
 
         metaDiv.appendChild(nameSpan);
 
@@ -655,6 +660,8 @@ class ProjectManager {
             return;
         }
 
+        const projectParam = projectName ? `?project=${encodeURIComponent(projectName)}` : '';
+
         images.forEach(image => {
             const imageCard = document.createElement('div');
             imageCard.className = 'file-card';
@@ -664,7 +671,7 @@ class ProjectManager {
             imageContainer.style.position = 'relative';
 
             const img = document.createElement('img');
-            img.src = `/data/images/${encodeURIComponent(image)}`;
+            img.src = `/data/images/${encodeURIComponent(image)}${projectParam}`;
             img.className = 'thumb';
             img.loading = 'lazy';
             img.style.cursor = 'pointer';
