@@ -117,7 +117,7 @@ class HTREditor {
     }
 
     async init() {
-        this.imageList = await API.listImages();
+        this.imageList = await API.listImages(this.project);
         this.resize();
         window.addEventListener('resize', () => this.resize());
         window.addEventListener('popstate', (e) => {
@@ -539,7 +539,6 @@ class HTREditor {
         
         const onObjectChanged = (e) => {
             if (!e.target || e.target.class) return;
-            
             // Проверяем: это полигон или группа выделенных полигонов
             if (e.target.type === 'polygon' || e.target.type === 'activeSelection') {
                 this.history.save();

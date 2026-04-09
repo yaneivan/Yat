@@ -216,7 +216,11 @@ def cropper():
 # --- API: Images ---
 @app.route('/api/images_list')
 def list_images():
-    images = image_service.get_all_images()
+    project = request.args.get('project')
+    if project:
+        images = image_service.get_images_by_project(project)
+    else:
+        images = image_service.get_all_images()
     return jsonify([img['name'] for img in images])
 
 @app.route('/data/images/<path:filename>')

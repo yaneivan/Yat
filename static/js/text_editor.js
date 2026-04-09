@@ -42,7 +42,7 @@ class TextEditor {
     }
 
     async init() {
-        this.imageList = await API.listImages();
+        this.imageList = await API.listImages(this.project);
         this.resize();
         window.addEventListener('resize', () => this.resize());
         window.addEventListener('keydown', (e) => this.handleKeyDown(e));

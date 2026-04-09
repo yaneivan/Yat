@@ -412,6 +412,37 @@ class ImageService:
         finally:
             session.close()
 
+    def get_images_by_project(self, project_name: str) -> List[Dict[str, Any]]:
+        """
+        Get all images in a specific project with their status.
+
+        Args:
+            project_name: The name of the project
+
+        Returns:
+            List of dictionaries with 'name' and 'status' fields
+        """
+        session, image_repo, project_repo = self._get_session()
+        try:
+            project = project_repo.get_by_name(project_name)
+            if not project:
+                return []
+
+            images = image_repo.get_by_project(project.id)
+
+            result = []
+            for image in images:
+                result.append({
+                    'id': image.id,
+                    'name': image.filename,
+                    'status': image.status or ImageStatus.UPLOADED.value,
+                    'project_id': image.project_id
+                })
+
+            return result
+        finally:
+            session.close()
+
     def is_image_used_in_other_projects(
         self,
         filename: str,

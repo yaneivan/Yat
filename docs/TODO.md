@@ -472,6 +472,39 @@ class ProjectService:
 
 ## 📝 ЗАМЕЧАНИЯ
 
+### ImageStatus: enum vs строка
+
+**Статус:** ❌ Не исправлено
+**Приоритет:** 🟢 НИЗКОЕ
+**Время на фикс:** 2 часа
+
+**Проблема:**
+`Image.status` хранится как `String(50)` с `.value`, но в коде хаос:
+
+```python
+# models.py — строка
+status = Column(String(50), default=ImageStatus.UPLOADED.value)
+
+# logic.py:646 — передаётся enum объект ❌
+status=ImageStatus.SEGMENTED,
+
+# annotation_service.py — сравнение со строкой ✅
+if image.status == ImageStatus.RECOGNIZED.value:
+```
+
+**Что сделать:**
+1. Вариант А: `Column(ImageStatus)` — SQLAlchemy Enum
+2. Вариант Б: Оставить строку, убрать `.value` из сравнений, унифицировать логику
+3. Миграция БД если нужен вариант А
+
+**Файлы для изменения:**
+- `database/models.py`
+- `services/image_service.py`
+- `services/annotation_service.py`
+- `logic.py`
+
+---
+
 ### Зависимости для добавления
 
 ```toml

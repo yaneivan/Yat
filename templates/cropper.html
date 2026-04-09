@@ -105,7 +105,7 @@
         resize();
         window.addEventListener('resize', resize);
 
-        imageList = await API.listImages();
+        imageList = await API.listImages(project || null);
 
         fabric.Image.fromURL(`/data/originals/${filename}`, img => {
             imgObj = img;

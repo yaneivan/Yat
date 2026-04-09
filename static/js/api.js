@@ -21,8 +21,11 @@ const API = {
     getCsrfToken,
     getCsrfHeaders,
 
-    async listImages() {
-        const res = await fetch('/api/images_list');
+    async listImages(project = null) {
+        const url = project
+            ? `/api/images_list?project=${encodeURIComponent(project)}`
+            : '/api/images_list';
+        const res = await fetch(url);
         return res.json();
     },
     async loadAnnotation(filename, projectName = null) {
