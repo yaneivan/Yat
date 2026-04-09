@@ -1197,6 +1197,80 @@
         });
     </script>
 
+    <!-- Global drag-drop overlay -->
+    <div id="globalDragOverlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(63,81,181,0.15); z-index:10000; pointer-events:none;">
+        <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); text-align:center; pointer-events:none;">
+            <div style="font-size:64px; opacity:0.7;">📁</div>
+            <div style="font-size:24px; font-weight:600; color:#fff; margin-top:16px; text-shadow:0 2px 4px rgba(0,0,0,0.3);">Перетащите файлы сюда</div>
+        </div>
+    </div>
+
+    <script>
+        // Глобальный перехват drag&drop — ловим файлы всей страницей
+        (function() {
+            const overlay = document.getElementById('globalDragOverlay');
+            const dropArea = document.getElementById('dropArea');
+            let dragCounter = 0; // Считаем dragenter/dragleave для вложенных элементов
+
+            function isDraggedFiles(e) {
+                return e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('Files');
+            }
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            document.addEventListener('dragenter', function(e) {
+                if (!isDraggedFiles(e)) return;
+                preventDefaults(e);
+                dragCounter++;
+                overlay.style.display = 'block';
+            }, false);
+
+            document.addEventListener('dragleave', function(e) {
+                if (!isDraggedFiles(e)) return;
+                preventDefaults(e);
+                dragCounter--;
+                if (dragCounter <= 0) {
+                    dragCounter = 0;
+                    overlay.style.display = 'none';
+                }
+            }, false);
+
+            document.addEventListener('dragover', function(e) {
+                if (!isDraggedFiles(e)) return;
+                preventDefaults(e);
+            }, false);
+
+            document.addEventListener('drop', function(e) {
+                if (!isDraggedFiles(e)) return;
+                preventDefaults(e);
+                overlay.style.display = 'none';
+                dragCounter = 0;
+
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    // Если есть dropArea — используем его логику, иначе просто загрузим
+                    if (dropArea) {
+                        handleFiles(files);
+                    } else {
+                        // Фоллбэк: создаём FormData и шлём на API
+                        const formData = new FormData();
+                        for (const file of files) {
+                            if (file.type.startsWith('image/')) {
+                                formData.append('files[]', file);
+                            }
+                        }
+                        if (formData.has('files[]')) {
+                            uploadImages(formData);
+                        }
+                    }
+                }
+            }, false);
+        })();
+    </script>
+
     <!-- Подключаем файлы с логикой управления проектами -->
     <script src="/static/js/api.js"></script>
     <script src="/static/js/project_manager.js"></script>
