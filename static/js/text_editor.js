@@ -1348,6 +1348,9 @@ class TextEditor {
     }
 
     closeModal() {
+        // Сохраняем текст перед закрытием
+        this.saveCurrentText();
+
         const modal = document.getElementById('text-modal');
         modal.style.display = 'none';
         this.currentRegionIndex = -1;
@@ -1400,15 +1403,14 @@ class TextEditor {
     }
 
     saveTextAndNext() {
-        this.saveCurrentText();
-
-        // Move to next region
+        // nextRegion() уже вызывает saveCurrentText()
         this.nextRegion();
     }
 
     nextRegion() {
         if (this.regions.length === 0) return;
-        
+
+        this.saveCurrentText();
         this.currentRegionIndex = (this.currentRegionIndex + 1) % this.regions.length;
         this.openTextModal(this.currentRegionIndex);
     }
@@ -1416,6 +1418,7 @@ class TextEditor {
     previousRegion() {
         if (this.regions.length === 0) return;
 
+        this.saveCurrentText();
         this.currentRegionIndex = (this.currentRegionIndex - 1 + this.regions.length) % this.regions.length;
         this.openTextModal(this.currentRegionIndex);
     }
@@ -1608,10 +1611,9 @@ class TextEditor {
             return;
         }
 
-        // Проверяем, открыта ли модалка - если да, сохраняем текст и закрываем
+        // Проверяем, открыта ли модалка - если да, закрываем (saveCurrentText вызовется внутри closeModal)
         const modal = document.getElementById('text-modal');
         if (modal && modal.style.display === 'flex') {
-            this.saveCurrentText();  // Сохраняем текст из модалки в this.texts
             this.closeModal();
         }
 
