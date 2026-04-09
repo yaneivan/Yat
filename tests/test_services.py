@@ -412,6 +412,55 @@ class TestAnnotationServiceAutoRecognize:
         session.commit()
         session.close()
 
+    def test_save_annotation_does_not_downgrade_from_reviewed(self):
+        """
+        Тест: если статус reviewed, он НЕ понижается до recognized
+        даже если все полигоны заполнены.
+        """
+        from services.annotation_service import annotation_service
+        from database.session import SessionLocal
+        from database.models import Image, Project
+        from database.enums import ImageStatus
+
+        session = SessionLocal()
+
+        project = Project(name='NoDowngradeTest', description='Test')
+        session.add(project)
+        session.commit()
+
+        image = Image(
+            project_id=project.id,
+            filename='test_img4.png',
+            original_path='/tmp/test4.png',
+            cropped_path='/tmp/test4_cropped.png',
+            status=ImageStatus.REVIEWED.value
+        )
+        session.add(image)
+        session.commit()
+
+        # Сохранить аннотацию с заполненными полигонами
+        data = {
+            'regions': [
+                {'points': [[0, 0], [100, 0], [100, 50], [0, 50]]},
+            ],
+            'texts': {
+                '0': 'распознанный текст',
+            }
+        }
+
+        result = annotation_service.save_annotation('test_img4.png', data, project_name='NoDowngradeTest')
+        assert result is True
+
+        # Статус должен остаться reviewed
+        session.refresh(image)
+        assert image.status == ImageStatus.REVIEWED.value
+
+        # Cleanup
+        session.delete(image)
+        session.delete(project)
+        session.commit()
+        session.close()
+
 
 # =============================================================================
 # Тесты на утечку recognition_progress

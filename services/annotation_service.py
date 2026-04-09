@@ -211,8 +211,9 @@ class AnnotationService:
                 # Автоматическая смена статуса на recognized если все полигоны заполнены
                 if 'status' not in data and self._all_polygons_filled(polygons):
                     # Статус не был явно указан, но все полигоны заполнены
+                    # Не понижаем статус: reviewed > recognized > segmented > ...
                     current_status = image.status
-                    if current_status != ImageStatus.RECOGNIZED.value:
+                    if current_status not in (ImageStatus.RECOGNIZED.value, ImageStatus.REVIEWED.value):
                         image_repo.update(image, status=ImageStatus.RECOGNIZED)
                         print(f"[AnnotationService] Auto-set status to recognized for {filename}")
 
