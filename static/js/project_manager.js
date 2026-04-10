@@ -1142,3 +1142,189 @@ async function submitZipImport() {
         await window.projectManager.submitZipImport();
     }
 }
+
+/* ═══════════════════════════════════════════════
+   User Management (Admin)
+   ═══════════════════════════════════════════════ */
+
+let _currentPermUserId = null;
+
+async function openUserManagement() {
+    document.getElementById('userManagementModal').style.display = 'block';
+    await loadUsersList();
+}
+
+function closeUserManagement() {
+    document.getElementById('userManagementModal').style.display = 'none';
+}
+
+async function loadUsersList() {
+    try {
+        const resp = await fetch('/api/users');
+        const data = await resp.json();
+        const tbody = document.getElementById('users-tbody');
+        tbody.innerHTML = '';
+
+        const roleLabels = { admin: '👑 Admin', annotator: '✏️ Annotator', reviewer: '👁️ Reviewer' };
+
+        for (const user of (data.users || [])) {
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid #ddd';
+            tr.innerHTML = `
+                <td style="padding:8px;">${user.id}</td>
+                <td style="padding:8px;">${user.username}</td>
+                <td style="padding:8px;">${roleLabels[user.role] || user.role}</td>
+                <td style="padding:8px;">${user.is_active ? '✅' : '❌'}</td>
+                <td style="padding:8px;"><button class="btn" style="padding:2px 8px;" onclick="openUserPermissions(${user.id}, '${user.username}')">Настроить</button></td>
+                <td style="padding:8px; text-align:center;">
+                    <button class="btn" style="padding:2px 8px; color:#dc3545;" onclick="deleteUser(${user.id}, '${user.username}')">Удалить</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        }
+    } catch (e) {
+        console.error('Load users error:', e);
+    }
+}
+
+async function createUser() {
+    const username = document.getElementById('new-username').value.trim();
+    const password = document.getElementById('new-password').value;
+    const role = document.getElementById('new-role').value;
+
+    if (!username || !password) {
+        alert('Заполни имя и пароль');
+        return;
+    }
+
+    try {
+        const resp = await fetch('/api/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password, role })
+        });
+        const data = await resp.json();
+
+        if (resp.ok) {
+            document.getElementById('new-username').value = '';
+            document.getElementById('new-password').value = '';
+            await loadUsersList();
+        } else {
+            alert(data.error || 'Ошибка создания пользователя');
+        }
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+async function deleteUser(userId, username) {
+    if (!confirm(`Удалить пользователя ${username}?`)) return;
+
+    try {
+        const resp = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+        const data = await resp.json();
+        if (resp.ok) {
+            await loadUsersList();
+        } else {
+            alert(data.error || 'Ошибка удаления');
+        }
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+/* ── User Permissions ── */
+
+async function openUserPermissions(userId, username) {
+    _currentPermUserId = userId;
+    document.getElementById('userPermissionsModal').style.display = 'block';
+    document.getElementById('perms-title').textContent = `Права: ${username}`;
+
+    // Load projects dropdown
+    try {
+        const projectsResp = await fetch('/api/projects');
+        const projectsData = await projectsResp.json();
+        const select = document.getElementById('perm-project');
+        select.innerHTML = '';
+        for (const proj of (projectsData.projects || [])) {
+            const opt = document.createElement('option');
+            opt.value = proj.name;
+            opt.textContent = proj.name;
+            select.appendChild(opt);
+        }
+    } catch (e) {
+        console.error('Load projects:', e);
+    }
+
+    await loadUserPermissions();
+}
+
+function closeUserPermissions() {
+    document.getElementById('userPermissionsModal').style.display = 'none';
+}
+
+async function loadUserPermissions() {
+    try {
+        const resp = await fetch(`/api/users/${_currentPermUserId}/permissions`);
+        const data = await resp.json();
+        const list = document.getElementById('perms-list');
+        list.innerHTML = '';
+
+        for (const perm of (data.permissions || [])) {
+            const li = document.createElement('li');
+            li.style.cssText = 'display:flex; justify-content:space-between; padding:8px; border-bottom:1px solid #eee;';
+            li.innerHTML = `
+                <span><b>${perm.project_name}</b> — ${perm.role}</span>
+                <button class="btn" style="padding:2px 8px; color:#dc3545;" onclick="revokePermission('${perm.project_name}')">Отозвать</button>
+            `;
+            list.appendChild(li);
+        }
+
+        if (data.permissions.length === 0) {
+            list.innerHTML = '<li style="padding:10px; color:#666;">Нет назначенных проектов</li>';
+        }
+    } catch (e) {
+        console.error('Load perms:', e);
+    }
+}
+
+async function grantPermission() {
+    const project = document.getElementById('perm-project').value;
+    const role = document.getElementById('perm-role').value;
+
+    if (!project) { alert('Выбери проект'); return; }
+
+    try {
+        const resp = await fetch(`/api/projects/${encodeURIComponent(project)}/permissions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: _currentPermUserId, role })
+        });
+        if (resp.ok) {
+            await loadUserPermissions();
+        } else {
+            const data = await resp.json();
+            alert(data.error || 'Ошибка');
+        }
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+async function revokePermission(projectName) {
+    if (!confirm(`Отозвать доступ к "${projectName}"?`)) return;
+
+    try {
+        const resp = await fetch(`/api/projects/${encodeURIComponent(projectName)}/permissions/${_currentPermUserId}`, {
+            method: 'DELETE'
+        });
+        if (resp.ok) {
+            await loadUserPermissions();
+        } else {
+            const data = await resp.json();
+            alert(data.error || 'Ошибка');
+        }
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
+    }
+}

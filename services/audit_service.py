@@ -4,7 +4,7 @@ Audit Log Service — логирование действий пользоват
 Записывает кто, что, когда и какие данные изменил.
 """
 
-import json
+
 from typing import Any, Dict, Optional
 from database.session import SessionLocal
 from database.models import AuditLog
