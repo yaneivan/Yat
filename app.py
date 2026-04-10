@@ -19,6 +19,8 @@ from services import (
     ai_service,
     image_storage_service,
     user_service,
+    permission_service,
+    audit_service,
 )
 
 # Import database
@@ -1032,6 +1034,94 @@ def api_delete_user(user_id):
     if user_service.delete_user(user['username']):
         return jsonify({'message': 'Пользователь удалён'})
     return jsonify({'error': 'Нельзя удалить последнего администратора'}), 400
+
+
+# =============================================================================
+# API: Project Permissions (Admin only)
+# =============================================================================
+@app.route('/api/projects/<project_name>/permissions', methods=['GET'])
+@require_admin
+def api_get_project_permissions(project_name):
+    """Get all users with access to a project."""
+    perms = permission_service.get_project_permissions(project_name)
+    return jsonify({'project': project_name, 'permissions': perms})
+
+
+@app.route('/api/projects/<project_name>/permissions', methods=['POST'])
+@require_admin
+def api_grant_project_permission(project_name):
+    """Grant access to a user. Body: {user_id, role?}."""
+    data = request.json
+    user_id = data.get('user_id')
+    role = data.get('role', 'write')
+
+    if not user_id:
+        return jsonify({'error': 'user_id обязателен'}), 400
+
+    result = permission_service.grant_access(user_id, project_name, role)
+    if not result:
+        return jsonify({'error': 'Проект не найден'}), 404
+
+    audit_service.log(
+        session.get('user_id'), 'grant_permission', 'project',
+        entity_id=None, details=f'User {user_id} → {project_name} ({role})'
+    )
+    return jsonify({'permission': result}), 201
+
+
+@app.route('/api/projects/<project_name>/permissions/<int:user_id>', methods=['DELETE'])
+@require_admin
+def api_revoke_project_permission(project_name, user_id):
+    """Revoke user access from a project."""
+    if permission_service.revoke_access(user_id, project_name):
+        audit_service.log(
+            session.get('user_id'), 'revoke_permission', 'project',
+            entity_id=None, details=f'User {user_id} ← {project_name}'
+        )
+        return jsonify({'message': 'Доступ отозван'})
+    return jsonify({'error': 'Доступ не найден'}), 404
+
+
+@app.route('/api/users/<int:user_id>/permissions', methods=['GET'])
+@require_admin
+def api_get_user_permissions(user_id):
+    """Get all projects accessible to a user."""
+    user = user_service.get_user_by_id(user_id)
+    if not user:
+        return jsonify({'error': 'Пользователь не найден'}), 404
+
+    perms = permission_service.get_user_permissions(user_id)
+    return jsonify({'user_id': user_id, 'permissions': perms})
+
+
+# =============================================================================
+# API: Audit Log (Admin only)
+# =============================================================================
+@app.route('/api/audit', methods=['GET'])
+@require_admin
+def api_get_audit_log():
+    """Get audit log entries. Query: user_id, entity_type, entity_id, action, limit, offset."""
+    logs = audit_service.get_logs(
+        user_id=request.args.get('user_id', type=int),
+        entity_type=request.args.get('entity_type'),
+        entity_id=request.args.get('entity_id', type=int),
+        action=request.args.get('action'),
+        limit=request.args.get('limit', 100, type=int),
+        offset=request.args.get('offset', 0, type=int),
+    )
+    return jsonify({'logs': logs, 'total': len(logs)})
+
+
+@app.route('/api/audit/stats/<int:user_id>', methods=['GET'])
+@require_admin
+def api_get_user_stats(user_id):
+    """Get user activity statistics."""
+    user = user_service.get_user_by_id(user_id)
+    if not user:
+        return jsonify({'error': 'Пользователь не найден'}), 404
+
+    stats = audit_service.get_user_stats(user_id)
+    return jsonify({'stats': stats})
 
 
 # --- Pages: Project ---
