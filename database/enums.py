@@ -15,8 +15,16 @@ class ImageStatus(str, Enum):
 
 class TaskStatus(str, Enum):
     """Status values for background tasks."""
-    
+
     PENDING = 'pending'     # Task created, waiting to start
     RUNNING = 'running'     # Task is executing
     COMPLETED = 'completed' # Task finished successfully
     FAILED = 'failed'       # Task failed with error
+
+
+class UserRole(str, Enum):
+    """User roles for access control."""
+
+    ADMIN = 'admin'     # Full access: manage users, projects, annotations
+    ANNOTATOR = 'annotator'  # Can annotate and edit assigned projects
+    REVIEWER = 'reviewer'    # Can review and approve, read-only otherwise

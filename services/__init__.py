@@ -11,6 +11,7 @@ from services.image_service import ImageService, image_service
 from services.project_service import ProjectService, project_service
 from services.ai_service import AIService, ai_service
 from services.image_storage_service import ImageStorageService, image_storage_service
+from services.user_service import UserService, user_service
 
 __all__ = [
     'TaskService',
@@ -25,4 +26,6 @@ __all__ = [
     'ai_service',
     'ImageStorageService',
     'image_storage_service',
+    'UserService',
+    'user_service',
 ]

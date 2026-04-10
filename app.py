@@ -18,6 +18,7 @@ from services import (
     project_service,
     ai_service,
     image_storage_service,
+    user_service,
 )
 
 # Import database
@@ -126,23 +127,36 @@ def check_auth():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    """Login page for password protection."""
+    """Login page — tries DB auth first, falls back to env passwords."""
     if not USE_AUTH:
-        # No passwords configured - open access, redirect to home
         return redirect('/')
 
     if request.method == 'POST':
-        password = request.form.get('password')
-        
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+
+        # 1) Try database authentication
+        if user_service.has_admin() or user_service.get_all_users():
+            user = user_service.authenticate(username, password)
+            if user:
+                session['role'] = user['role']
+                session['user_id'] = user['id']
+                session['username'] = user['username']
+                return redirect('/')
+            return render_template('login.html', error='Неверный логин или пароль')
+
+        # 2) Fallback: env passwords (first login, no users yet)
         if password == config.ADMIN_PASSWORD:
             session['role'] = 'admin'
+            session['username'] = 'admin'
             return redirect('/')
         elif password == config.USER_PASSWORD:
             session['role'] = 'user'
+            session['username'] = 'user'
             return redirect('/')
         else:
             return render_template('login.html', error='Неверный пароль')
-    
+
     return render_template('login.html')
 
 
@@ -150,6 +164,8 @@ def login():
 def logout():
     """Logout - clear session."""
     session.pop('role', None)
+    session.pop('user_id', None)
+    session.pop('username', None)
     return redirect(url_for('login'))
 
 
@@ -159,7 +175,8 @@ def inject_auth():
     return {
         'USE_AUTH': USE_AUTH,
         'user_role': get_user_role(),
-        'is_admin': is_admin()
+        'is_admin': is_admin(),
+        'current_username': session.get('username', None),
     }
 
 # Make csrf_token available even when CSRF is disabled
@@ -938,11 +955,83 @@ def get_task(task_id):
 # --- API: Auth ---
 @app.route('/api/auth/me', methods=['GET'])
 def get_current_user():
-    """Get current user's role."""
+    """Get current user info."""
     if not USE_AUTH:
-        return jsonify({'role': 'admin', 'is_admin': True})
+        return jsonify({'role': 'admin', 'is_admin': True, 'username': 'admin'})
     role = get_user_role()
-    return jsonify({'role': role or 'none', 'is_admin': is_admin()})
+    return jsonify({
+        'role': role or 'none',
+        'is_admin': is_admin(),
+        'username': session.get('username', None),
+        'user_id': session.get('user_id', None),
+    })
+
+
+# =============================================================================
+# API: Users (Admin only)
+# =============================================================================
+@app.route('/api/users', methods=['GET'])
+@require_admin
+def api_list_users():
+    """List all users."""
+    users = user_service.get_all_users()
+    return jsonify({'users': users})
+
+
+@app.route('/api/users', methods=['POST'])
+@require_admin
+def api_create_user():
+    """Create a new user. Body: {username, password, role}."""
+    data = request.json
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    role = data.get('role', 'annotator')
+
+    if not username or not password:
+        return jsonify({'error': 'username и password обязательны'}), 400
+
+    if role not in ('admin', 'annotator', 'reviewer'):
+        return jsonify({'error': 'Недопустимая роль'}), 400
+
+    result = user_service.create_user(username=username, password=password, role=role)
+    if not result:
+        return jsonify({'error': 'Пользователь уже существует'}), 409
+
+    return jsonify({'user': result}), 201
+
+
+@app.route('/api/users/<int:user_id>', methods=['PUT'])
+@require_admin
+def api_update_user(user_id):
+    """Update user. Body: {password?, role?, is_active?}."""
+    data = request.json
+    user = user_service.get_user_by_id(user_id)
+    if not user:
+        return jsonify({'error': 'Пользователь не найден'}), 404
+
+    result = user_service.update_user(
+        username=user['username'],
+        new_password=data.get('password'),
+        role=data.get('role'),
+        is_active=data.get('is_active')
+    )
+    if not result:
+        return jsonify({'error': 'Ошибка обновления'}), 500
+
+    return jsonify({'user': result})
+
+
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+@require_admin
+def api_delete_user(user_id):
+    """Delete a user."""
+    user = user_service.get_user_by_id(user_id)
+    if not user:
+        return jsonify({'error': 'Пользователь не найден'}), 404
+
+    if user_service.delete_user(user['username']):
+        return jsonify({'message': 'Пользователь удалён'})
+    return jsonify({'error': 'Нельзя удалить последнего администратора'}), 400
 
 
 # --- Pages: Project ---
