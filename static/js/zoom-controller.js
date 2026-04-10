@@ -92,9 +92,10 @@ class ZoomController {
             if (opt.e.button !== 0) return;
             isPanning = true;
             secondaryCanvas.selection = false;
+            secondaryCanvas.skipTargetFind = true;
             lastMouse = { x: opt.e.clientX, y: opt.e.clientY };
             secondaryCanvas.defaultCursor = 'grabbing';
-            secondaryCanvas.upperCanvasEl.style.cursor = 'grabbing';
+            secondaryCanvas.upperCanvasEl.style.setProperty('cursor', 'grabbing', 'important');
         }
 
         function onMove(opt) {
@@ -114,12 +115,9 @@ class ZoomController {
             if (isPanning) {
                 isPanning = false;
                 if (!self.spaceHeld) {
-                    secondaryCanvas.defaultCursor = 'default';
-                    secondaryCanvas.selection = true;
-                    secondaryCanvas.upperCanvasEl.style.cursor = 'default';
+                    self._applySpaceCursor(secondaryCanvas, false);
                 } else {
-                    secondaryCanvas.defaultCursor = 'grab';
-                    secondaryCanvas.upperCanvasEl.style.cursor = 'grab';
+                    self._applySpaceCursor(secondaryCanvas, true);
                 }
             }
         }
@@ -231,15 +229,8 @@ class ZoomController {
         if (e.code === 'Space' && !e.repeat) {
             e.preventDefault();
             this.spaceHeld = true;
-            this.canvas.defaultCursor = 'grab';
-            this.canvas.selection = false;
-            this.canvas.upperCanvasEl.style.cursor = 'grab';
-            // Обновляем и secondaryCanvas (если есть) — курсор может быть над ним
-            if (this.syncCanvas) {
-                this.syncCanvas.defaultCursor = 'grab';
-                this.syncCanvas.selection = false;
-                this.syncCanvas.upperCanvasEl.style.cursor = 'grab';
-            }
+            this._applySpaceCursor(this.canvas, true);
+            if (this.syncCanvas) this._applySpaceCursor(this.syncCanvas, true);
             return;
         }
 
@@ -265,20 +256,46 @@ class ZoomController {
     _onKeyUp(e) {
         if (e.code === 'Space') {
             this.spaceHeld = false;
-            if (!this.isPanning) {
-                this.canvas.defaultCursor = 'default';
-                this.canvas.selection = true;
-                this.canvas.upperCanvasEl.style.cursor = 'default';
-                if (this.syncCanvas) {
-                    this.syncCanvas.defaultCursor = 'default';
-                    this.syncCanvas.selection = true;
-                    this.syncCanvas.upperCanvasEl.style.cursor = 'default';
-                }
-            }
+            this._applySpaceCursor(this.canvas, false);
+            if (this.syncCanvas) this._applySpaceCursor(this.syncCanvas, false);
         }
     }
 
     /* ── Private: mouse pan (Space+drag) ── */
+
+    /** MutationObserver — ловит попытки Fabric переписать cursor и отменяет их */
+    _applySpaceCursor(canvas, active, grabbing) {
+        const el = canvas.upperCanvasEl;
+
+        // Снимаем старый observer если есть
+        if (canvas._cursorObserver) {
+            canvas._cursorObserver.disconnect();
+            canvas._cursorObserver = null;
+        }
+
+        if (active) {
+            const cursor = grabbing ? 'grabbing' : 'grab';
+            canvas.defaultCursor = cursor;
+            canvas.hoverCursor = cursor;
+            canvas.skipTargetFind = true;
+            canvas.selection = false;
+            el.style.setProperty('cursor', cursor, 'important');
+
+            // Наблюдаем за изменениями style.cursor
+            canvas._cursorObserver = new MutationObserver(() => {
+                if (this.spaceHeld) {
+                    el.style.setProperty('cursor', cursor, 'important');
+                }
+            });
+            canvas._cursorObserver.observe(el, { attributes: true, attributeFilter: ['style'] });
+        } else {
+            canvas.defaultCursor = 'default';
+            canvas.hoverCursor = 'move';
+            canvas.skipTargetFind = false;
+            canvas.selection = true;
+            el.style.removeProperty('cursor');
+        }
+    }
 
     _enableMousePan() {
         const self = this;
@@ -288,9 +305,10 @@ class ZoomController {
             if (opt.e.button !== 0) return;
             self.isPanning = true;
             self.canvas.selection = false;
+            self.canvas.skipTargetFind = true;
             self.lastMouse = { x: opt.e.clientX, y: opt.e.clientY };
             self.canvas.defaultCursor = 'grabbing';
-            self.canvas.upperCanvasEl.style.cursor = 'grabbing';
+            self.canvas.upperCanvasEl.style.setProperty('cursor', 'grabbing', 'important');
         };
 
         this._mouseMoveHandler = function (opt) {
@@ -306,12 +324,9 @@ class ZoomController {
             if (self.isPanning) {
                 self.isPanning = false;
                 if (!self.spaceHeld) {
-                    self.canvas.defaultCursor = 'default';
-                    self.canvas.selection = true;
-                    self.canvas.upperCanvasEl.style.cursor = 'default';
+                    self._applySpaceCursor(self.canvas, false);
                 } else {
-                    self.canvas.defaultCursor = 'grab';
-                    self.canvas.upperCanvasEl.style.cursor = 'grab';
+                    self._applySpaceCursor(self.canvas, true);
                 }
             }
         };
@@ -331,6 +346,9 @@ class ZoomController {
         if (this._mouseDownHandler) this.canvas.off('mouse:down', this._mouseDownHandler);
         if (this._mouseMoveHandler) this.canvas.off('mouse:move', this._mouseMoveHandler);
         if (this._mouseUpHandler) this.canvas.off('mouse:up', this._mouseUpHandler);
+        if (this._cursorFixHandler) {
+            this.canvas.off('after:render', this._cursorFixHandler);
+        }
     }
 
     /* ── Private: helpers ── */

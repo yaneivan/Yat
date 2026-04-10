@@ -1066,6 +1066,8 @@ class TextEditor {
         // Left canvas events
         this.leftCanvas.on('mouse:down', (opt) => {
             if (opt.e.button === 0) { // Left click
+                // Не обрабатываем клик при Space+drag (pan)
+                if (typeof zoomCtrl !== 'undefined' && zoomCtrl.spaceHeld) return;
                 // Check if we clicked on a polygon using a more robust method
                 const target = this.getPolygonAtCoords(opt.e.clientX, opt.e.clientY, this.leftCanvas);
                 console.log("Left canvas click - target:", target); // Debug print
@@ -1157,6 +1159,8 @@ class TextEditor {
         // Right canvas events
         this.rightCanvas.on('mouse:down', (opt) => {
             if (opt.e.button === 0) { // Left click
+                // Не обрабатываем клик при Space+drag (pan)
+                if (typeof zoomCtrl !== 'undefined' && zoomCtrl.spaceHeld) return;
                 // Check if we clicked on a polygon using a more robust method
                 const target = this.getPolygonAtCoords(opt.e.clientX, opt.e.clientY, this.rightCanvas);
                 console.log("Right canvas click - target:", target); // Debug print
