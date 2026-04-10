@@ -43,7 +43,7 @@
 
 <div id="workspace" oncontextmenu="return false;">
     <canvas id="c"></canvas>
-    <div class="help-overlay">ПКМ: Пан | Колесо: Зум | ESC: Отмена | Клик в начало: Замкнуть | Ctrl+A: Всё</div>
+    <div class="help-overlay">Space: Пан | ПКМ: Пан | Колесо: Зум | ESC: Отмена | Клик в начало: Замкнуть | Ctrl+A: Всё</div>
 </div>
 
 <!-- Status popover -->
@@ -75,14 +75,20 @@
 
 <script src="/static/js/api.js"></script>
 <script src="/static/js/status_widget.js"></script>
+<script src="/static/js/zoom-controller.js"></script>
 <script src="/static/js/editor.js"></script>
 <script>
     // Передаем проект в редактор
     const currentProject = "{{ project if project else '' }}";
     const editor = new HTREditor('c', "{{ filename }}", currentProject);
-    
+
     // Инициализируем виджет статусов
     initStatusWidget(currentProject, "{{ filename }}");
+
+    // Инициализируем контроллер зума (overlay поверх workspace)
+    const zoomCtrl = new ZoomController(editor.canvas, {
+        wrapper: document.getElementById('workspace')
+    });
 </script>
 </body>
 </html>

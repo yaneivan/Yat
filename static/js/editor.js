@@ -191,6 +191,11 @@ class HTREditor {
                 this.canvas.viewportTransform[4] = (this.canvas.width - newW) / 2;
                 this.canvas.viewportTransform[5] = 20;
 
+                // Обновляем baseZoom для zoom-контроллера
+                if (typeof zoomCtrl !== 'undefined') {
+                    zoomCtrl.setBaseZoom(scale);
+                }
+
                 this.canvas.requestRenderAll();
                 this.setMode('edit');
                 this.history.reset();

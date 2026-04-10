@@ -39,9 +39,9 @@
             <div class="canvas-container">
                 <canvas id="left-canvas"></canvas>
             </div>
-            <div class="help-overlay">ЛКМ: ввод текста | ПКМ: панорамирование | Колесо: масштаб</div>
+            <div class="help-overlay">ЛКМ: ввод текста | Space: Пан | ПКМ: панорамирование | Колесо: масштаб</div>
         </div>
-        
+
         <div class="panel right">
             <div class="panel-title">Регионы для ввода текста</div>
             <div class="canvas-container" id="right-canvas-container">
@@ -53,7 +53,7 @@
                 </div>
                 <div id="notepad-lines"></div>
             </div>
-            <div class="help-overlay">ЛКМ: ввод текста | ПКМ: панорамирование | Колесо: масштаб</div>
+            <div class="help-overlay">ЛКМ: ввод текста | Space: Пан | ПКМ: панорамирование | Колесо: масштаб</div>
         </div>
     </div>
 
@@ -134,6 +134,15 @@
             "{{ filename }}",
             currentProject
         );
+    </script>
+    <script src="/static/js/zoom-controller.js"></script>
+    <script>
+        const zoomCtrl = new ZoomController(editor.leftCanvas, {
+            wrapper: document.getElementById('workspace'),
+            syncCanvas: editor.rightCanvas
+        });
+        // Space+drag работает и на правом холсте
+        zoomCtrl.enableSecondaryPan(editor.rightCanvas, editor.leftCanvas);
     </script>
 </body>
 </html>
