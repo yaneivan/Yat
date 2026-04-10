@@ -1752,7 +1752,9 @@ body.dashboard {
     color: white;
 }
 
-.text-input {
+/* Text input (textarea — legacy, kept for notepad-like inline inputs) */
+.text-input,
+textarea.text-input {
     width: 100%;
     min-height: 120px;
     padding: 12px;
@@ -1766,9 +1768,87 @@ body.dashboard {
     font-family: inherit;
 }
 
-.text-input:focus {
+.text-input:focus,
+textarea.text-input:focus {
     outline: none;
     border-color: #007bff;
+}
+
+/* Contenteditable text input for formatted text */
+#text-input {
+    width: 100%;
+    min-height: 120px;
+    padding: 12px;
+    background: #222;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: #ddd;
+    font-size: 1.1em;
+    box-sizing: border-box;
+    font-family: inherit;
+    line-height: 1.5;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+#text-input:focus {
+    outline: none;
+    border-color: #007bff;
+}
+
+/* Placeholder for contenteditable */
+#text-input:empty::before {
+    content: attr(data-placeholder);
+    color: #666;
+    cursor: text;
+    pointer-events: none;
+}
+
+/* Rendered formatting inside the contenteditable (edit mode — hidden, rendered on blur) */
+#text-input .format-strike {
+    text-decoration: line-through;
+    text-decoration-color: #ff6b6b;
+}
+
+#text-input .format-strike-weak {
+    text-decoration: line-through;
+    text-decoration-color: #999;
+    text-decoration-style: dashed;
+}
+
+#text-input .format-underline {
+    text-decoration: underline;
+    text-decoration-color: #4ecdc4;
+    text-decoration-style: solid;
+}
+
+#text-input .format-bold-text {
+    font-weight: bold;
+    color: #ffe66d;
+}
+
+#text-input .format-insertion {
+    font-style: italic;
+    color: #a8e6cf;
+    border-bottom: 2px dashed #a8e6cf;
+}
+
+#text-input .format-comment {
+    color: #888;
+    font-style: italic;
+}
+
+/* Formatting in raw edit mode — show markers visibly */
+#text-input.raw-edit .format-strike::before,
+#text-input.raw-edit .format-strike::after {
+    content: '~~';
+    color: #666;
+    font-weight: normal;
+}
+
+#text-input.raw-edit .format-strike::after {
+    content: '~~';
 }
 
 .region-preview {

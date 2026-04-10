@@ -237,86 +237,103 @@ class TextEditor {
         this.rightCanvas.requestRenderAll();
     }
 
-    // Parse text for formatting markers: [текст] and ~текст~
+    // Parse text for formatting markers (Markdown-like syntax)
+    // Supports: ~~strikethrough~~, _underline_, ==bold==, ^insertion^, [comment]
+    // Also supports legacy single-tilde ~text~ for backward compatibility
     parseFormats(text) {
-        const styles = {};
-        let processedText = text;
+        const styles = {}; // charIndex -> { remove, linethrough, underline, fill, fontWeight }
+        const markerPositions = []; // Track marker positions for removal
 
-        // First pass: find all formatting markers and their positions
-        // Strong strikethrough: [текст]
-        const strongRegex = /\[([^\]]+)\]/g;
-        let match;
+        // Define format patterns in priority order
+        const formats = [
+            { regex: /~~([^~]+)~~/g, type: 'strike', openLen: 2, closeLen: 2 },
+            { regex: /\[([^\]]+)\]/g, type: 'comment', openLen: 1, closeLen: 1 },
+            { regex: /==([^=]+)==/g, type: 'bold', openLen: 2, closeLen: 2 },
+            { regex: /\^([^^]+)\^/g, type: 'insertion', openLen: 1, closeLen: 1 },
+            { regex: /_([^_]+)_/g, type: 'underline', openLen: 1, closeLen: 1 },
+            // Legacy: single tilde for backward compatibility
+            { regex: /~([^~]+)~/g, type: 'strike-weak', openLen: 1, closeLen: 1 },
+        ];
 
-        while ((match = strongRegex.exec(text)) !== null) {
-            const startIndex = match.index;
-            const endIndex = startIndex + match[0].length;
-            const innerStart = startIndex + 1;
-            const innerEnd = endIndex - 1;
+        // First pass: find all formatting markers and mark positions for removal
+        for (const fmt of formats) {
+            const regex = new RegExp(fmt.regex.source, 'g');
+            let match;
+            while ((match = regex.exec(text)) !== null) {
+                const startIndex = match.index;
+                const endIndex = startIndex + match[0].length;
+                const innerStart = startIndex + fmt.openLen;
+                const innerEnd = endIndex - fmt.closeLen;
 
-            // Mark characters for removal (brackets)
-            for (let i = startIndex; i < endIndex; i++) {
-                if (!styles[i]) styles[i] = {};
-                styles[i].remove = true;
-            }
+                // Mark opening marker characters for removal
+                for (let i = startIndex; i < startIndex + fmt.openLen; i++) {
+                    if (!styles[i]) styles[i] = {};
+                    styles[i].remove = true;
+                }
 
-            // Apply strong strikethrough to inner text
-            for (let i = innerStart; i < innerEnd; i++) {
-                if (!styles[i]) styles[i] = {};
-                styles[i].stroke = 'black';
-                styles[i].strokeWidth = 2;
+                // Mark closing marker characters for removal
+                for (let i = endIndex - fmt.closeLen; i < endIndex; i++) {
+                    if (!styles[i]) styles[i] = {};
+                    styles[i].remove = true;
+                }
+
+                // Apply formatting to inner text
+                for (let i = innerStart; i < innerEnd; i++) {
+                    if (!styles[i]) styles[i] = {};
+                    switch (fmt.type) {
+                        case 'strike':
+                        case 'strike-weak':
+                            styles[i].linethrough = true;
+                            break;
+                        case 'underline':
+                            styles[i].underline = true;
+                            break;
+                        case 'bold':
+                            styles[i].fill = '#000000';
+                            styles[i].fontWeight = 'bold';
+                            break;
+                        case 'insertion':
+                            styles[i].fill = '#cc6600';
+                            styles[i].fontStyle = 'italic';
+                            break;
+                        case 'comment':
+                            styles[i].fill = '#888888';
+                            styles[i].fontStyle = 'italic';
+                            break;
+                    }
+                }
             }
         }
 
-        // Weak strikethrough: ~текст~
-        const weakRegex = /~([^~]+)~/g;
-        while ((match = weakRegex.exec(text)) !== null) {
-            const startIndex = match.index;
-            const endIndex = startIndex + match[0].length;
-            const innerStart = startIndex + 1;
-            const innerEnd = endIndex - 1;
-
-            // Mark characters for removal (tildes)
-            for (let i = startIndex; i < endIndex; i++) {
-                if (!styles[i]) styles[i] = {};
-                styles[i].remove = true;
-            }
-
-            // Apply weak strikethrough to inner text
-            for (let i = innerStart; i < innerEnd; i++) {
-                if (!styles[i]) styles[i] = {};
-                styles[i].stroke = 'black';
-                styles[i].strokeWidth = 1;
-            }
-        }
-
-        // Build the final text and adjust styles for removed characters
+        // Build the final text and adjust indices for removed characters
         let finalText = '';
         const finalStyles = {};
         let offset = 0;
 
-        for (let i = 0; i < processedText.length; i++) {
+        for (let i = 0; i < text.length; i++) {
             if (styles[i] && styles[i].remove) {
                 offset++;
                 continue;
             }
-            finalText += processedText[i];
-            if (styles[i]) {
+            finalText += text[i];
+            if (styles[i] && !styles[i].remove) {
                 finalStyles[i - offset] = { ...styles[i] };
-                delete finalStyles[i - offset].remove;
             }
         }
 
-        // Convert styles to fabric.js format
+        // Convert styles to fabric.js format: { lineIndex: { charIndex: { style } } }
         const fabricStyles = {};
+        const lineStyles = {};
         for (const [index, style] of Object.entries(finalStyles)) {
-            fabricStyles[index] = {};
-            if (style.stroke) {
-                fabricStyles[index].stroke = style.stroke;
-            }
-            if (style.strokeWidth) {
-                fabricStyles[index].strokeWidth = style.strokeWidth;
-            }
+            const charIdx = parseInt(index);
+            lineStyles[charIdx] = {};
+            if (style.linethrough) lineStyles[charIdx].linethrough = true;
+            if (style.underline) lineStyles[charIdx].underline = true;
+            if (style.fill) lineStyles[charIdx].fill = style.fill;
+            if (style.fontWeight) lineStyles[charIdx].fontWeight = style.fontWeight;
+            if (style.fontStyle) lineStyles[charIdx].fontStyle = style.fontStyle;
         }
+        fabricStyles[0] = lineStyles;
 
         return { text: finalText, styles: fabricStyles };
     }
@@ -1262,9 +1279,9 @@ class TextEditor {
         const totalRegionsSpan = document.getElementById('total-regions');
         const regionPreview = document.getElementById('region-preview-img');
 
-        // Set current text if exists
+        // Set current text in contenteditable (raw text, no HTML rendering)
         const currentText = this.texts[regionIndex] || '';
-        textInput.value = currentText;
+        this._setRawInput(currentText);
 
         // Update counters
         currentIndexSpan.textContent = regionIndex + 1;
@@ -1277,6 +1294,26 @@ class TextEditor {
         modal.style.display = 'flex';
         textInput.focus();
 
+        // Remove any previous listeners to avoid duplicates
+        if (this._textInputHandlers) {
+            textInput.removeEventListener('focus', this._textInputHandlers.focus);
+            textInput.removeEventListener('blur', this._textInputHandlers.blur);
+            textInput.removeEventListener('paste', this._textInputHandlers.paste);
+        }
+
+        // Set up focus/blur handlers for raw ↔ rendered mode switching
+        this._textInputHandlers = {
+            focus: () => this._onTextInputFocus(),
+            blur: () => this._onTextInputBlur(),
+            paste: (e) => this._onTextInputPaste(e),
+        };
+        textInput.addEventListener('focus', this._textInputHandlers.focus);
+        textInput.addEventListener('blur', this._textInputHandlers.blur);
+        textInput.addEventListener('paste', this._textInputHandlers.paste);
+
+        // Start in raw (edit) mode
+        this._enterRawMode();
+
         // Store the event handler so we can remove it later
         this.modalClickHandler = (event) => {
             if (event.target === modal) {
@@ -1287,6 +1324,58 @@ class TextEditor {
         // Add event listener to close modal when clicking outside
         document.addEventListener('click', this.modalClickHandler, true);
     }
+
+    // ==================== CONTENTEDITABLE INPUT HELPERS ====================
+
+    // Get raw text content from the contenteditable element
+    _getRawInput() {
+        const input = document.getElementById('text-input');
+        if (!input) return '';
+        // textContent gives us the raw text without HTML tags
+        return input.textContent || '';
+    }
+
+    // Set raw text content in the contenteditable element
+    _setRawInput(text) {
+        const input = document.getElementById('text-input');
+        if (!input) return;
+        input.textContent = text;
+    }
+
+    // Enter raw edit mode — show markdown markers visibly
+    _enterRawMode() {
+        const input = document.getElementById('text-input');
+        if (!input) return;
+        input.classList.add('raw-edit');
+    }
+
+    // Enter rendered mode — show formatting visually
+    _enterRenderedMode() {
+        const input = document.getElementById('text-input');
+        if (!input) return;
+        input.classList.remove('raw-edit');
+    }
+
+    // On focus: switch to raw edit mode so user sees and can edit markers
+    _onTextInputFocus() {
+        this._enterRawMode();
+    }
+
+    // On blur: save current text and switch to rendered mode
+    _onTextInputBlur() {
+        // Save text immediately on blur
+        this.saveCurrentText();
+        this._enterRenderedMode();
+    }
+
+    // Intercept paste to ensure only plain text is pasted
+    _onTextInputPaste(e) {
+        e.preventDefault();
+        const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+        document.execCommand('insertText', false, text);
+    }
+
+    // ==================== END CONTENTEDITABLE INPUT HELPERS ====================
 
     extractRegionImage(regionIndex, imgElement) {
         // Get the region polygon
@@ -1375,6 +1464,17 @@ class TextEditor {
             this.saveHistoryTimeout = null;
         }
 
+        // Remove text-input event listeners
+        if (this._textInputHandlers) {
+            const input = document.getElementById('text-input');
+            if (input) {
+                input.removeEventListener('focus', this._textInputHandlers.focus);
+                input.removeEventListener('blur', this._textInputHandlers.blur);
+                input.removeEventListener('paste', this._textInputHandlers.paste);
+            }
+            this._textInputHandlers = null;
+        }
+
         // Remove the event listener that was added when opening the modal
         if (this.modalClickHandler) {
             document.removeEventListener('click', this.modalClickHandler, true);
@@ -1382,38 +1482,53 @@ class TextEditor {
         }
     }
 
+    // Apply formatting to selected text or insert template
+    // Works with contenteditable using window.getSelection()
     applyFormat(formatType) {
-        const textInput = document.getElementById('text-input');
-        const start = textInput.selectionStart;
-        const end = textInput.selectionEnd;
-        const text = textInput.value;
+        const input = document.getElementById('text-input');
+        input.focus();
 
-        if (formatType === 'strong') {
-            // Strong strikethrough: [текст]
-            if (start === end) {
-                // No selection - insert template with cursor inside
-                textInput.value = text.substring(0, start) + '[]' + text.substring(end);
-                textInput.setSelectionRange(start + 1, start + 1); // Cursor inside brackets
-            } else {
-                // Wrap selected text
-                const selectedText = text.substring(start, end);
-                textInput.value = text.substring(0, start) + `[${selectedText}]` + text.substring(end);
-                const newCursorPos = start + selectedText.length + 2;
-                textInput.setSelectionRange(newCursorPos, newCursorPos);
-            }
-        } else if (formatType === 'weak') {
-            // Weak strikethrough: ~текст~
-            if (start === end) {
-                // No selection - do nothing for weak format
-                return;
-            }
-            const selectedText = text.substring(start, end);
-            textInput.value = text.substring(0, start) + `~${selectedText}~` + text.substring(end);
-            const newCursorPos = start + selectedText.length + 2;
-            textInput.setSelectionRange(newCursorPos, newCursorPos);
+        const sel = window.getSelection();
+        if (!sel.rangeCount) return;
+
+        const range = sel.getRangeAt(0);
+        // Check if selection is within our text-input
+        if (!input.contains(range.commonAncestorContainer)) return;
+
+        const selectedText = range.toString();
+
+        const formats = {
+            strike:     { open: '~~', close: '~~' },
+            underline:  { open: '_',   close: '_' },
+            bold:       { open: '==',  close: '==' },
+            insertion:  { open: '^',   close: '^' },
+            comment:    { open: '[',   close: ']' },
+        };
+
+        const fmt = formats[formatType];
+        if (!fmt) return;
+
+        if (selectedText.length > 0) {
+            // Wrap selected text
+            range.deleteContents();
+            const textNode = document.createTextNode(fmt.open + selectedText + fmt.close);
+            range.insertNode(textNode);
+            // Place cursor after the closing marker
+            range.setStartAfter(textNode);
+            range.collapse(true);
+        } else {
+            // No selection — insert template with cursor inside
+            const beforeText = fmt.open;
+            const afterText = fmt.close;
+            const textNode = document.createTextNode(beforeText + afterText);
+            range.insertNode(textNode);
+            // Place cursor between markers
+            range.setStart(textNode, beforeText.length);
+            range.setEnd(textNode, beforeText.length);
         }
 
-        textInput.focus();
+        sel.removeAllRanges();
+        sel.addRange(range);
     }
 
     saveTextAndNext() {
@@ -1572,8 +1687,9 @@ class TextEditor {
     saveCurrentText() {
         if (this.currentRegionIndex < 0) return;
 
-        const textInput = document.getElementById('text-input');
-        const text = textInput.value.trim();
+        const input = document.getElementById('text-input');
+        // Get raw text content (strips HTML formatting, keeps raw markdown markers)
+        const text = this._getRawInput().trim();
 
         // Save text for current region
         this.texts[this.currentRegionIndex] = text;
