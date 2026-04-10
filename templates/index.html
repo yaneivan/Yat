@@ -55,6 +55,7 @@
                     <h2>Проекты</h2>
                     <div style="display: flex; gap: 10px;">
                         {% if is_admin %}
+                        <button class="btn" onclick="openStatsPanel()" style="background:#17a2b8; color:white;">📊 Статистика</button>
                         <button class="btn create-project-btn" onclick="openCreateProjectModal()">+ Создать проект</button>
                         {% endif %}
                     </div>
@@ -186,6 +187,19 @@
                     <button class="btn btn-primary" onclick="grantPermission()">Добавить</button>
                 </div>
                 <ul id="perms-list" style="list-style:none; padding:0;"></ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Modal -->
+    <div id="statsModal" class="modal">
+        <div class="modal-content" style="width: 90%; max-width: 1000px; max-height: 85vh;">
+            <div class="modal-header">
+                <h2>📊 Статистика работы</h2>
+                <span class="close" onclick="closeStatsPanel()">&times;</span>
+            </div>
+            <div class="modal-body" style="overflow-y: auto; max-height: calc(85vh - 80px);">
+                <div id="stats-content">Загрузка...</div>
             </div>
         </div>
     </div>

@@ -1328,3 +1328,107 @@ async function revokePermission(projectName) {
         alert('Ошибка: ' + e.message);
     }
 }
+
+/* ═══════════════════════════════════════════════
+   Statistics Dashboard
+   ═══════════════════════════════════════════════ */
+
+async function openStatsPanel() {
+    document.getElementById('statsModal').style.display = 'block';
+    await loadStatistics();
+}
+
+function closeStatsPanel() {
+    document.getElementById('statsModal').style.display = 'none';
+}
+
+async function loadStatistics() {
+    const container = document.getElementById('stats-content');
+    container.innerHTML = '<p>Загрузка...</p>';
+
+    try {
+        // Load users
+        const usersResp = await fetch('/api/users');
+        const usersData = await usersResp.json();
+        const users = usersData.users || [];
+
+        if (users.length === 0) {
+            container.innerHTML = '<p>Нет пользователей для отображения статистики.</p>';
+            return;
+        }
+
+        // Load audit log stats for each user
+        const userStats = await Promise.all(users.map(async (user) => {
+            try {
+                const resp = await fetch(`/api/audit/stats/${user.id}`);
+                const data = await resp.json();
+                return { user, stats: data.stats };
+            } catch {
+                return { user, stats: { total_actions: 0, by_action: {}, by_entity_type: {} } };
+            }
+        }));
+
+        // Sort by total actions descending
+        userStats.sort((a, b) => (b.stats.total_actions || 0) - (a.stats.total_actions || 0));
+        const maxActions = Math.max(1, ...userStats.map(u => u.stats.total_actions || 0));
+
+        // Build HTML
+        let html = '<h3>Рейтинг по активности</h3>';
+        html += '<div class="stat-bar-container">';
+
+        for (const entry of userStats) {
+            const total = entry.stats.total_actions || 0;
+            const height = Math.max(4, (total / maxActions) * 170);
+            html += `
+                <div class="stat-bar-item">
+                    <div class="stat-bar-value">${total}</div>
+                    <div class="stat-bar-fill" style="height:${height}px;"></div>
+                    <div class="stat-bar-label">${entry.user.username}</div>
+                </div>
+            `;
+        }
+        html += '</div>';
+
+        // Detailed table
+        html += '<h3>Детализация</h3>';
+        html += '<table style="width:100%; border-collapse:collapse;">';
+        html += '<tr style="background:#333; color:white;"><th style="padding:8px; text-align:left;">Пользователь</th><th style="padding:8px;">Роль</th><th style="padding:8px;">Всего действий</th><th style="padding:8px;">По типам</th></tr>';
+
+        for (const entry of userStats) {
+            const u = entry.user;
+            const s = entry.stats;
+            const byAction = Object.entries(s.by_action || {}).map(([k, v]) => `${k}: ${v}`).join(', ') || '—';
+            html += `<tr style="border-bottom:1px solid #ddd;">
+                <td style="padding:8px;">${u.username}</td>
+                <td style="padding:8px; text-align:center;">${u.role}</td>
+                <td style="padding:8px; text-align:center;">${s.total_actions || 0}</td>
+                <td style="padding:8px; font-size:12px;">${byAction}</td>
+            </tr>`;
+        }
+        html += '</table>';
+
+        // Recent activity
+        const logsResp = await fetch('/api/audit?limit=20');
+        const logsData = await logsResp.json();
+        if (logsData.logs && logsData.logs.length > 0) {
+            html += '<h3 style="margin-top:20px;">Последние действия</h3>';
+            html += '<table style="width:100%; border-collapse:collapse;">';
+            html += '<tr style="background:#333; color:white;"><th style="padding:8px; text-align:left;">Время</th><th style="padding:8px; text-align:left;">Кто</th><th style="padding:8px;">Действие</th><th style="padding:8px;">Объект</th><th style="padding:8px;">Описание</th></tr>';
+            for (const log of logsData.logs) {
+                const time = log.created_at ? log.created_at.replace('T', ' ').substring(0, 19) : '—';
+                html += `<tr style="border-bottom:1px solid #ddd;">
+                    <td style="padding:6px; font-size:12px;">${time}</td>
+                    <td style="padding:6px;">${log.username || '—'}</td>
+                    <td style="padding:6px; text-align:center;">${log.action}</td>
+                    <td style="padding:6px; font-size:12px;">${log.entity_type} #${log.entity_id || '—'}</td>
+                    <td style="padding:6px; font-size:12px;">${log.details || '—'}</td>
+                </tr>`;
+            }
+            html += '</table>';
+        }
+
+        container.innerHTML = html;
+    } catch (e) {
+        container.innerHTML = `<p style="color:red;">Ошибка загрузки статистики: ${e.message}</p>`;
+    }
+}
