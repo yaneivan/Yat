@@ -69,14 +69,23 @@
                     <img id="region-preview-img" src="" alt="Предпросмотр региона">
                 </div>
                 <div class="format-toolbar">
-                    <button class="format-btn" onclick="editor.applyFormat('weak')" title="Слабое зачеркивание ~текст~">
-                        слабое <s style="text-decoration-thickness: 1px">зачеркивание</s>
+                    <button class="format-btn" onclick="editor.applyFormat('strike')" title="Зачеркнуть ~~текст~~">
+                        ~~зачеркнуть~~
                     </button>
-                    <button class="format-btn" onclick="editor.applyFormat('strong')" title="Вставить комментарий [комментарий]">
-                        [вставить комментарий]
+                    <button class="format-btn" onclick="editor.applyFormat('underline')" title="Подчеркнуть _текст_">
+                        <u>подчеркнуть</u>
+                    </button>
+                    <button class="format-btn" onclick="editor.applyFormat('bold')" title="Жирный ==текст==">
+                        <b>жирный</b>
+                    </button>
+                    <button class="format-btn" onclick="editor.applyFormat('insertion')" title="Вставка ^текст^">
+                        <i>вставка</i>
+                    </button>
+                    <button class="format-btn" onclick="editor.applyFormat('comment')" title="Комментарий разметчика [текст]">
+                        [коммент]
                     </button>
                 </div>
-                <textarea id="text-input" class="text-input" placeholder="Введите текст для этого региона..."></textarea>
+                <div id="text-input" class="text-input" contenteditable="true" data-placeholder="Введите текст для этого региона..." role="textbox" aria-multiline="true"></div>
                 <div class="region-counter">Регион <span id="current-region-index">1</span> из <span id="total-regions">0</span></div>
             </div>
             <div class="modal-footer">
