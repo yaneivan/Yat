@@ -320,3 +320,96 @@ class TestAuditAPI:
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["stats"]["total_actions"] == 5
+
+
+class TestProjectAccessFiltering:
+    """Тесты фильтрации проектов по правам в реальных API endpoints."""
+
+    def _login_as(self, client, username, role, user_id):
+        user_service.create_user(username, "pass123", role)
+        user = user_service.get_user(username)
+        with client.session_transaction() as sess:
+            sess['role'] = role
+            sess['username'] = username
+            sess['user_id'] = user["id"]
+
+    def test_admin_sees_all_projects(self, client):
+        """Admin видит все проекты."""
+        from app import app, USE_AUTH
+        monkeypatch_available = True
+        try:
+            import app as app_module
+            old_use_auth = app_module.USE_AUTH
+            app_module.USE_AUTH = True
+        except:
+            monkeypatch_available = False
+
+        project_service.create_project("proj1")
+        project_service.create_project("proj2")
+        self._login_as(client, "admin", "admin", 1)
+
+        resp = client.get('/api/projects')
+        data = resp.get_json()
+        names = {p["name"] for p in data["projects"]}
+        assert "proj1" in names
+        assert "proj2" in names
+
+        if monkeypatch_available:
+            app_module.USE_AUTH = old_use_auth
+
+    def test_user_sees_only_assigned_projects(self, client, monkeypatch):
+        """Annotator видит только назначенные проекты."""
+        monkeypatch.setattr("app.USE_AUTH", True)
+        project_service.create_project("proj1")
+        project_service.create_project("proj2")
+        project_service.create_project("proj3")
+
+        user_service.create_user("alice", "pass123", "annotator")
+        alice = user_service.get_user("alice")
+        permission_service.grant_access(alice["id"], "proj1", "write")
+        permission_service.grant_access(alice["id"], "proj3", "read")
+
+        with client.session_transaction() as sess:
+            sess['role'] = 'annotator'
+            sess['username'] = 'alice'
+            sess['user_id'] = alice["id"]
+
+        resp = client.get('/api/projects')
+        data = resp.get_json()
+        names = {p["name"] for p in data["projects"]}
+        assert "proj1" in names
+        assert "proj3" in names
+        assert "proj2" not in names  # нет доступа
+
+    def test_user_with_no_permissions_sees_nothing(self, client, monkeypatch):
+        """Пользователь без прав не видит проектов."""
+        monkeypatch.setattr("app.USE_AUTH", True)
+        project_service.create_project("secret_proj")
+
+        user_service.create_user("nobody", "pass123", "annotator")
+        nobody = user_service.get_user("nobody")
+
+        with client.session_transaction() as sess:
+            sess['role'] = 'annotator'
+            sess['username'] = 'nobody'
+            sess['user_id'] = nobody["id"]
+
+        resp = client.get('/api/projects')
+        data = resp.get_json()
+        assert data["projects"] == []
+
+    def test_project_detail_denied_without_access(self, client, monkeypatch):
+        """GET /api/projects/<name> — 403 без прав."""
+        monkeypatch.setattr("app.USE_AUTH", True)
+        project_service.create_project("restricted")
+
+        user_service.create_user("alice", "pass123", "annotator")
+        alice = user_service.get_user("alice")
+
+        with client.session_transaction() as sess:
+            sess['role'] = 'annotator'
+            sess['username'] = 'alice'
+            sess['user_id'] = alice["id"]
+
+        resp = client.get('/api/projects/restricted')
+        assert resp.status_code == 403

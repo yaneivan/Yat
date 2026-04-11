@@ -305,3 +305,119 @@ class TestUserAPI:
             return
         resp = client.get('/api/users')
         assert resp.status_code in (302, 403)
+
+    def test_non_admin_cannot_access_users(self, client, monkeypatch):
+        """Annotator не может получить список пользователей."""
+        monkeypatch.setattr("app.USE_AUTH", True)
+        user_service.create_user("regular", "pass123", "annotator")
+        with client.session_transaction() as sess:
+            sess['role'] = 'annotator'
+            sess['username'] = 'regular'
+            sess['user_id'] = 1
+        resp = client.get('/api/users')
+        assert resp.status_code == 403
+
+    def test_non_admin_cannot_create_user(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        user_service.create_user("regular", "pass123", "annotator")
+        with client.session_transaction() as sess:
+            sess['role'] = 'annotator'
+            sess['username'] = 'regular'
+            sess['user_id'] = 1
+        resp = client.post('/api/users', json={"username": "new", "password": "pass", "role": "annotator"})
+        assert resp.status_code == 403
+
+    def test_non_admin_cannot_delete_user(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        user_service.create_user("regular", "pass123", "annotator")
+        user_service.create_user("admin2", "pass", "admin")  # второй админ
+        with client.session_transaction() as sess:
+            sess['role'] = 'annotator'
+            sess['username'] = 'regular'
+            sess['user_id'] = 1
+        resp = client.delete('/api/users/1')
+        assert resp.status_code == 403
+
+
+class TestLoginFlow:
+    """Интеграционные тесты /login endpoint."""
+
+    def test_login_db_success(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        user_service.create_user("alice", "secret123", "admin")
+        resp = client.post('/login', data={'username': 'alice', 'password': 'secret123'}, follow_redirects=False)
+        assert resp.status_code in (302, 303)
+        with client.session_transaction() as sess:
+            assert sess['username'] == 'alice'
+            assert sess['role'] == 'admin'
+
+    def test_login_db_wrong_password(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        user_service.create_user("alice", "secret123")
+        resp = client.post('/login', data={'username': 'alice', 'password': 'wrong'}, follow_redirects=False)
+        assert resp.status_code == 200
+        assert 'Неверный' in resp.data.decode('utf-8')
+
+    def test_login_fallback_env_password(self, client, monkeypatch):
+        """Если в БД нет пользователей — fallback на env пароли."""
+        monkeypatch.setattr("app.USE_AUTH", True)
+        monkeypatch.setattr("config.ADMIN_PASSWORD", "envpass")
+        monkeypatch.setattr("config.USER_PASSWORD", "userpass")
+        resp = client.post('/login', data={'username': 'x', 'password': 'envpass'}, follow_redirects=False)
+        assert resp.status_code in (302, 303)
+        with client.session_transaction() as sess:
+            assert sess['role'] == 'admin'
+
+    def test_login_empty_username(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        user_service.create_user("admin", "admin123", "admin")
+        resp = client.post('/login', data={'username': '   ', 'password': 'admin123'}, follow_redirects=False)
+        assert resp.status_code == 200  # ошибка
+
+
+class TestUserEdgeCases:
+    """Граничные случаи UserService."""
+
+    def test_get_user_by_id(self):
+        user_service.create_user("alice", "pass1")
+        alice = user_service.get_user("alice")
+        result = user_service.get_user_by_id(alice["id"])
+        assert result is not None
+        assert result["username"] == "alice"
+
+    def test_get_user_by_id_nonexistent(self):
+        assert user_service.get_user_by_id(9999) is None
+
+    def test_create_user_whitespace_username(self):
+        result = user_service.create_user("   ", "pass123")
+        assert result is not None
+        result2 = user_service.create_user("  ", "pass456")
+        assert result2 is not None
+
+    def test_create_user_very_long_password(self):
+        long_pass = "x" * 500
+        result = user_service.create_user("longpass", long_pass)
+        assert result is not None
+        assert user_service.authenticate("longpass", long_pass) is not None
+
+    def test_create_user_special_characters(self):
+        username = "user@#$%^&*()"
+        password = "p@$$w0rd!№;%:?"
+        result = user_service.create_user(username, password, "annotator")
+        assert result is not None
+        assert user_service.authenticate(username, password) is not None
+
+    def test_rollback_on_duplicate(self):
+        """Убедиться что rollback работает после дубликата."""
+        user_service.create_user("alice", "pass1")
+        result1 = user_service.create_user("alice", "pass2")
+        assert result1 is None
+        result2 = user_service.create_user("bob", "pass3")
+        assert result2 is not None
+
+    def test_xss_username(self):
+        """XSS в username не должен ломать систему."""
+        result = user_service.create_user("<script>alert(1)</script>", "pass123")
+        assert result is not None
+        user = user_service.get_user("<script>alert(1)</script>")
+        assert user is not None  # имя сохраняется как есть, экранируется при выводе

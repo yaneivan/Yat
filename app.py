@@ -112,6 +112,26 @@ def require_admin(f):
     return decorated_function
 
 
+def check_project_access(project_name):
+    """
+    Проверка доступа к проекту.
+    - Если USE_AUTH=False — доступ открыт
+    - Если admin — доступ ко всем
+    - Иначе — проверяем project_permissions
+    Возвращает True если доступ разрешён, False если нет.
+    """
+    if not USE_AUTH:
+        return True
+    if is_admin():
+        return True
+
+    user_id = session.get('user_id')
+    if not user_id:
+        return False
+
+    return permission_service.can_access_project(user_id, project_name)
+
+
 @app.before_request
 def check_auth():
     """Check authorization if password protection is enabled."""
@@ -206,6 +226,8 @@ def editor():
     project_name = request.args.get('project')
     if not filename:
         return redirect(url_for('index'))
+    if project_name and not check_project_access(project_name):
+        abort(403)
     return render_template('editor.html', filename=filename, project=project_name)
 
 @app.route('/text_editor')
@@ -214,6 +236,8 @@ def text_editor():
     project_name = request.args.get('project')
     if not filename:
         return redirect(url_for('index'))
+    if project_name and not check_project_access(project_name):
+        abort(403)
     return render_template('text_editor.html', filename=filename, project=project_name)
 
 @app.route('/cropper')
@@ -222,6 +246,8 @@ def cropper():
     project_name = request.args.get('project')
     if not filename:
         return redirect(url_for('index'))
+    if project_name and not check_project_access(project_name):
+        abort(403)
     # Проверка существования файла
     if not image_service.get_original_path(filename, project_name):
         abort(404)
@@ -555,6 +581,16 @@ def recognize_progress(filename):
 def projects():
     if request.method == 'GET':
         projects_list = project_service.get_all_projects()
+
+        # Фильтрация по правам доступа (non-admin видят только свои)
+        if USE_AUTH and not is_admin():
+            user_id = session.get('user_id')
+            if user_id:
+                accessible = set(permission_service.get_accessible_projects(user_id))
+                projects_list = [p for p in projects_list if p['name'] in accessible]
+            else:
+                projects_list = []
+
         return jsonify({'projects': projects_list})
 
     elif request.method == 'POST':
@@ -587,6 +623,10 @@ def project(project_name):
     sanitized_name = project_service._sanitize_name(project_name)
 
     if request.method == 'GET':
+        # Проверка доступа к проекту
+        if not check_project_access(sanitized_name):
+            return jsonify({'status': 'error', 'msg': 'Нет доступа к проекту'}), 403
+
         project_data = project_service.get_project(sanitized_name)
 
         if not project_data:
@@ -1127,8 +1167,10 @@ def api_get_user_stats(user_id):
 # --- Pages: Project ---
 @app.route('/project/<project_name>')
 def project_page(project_name):
-    # Sanitize project name to prevent path traversal
     sanitized_name = project_service._sanitize_name(project_name)
+
+    if not check_project_access(sanitized_name):
+        abort(403)
 
     project_data = project_service.get_project(sanitized_name)
 
