@@ -180,45 +180,11 @@ class UserService:
 
     # ── Helpers ──
 
-    def ensure_first_admin(self) -> bool:
-        """
-        Ensure at least one admin user exists.
-        If no users exist, create admin from environment variables.
-
-        Returns True if admin exists or was created.
-        """
+    def has_users(self) -> bool:
+        """Check if at least one user exists in database."""
         session = self._get_session()
         try:
-            # Check if any admin exists
-            admin_count = session.query(User).filter_by(role=UserRole.ADMIN.value).count()
-            if admin_count > 0:
-                return True
-
-            # No admin exists — create from env vars
-            import config
-            if not config.ADMIN_PASSWORD:
-                return False  # No admin password configured
-
-            user = User(
-                username='admin',
-                password_hash=self._hash_password(config.ADMIN_PASSWORD),
-                role=UserRole.ADMIN.value,
-                is_active=True
-            )
-            session.add(user)
-            session.commit()
-            return True
-        except Exception:
-            session.rollback()
-            return False
-        finally:
-            session.close()
-
-    def has_admin(self) -> bool:
-        """Check if at least one admin user exists."""
-        session = self._get_session()
-        try:
-            count = session.query(User).filter_by(role=UserRole.ADMIN.value, is_active=True).count()
+            count = session.query(User).count()
             return count > 0
         finally:
             session.close()

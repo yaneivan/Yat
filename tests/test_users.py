@@ -167,29 +167,13 @@ class TestUserList:
             assert "password_hash" not in u
 
 
-class TestEnsureFirstAdmin:
-    def test_create_admin_from_env(self, monkeypatch):
-        """Если нет пользователей — создаёт admin из env."""
-        monkeypatch.setattr("config.ADMIN_PASSWORD", "env_admin_pass")
-        result = user_service.ensure_first_admin()
-        assert result is True
-        admin = user_service.get_user("admin")
-        assert admin is not None
-        assert admin["role"] == "admin"
+class TestHasUsers:
+    def test_has_users_true(self):
+        user_service.create_user("alice", "pass1")
+        assert user_service.has_users() is True
 
-    def test_skip_if_admin_exists(self):
-        """Если админ уже есть — ничего не делает."""
-        user_service.create_user("myadmin", "pass", "admin")
-        result = user_service.ensure_first_admin()
-        assert result is True
-        users = user_service.get_all_users()
-        assert len(users) == 1  # не создал дубликат
-
-    def test_no_admin_password_configured(self, monkeypatch):
-        """Если ADMIN_PASSWORD нет — возвращает False."""
-        monkeypatch.setattr("config.ADMIN_PASSWORD", None)
-        result = user_service.ensure_first_admin()
-        assert result is False
+    def test_has_users_false(self):
+        assert user_service.has_users() is False
 
 
 # ═══════════════════════════════════════
@@ -358,21 +342,11 @@ class TestLoginFlow:
         assert resp.status_code == 200
         assert 'Неверный' in resp.data.decode('utf-8')
 
-    def test_login_fallback_env_password(self, client, monkeypatch):
-        """Если в БД нет пользователей — fallback на env пароли."""
-        monkeypatch.setattr("app.USE_AUTH", True)
-        monkeypatch.setattr("config.ADMIN_PASSWORD", "envpass")
-        monkeypatch.setattr("config.USER_PASSWORD", "userpass")
-        resp = client.post('/login', data={'username': 'x', 'password': 'envpass'}, follow_redirects=False)
-        assert resp.status_code in (302, 303)
-        with client.session_transaction() as sess:
-            assert sess['role'] == 'admin'
-
     def test_login_empty_username(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         user_service.create_user("admin", "admin123", "admin")
         resp = client.post('/login', data={'username': '   ', 'password': 'admin123'}, follow_redirects=False)
-        assert resp.status_code == 200  # ошибка
+        assert resp.status_code == 200  # ошибка — пустой username
 
 
 class TestUserEdgeCases:

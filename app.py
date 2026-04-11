@@ -149,7 +149,7 @@ def check_auth():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    """Login page — tries DB auth first, falls back to env passwords."""
+    """Login page — authentication via database only."""
     if not USE_AUTH:
         return redirect('/')
 
@@ -157,27 +157,17 @@ def login():
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
 
-        # 1) Try database authentication
-        if user_service.has_admin() or user_service.get_all_users():
-            user = user_service.authenticate(username, password)
-            if user:
-                session['role'] = user['role']
-                session['user_id'] = user['id']
-                session['username'] = user['username']
-                return redirect('/')
-            return render_template('login.html', error='Неверный логин или пароль')
+        if not username or not password:
+            return render_template('login.html', error='Заполни имя и пароль')
 
-        # 2) Fallback: env passwords (first login, no users yet)
-        if password == config.ADMIN_PASSWORD:
-            session['role'] = 'admin'
-            session['username'] = 'admin'
+        user = user_service.authenticate(username, password)
+        if user:
+            session['role'] = user['role']
+            session['user_id'] = user['id']
+            session['username'] = user['username']
             return redirect('/')
-        elif password == config.USER_PASSWORD:
-            session['role'] = 'user'
-            session['username'] = 'user'
-            return redirect('/')
-        else:
-            return render_template('login.html', error='Неверный пароль')
+
+        return render_template('login.html', error='Неверный логин или пароль')
 
     return render_template('login.html')
 
