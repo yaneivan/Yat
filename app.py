@@ -140,6 +140,28 @@ def check_project_access(project_name):
     return permission_service.can_access_project(user_id, project_name)
 
 
+def require_project_access(f):
+    """
+    Декоратор: автоматически находит project_name из:
+    - path param 'project_name' (kwargs)
+    - query param 'project'
+    Если нет доступа — возвращает 403.
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # 1. Из URL path param
+        project_name = kwargs.get('project_name')
+        # 2. Из query param
+        if not project_name:
+            project_name = request.args.get('project')
+
+        if project_name and not check_project_access(project_name):
+            return jsonify({'status': 'error', 'msg': 'Нет доступа к проекту'}), 403
+
+        return f(*args, **kwargs)
+    return decorated_function
+
+
 @app.before_request
 def check_auth():
     """Check authorization if password protection is enabled."""
@@ -253,6 +275,7 @@ def cropper():
 
 # --- API: Images ---
 @app.route('/api/images_list')
+@require_project_access
 def list_images():
     project = request.args.get('project')
     if project:
@@ -337,6 +360,7 @@ def serve_thumbnail(filename):
 
 # --- API: Annotations ---
 @app.route('/api/load/<filename>')
+@require_project_access
 def load_data(filename):
     try:
         # Validate filename to prevent path traversal
@@ -351,6 +375,7 @@ def load_data(filename):
         return jsonify({'status': 'error', 'msg': str(e)}), 500
 
 @app.route('/api/save', methods=['POST'])
+@require_project_access
 def save_data():
     incoming_data = request.json
     filename = incoming_data.get('image_name')
@@ -666,6 +691,7 @@ def project(project_name):
 
 
 @app.route('/api/projects/<project_name>/images', methods=['GET', 'DELETE'])
+@require_project_access
 def project_images(project_name):
     # Sanitize project name to prevent path traversal
     sanitized_name = project_service._sanitize_name(project_name)
@@ -694,6 +720,7 @@ def project_images(project_name):
 
 
 @app.route('/api/projects/<project_name>/images/<filename>/status', methods=['GET', 'PUT'])
+@require_project_access
 def image_status(project_name, filename):
     """Get or update image status and comment."""
     # Sanitize project name and filename
@@ -738,6 +765,7 @@ def image_status(project_name, filename):
 
 
 @app.route('/api/projects/<project_name>/upload_images', methods=['POST'])
+@require_project_access
 def upload_project_images(project_name):
     # Admin only: upload images
     if USE_AUTH and not is_admin():
@@ -779,6 +807,7 @@ def upload_project_images(project_name):
 
 
 @app.route('/api/projects/<project_name>/export_zip')
+@require_project_access
 def export_project_zip(project_name):
     # Sanitize project name to prevent path traversal
     sanitized_name = project_service._sanitize_name(project_name)
@@ -797,6 +826,7 @@ def export_project_zip(project_name):
 
 
 @app.route('/api/projects/<project_name>/export_pdf')
+@require_project_access
 def export_project_pdf(project_name):
     # Sanitize project name to prevent path traversal
     sanitized_name = project_service._sanitize_name(project_name)
@@ -835,6 +865,7 @@ def export_project_pdf(project_name):
 
 
 @app.route('/api/projects/<project_name>/batch_detect', methods=['POST'])
+@require_project_access
 def batch_detect(project_name):
     # Admin only: batch detection
     if USE_AUTH and not is_admin():
@@ -911,6 +942,7 @@ def batch_detect(project_name):
 
 
 @app.route('/api/projects/<project_name>/batch_recognize', methods=['POST'])
+@require_project_access
 def batch_recognize(project_name):
     # Admin only: batch recognition
     if USE_AUTH and not is_admin():
