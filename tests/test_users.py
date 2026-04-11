@@ -285,7 +285,7 @@ class TestUserAPI:
         """Без сессии — редирект на login (если USE_AUTH=True)."""
         # При USE_AUTH=False — открыто, поэтому пропускаем
         import config
-        if not config.USE_ROLE_BASED_AUTH:
+        if not config.ENABLE_AUTH:
             return
         resp = client.get('/api/users')
         assert resp.status_code in (302, 403)

@@ -40,6 +40,14 @@ if 'pytest' not in sys.modules:
     init_db()
     logger.info("Database initialized")
 
+    # ── Seed admin user from env (first-run only) ──
+    # Creates admin if the users table is empty
+    _admin_username = os.environ.get('ADMIN_USERNAME', 'admin')
+    _admin_password = os.environ.get('ADMIN_PASSWORD', None)
+    if _admin_password and not user_service.has_users():
+        user_service.create_user(_admin_username, _admin_password, 'admin')
+        logger.info(f"Seed admin user '{_admin_username}' created")
+
 # Initialize AI models at startup
 if ai_service.is_trocr_available():
     try:
@@ -87,7 +95,7 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # Allow cross-site for navigation
 # Two modes only:
 # 1. No passwords (both None) → open access, everyone is admin, no login required
 # 2. Both passwords set → role-based access (admin/user), login required
-USE_AUTH = config.USE_ROLE_BASED_AUTH
+USE_AUTH = config.ENABLE_AUTH
 
 
 def get_user_role():

@@ -22,25 +22,9 @@ MODEL_PATHS = {
     'trocr': 'raxtemur/trocr-base-ru'       # HuggingFace модель TROCR (русская версия)
 }
 
-# Пароли для доступа
+# Пароль для создания первого админа при старте (seed)
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD')
-USER_PASSWORD = os.environ.get('USER_PASSWORD')
 
-# Проверка корректности конфигурации
-# Только два режима:
-# 1. Оба пароля не заданы → открытый доступ (все admin)
-# 2. Оба пароля заданы → разделение на admin/user
-# Частичное задание → ошибка
-if (ADMIN_PASSWORD is None) != (USER_PASSWORD is None):
-    raise ValueError(
-        "Некорректная конфигурация паролей.\n"
-        "Доступны только два режима:\n"
-        "1. Без паролей (оба не заданы) → открытый доступ, все пользователи admin\n"
-        "2. Оба пароля заданы → разделение на admin и user\n\n"
-        f"Текущее состояние:\n"
-        f"  ADMIN_PASSWORD: {'задан' if ADMIN_PASSWORD else 'не задан'}\n"
-        f"  USER_PASSWORD: {'задан' if USER_PASSWORD else 'не задан'}"
-    )
-
-# Флаг: используется ли система с разделением прав
-USE_ROLE_BASED_AUTH = ADMIN_PASSWORD is not None and USER_PASSWORD is not None
+# Включить систему аутентификации (true/false)
+# Если false — открытый доступ без логина, все пользователи admin
+ENABLE_AUTH = os.environ.get('ENABLE_AUTH', 'false').lower() == 'true'
