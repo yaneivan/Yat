@@ -72,7 +72,6 @@ class UserService:
         username: str,
         password: str,
         role: str = UserRole.ANNOTATOR.value,
-        is_active: bool = True
     ) -> Optional[Dict[str, Any]]:
         """
         Create a new user.
@@ -90,7 +89,6 @@ class UserService:
                 username=username,
                 password_hash=self._hash_password(password),
                 role=role,
-                is_active=is_active
             )
             session.add(user)
             session.commit()
@@ -108,7 +106,6 @@ class UserService:
         username: str,
         new_password: str = None,
         role: str = None,
-        is_active: bool = None
     ) -> Optional[Dict[str, Any]]:
         """Update user fields. Returns updated user dict or None."""
         session = self._get_session()
@@ -121,8 +118,6 @@ class UserService:
                 user.password_hash = self._hash_password(new_password)
             if role:
                 user.role = role
-            if is_active is not None:
-                user.is_active = is_active
 
             session.commit()
             session.refresh(user)
@@ -168,8 +163,6 @@ class UserService:
         try:
             user = session.query(User).filter_by(username=username).first()
             if not user:
-                return None
-            if not user.is_active:
                 return None
             if not self._verify_password(password, user.password_hash):
                 return None

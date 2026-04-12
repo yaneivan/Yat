@@ -1204,7 +1204,7 @@ def api_create_user():
 @app.route('/api/users/<int:user_id>', methods=['PUT'])
 @require_admin
 def api_update_user(user_id):
-    """Update user. Body: {password?, role?, is_active?}."""
+    """Update user. Body: {password?, role?}."""
     data = request.json
     user = user_service.get_user_by_id(user_id)
     if not user:
@@ -1214,7 +1214,6 @@ def api_update_user(user_id):
         username=user['username'],
         new_password=data.get('password'),
         role=data.get('role'),
-        is_active=data.get('is_active')
     )
     if not result:
         return jsonify({'error': 'Ошибка обновления'}), 500

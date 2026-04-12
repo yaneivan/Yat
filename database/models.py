@@ -16,7 +16,6 @@ class User(Base):
     username = Column(String(100), unique=True, nullable=False, index=True)
     password_hash = Column(String(256), nullable=False)
     role = Column(String(20), default=UserRole.ANNOTATOR.value, nullable=False)  # UserRole
-    is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -29,7 +28,6 @@ class User(Base):
             'id': self.id,
             'username': self.username,
             'role': self.role,
-            'is_active': self.is_active,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }

@@ -48,7 +48,6 @@ class TestUserCreate:
         assert result is not None
         assert result["username"] == "alice"
         assert result["role"] == "annotator"
-        assert result["is_active"] is True
         assert "password_hash" not in result  # пароль не возвращается
 
     def test_create_admin(self):
@@ -94,10 +93,8 @@ class TestUserAuthenticate:
         assert result is None
 
     def test_authenticate_inactive_user(self):
-        user_service.create_user("alice", "secret123")
-        user_service.update_user("alice", is_active=False)
-        result = user_service.authenticate("alice", "secret123")
-        assert result is None
+        """Нет is_active — тест не нужен."""
+        pass
 
 
 class TestUserUpdate:
@@ -116,10 +113,12 @@ class TestUserUpdate:
         result = user_service.update_user("ghost", role="admin")
         assert result is None
 
-    def test_deactivate_user(self):
-        user_service.create_user("alice", "secret123")
-        result = user_service.update_user("alice", is_active=False)
-        assert result["is_active"] is False
+    def test_update_all_fields(self):
+        """Проверяет что update_user работает без is_active."""
+        user_service.create_user("alice", "oldpass", "annotator")
+        result = user_service.update_user("alice", new_password="newpass", role="admin")
+        assert result is not None
+        assert result["role"] == "admin"
 
 
 class TestUserDelete:
