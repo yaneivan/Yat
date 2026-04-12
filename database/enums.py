@@ -20,11 +20,3 @@ class TaskStatus(str, Enum):
     RUNNING = 'running'     # Task is executing
     COMPLETED = 'completed' # Task finished successfully
     FAILED = 'failed'       # Task failed with error
-
-
-class UserRole(str, Enum):
-    """User roles for access control."""
-
-    ADMIN = 'admin'       # Full access: manage users, projects, annotations
-    ANNOTATOR = 'annotator'  # Can annotate and edit assigned projects
-    VIEWER = 'viewer'     # Read-only access to assigned projects

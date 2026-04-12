@@ -107,7 +107,9 @@ def get_user_role():
 
 def is_admin():
     """Check if current user is admin."""
-    return get_user_role() == 'admin'
+    if not USE_AUTH:
+        return True
+    return session.get('is_admin', False)
 
 
 def require_admin(f):
@@ -124,9 +126,8 @@ def check_project_access(project_name):
     """
     Проверка доступа к проекту.
     - Если USE_AUTH=False — доступ открыт
-    - Если admin — доступ ко всем
+    - Если is_admin=True — доступ ко всем
     - Иначе — проверяем project_permissions
-    Возвращает True если доступ разрешён, False если нет.
     """
     if not USE_AUTH:
         return True
@@ -149,35 +150,33 @@ def require_project_access(f):
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # 1. Из URL path param
-        project_name = kwargs.get('project_name')
-        # 2. Из query param
-        if not project_name:
-            project_name = request.args.get('project')
-
+        project_name = kwargs.get('project_name') or request.args.get('project')
         if project_name and not check_project_access(project_name):
             return jsonify({'status': 'error', 'msg': 'Нет доступа к проекту'}), 403
-
         return f(*args, **kwargs)
     return decorated_function
 
 
 def require_write_access(f):
     """
-    Декоратор: проверяет доступ к проекту + что пользователь НЕ viewer.
-    Viewer получает 403 на все write-операции.
+    Декоратор: проверяет доступ к проекту + что пользователь имеет 'write' роль.
+    С ролью 'read' — только просмотр, write запрещён.
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # 1. Проверка доступа к проекту
         project_name = kwargs.get('project_name') or request.args.get('project')
         if project_name and not check_project_access(project_name):
             return jsonify({'status': 'error', 'msg': 'Нет доступа к проекту'}), 403
 
-        # 2. Проверка: viewer не может писать
-        if USE_AUTH:
-            user_role = get_user_role()
-            if user_role == 'viewer':
+        # Admin bypasses project-level role checks
+        if is_admin():
+            return f(*args, **kwargs)
+
+        # Check project-level permission
+        user_id = session.get('user_id')
+        if user_id and project_name:
+            proj_role = permission_service.get_project_role(user_id, project_name)
+            if proj_role == 'read':
                 return jsonify({'status': 'error', 'msg': 'Только просмотр'}), 403
 
         return f(*args, **kwargs)
@@ -207,7 +206,7 @@ def check_auth():
         return
 
     # No session - redirect to login
-    if 'role' not in session:
+    if 'is_admin' not in session:
         return redirect(url_for('login'))
 
 
@@ -226,7 +225,7 @@ def login():
 
         user = user_service.authenticate(username, password)
         if user:
-            session['role'] = user['role']
+            session['is_admin'] = user['is_admin']
             session['user_id'] = user['id']
             session['username'] = user['username']
 
@@ -236,7 +235,7 @@ def login():
                 entity_type='user',
                 entity_id=user['id'],
                 old_value=None,
-                new_value={'role': user['role']},
+                new_value={'is_admin': user['is_admin']},
                 details=f'User {username} logged in',
             )
             return redirect('/')
@@ -249,7 +248,7 @@ def login():
 @app.route('/logout')
 def logout():
     """Logout - clear session."""
-    session.pop('role', None)
+    session.pop('is_admin', None)
     session.pop('user_id', None)
     session.pop('username', None)
     return redirect(url_for('login'))
@@ -260,7 +259,6 @@ def logout():
 def inject_auth():
     return {
         'USE_AUTH': USE_AUTH,
-        'user_role': get_user_role(),
         'is_admin': is_admin(),
         'current_username': session.get('username', None),
     }
@@ -836,9 +834,13 @@ def image_status(project_name, filename):
         return jsonify(result)
 
     elif request.method == 'PUT':
-        # Viewer cannot change status
-        if USE_AUTH and get_user_role() == 'viewer':
-            return jsonify({'status': 'error', 'msg': 'Только просмотр'}), 403
+        # Проверка write access через декоратор уже сделана, но для PUT status
+        # нужно проверить что пользователь не 'read' на уровне проекта
+        if USE_AUTH and not is_admin():
+            user_id = session.get('user_id')
+            proj_role = permission_service.get_project_role(user_id, sanitized_name) if user_id else None
+            if proj_role == 'read':
+                return jsonify({'status': 'error', 'msg': 'Только просмотр'}), 403
         # Update status and/or comment
         data = request.json
         new_status = data.get('status')
@@ -1158,10 +1160,8 @@ def get_task(task_id):
 def get_current_user():
     """Get current user info."""
     if not USE_AUTH:
-        return jsonify({'role': 'admin', 'is_admin': True, 'username': 'admin'})
-    role = get_user_role()
+        return jsonify({'is_admin': True, 'username': 'admin'})
     return jsonify({
-        'role': role or 'none',
         'is_admin': is_admin(),
         'username': session.get('username', None),
         'user_id': session.get('user_id', None),
@@ -1182,19 +1182,16 @@ def api_list_users():
 @app.route('/api/users', methods=['POST'])
 @require_admin
 def api_create_user():
-    """Create a new user. Body: {username, password, role}."""
+    """Create a new user. Body: {username, password, is_admin?}."""
     data = request.json
     username = data.get('username', '').strip()
     password = data.get('password', '')
-    role = data.get('role', 'annotator')
+    is_admin_flag = data.get('is_admin', False)
 
     if not username or not password:
         return jsonify({'error': 'username и password обязательны'}), 400
 
-    if role not in ('admin', 'annotator', 'viewer'):
-        return jsonify({'error': 'Недопустимая роль'}), 400
-
-    result = user_service.create_user(username=username, password=password, role=role)
+    result = user_service.create_user(username=username, password=password, is_admin=is_admin_flag)
     if not result:
         return jsonify({'error': 'Пользователь уже существует'}), 409
 
@@ -1204,7 +1201,7 @@ def api_create_user():
 @app.route('/api/users/<int:user_id>', methods=['PUT'])
 @require_admin
 def api_update_user(user_id):
-    """Update user. Body: {password?, role?}."""
+    """Update user. Body: {password?, is_admin?}."""
     data = request.json
     user = user_service.get_user_by_id(user_id)
     if not user:
@@ -1213,7 +1210,7 @@ def api_update_user(user_id):
     result = user_service.update_user(
         username=user['username'],
         new_password=data.get('password'),
-        role=data.get('role'),
+        is_admin=data.get('is_admin'),
     )
     if not result:
         return jsonify({'error': 'Ошибка обновления'}), 500

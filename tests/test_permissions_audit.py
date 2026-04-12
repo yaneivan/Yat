@@ -50,7 +50,7 @@ def clean_tables():
 
 class TestPermissionGrantRevoke:
     def test_grant_access(self):
-        user_service.create_user("alice", "pass1", "annotator")
+        user_service.create_user("alice", "pass1")
         alice = user_service.get_user("alice")
         project_service.create_project("proj1", "desc")
 
@@ -84,11 +84,11 @@ class TestPermissionGrantRevoke:
         project_service.create_project("proj1")
 
         permission_service.grant_access(alice["id"], "proj1", "read")
-        permission_service.grant_access(alice["id"], "proj1", "admin")
+        permission_service.grant_access(alice["id"], "proj1", "write")
 
         perms = permission_service.get_user_permissions(alice["id"])
         assert len(perms) == 1
-        assert perms[0]["role"] == "admin"
+        assert perms[0]["role"] == "write"
 
 
 class TestPermissionQueries:
@@ -115,8 +115,8 @@ class TestPermissionQueries:
         assert names == {"proj1", "proj2"}
 
     def test_get_project_permissions(self):
-        user_service.create_user("alice", "pass1", "annotator")
-        user_service.create_user("bob", "pass2", "reviewer")
+        user_service.create_user("alice", "pass1")
+        user_service.create_user("bob", "pass2")
         alice = user_service.get_user("alice")
         bob = user_service.get_user("bob")
         project_service.create_project("proj1")
@@ -222,15 +222,15 @@ def client():
 
 class TestPermissionAPI:
     def _login_admin(self, client):
-        user_service.create_user("admin", "admin123", "admin")
+        user_service.create_user("admin", "admin123", is_admin=True)
         with client.session_transaction() as sess:
-            sess['role'] = 'admin'
+            sess['is_admin'] = True
             sess['username'] = 'admin'
             sess['user_id'] = 1
 
     def test_grant_permission(self, client):
         self._login_admin(client)
-        user_service.create_user("alice", "pass1", "annotator")
+        user_service.create_user("alice", "pass1")
         project_service.create_project("proj1")
         alice = user_service.get_user("alice")
 
@@ -285,9 +285,9 @@ class TestPermissionAPI:
 
 class TestAuditAPI:
     def _login_admin(self, client):
-        user_service.create_user("admin", "admin123", "admin")
+        user_service.create_user("admin", "admin123", is_admin=True)
         with client.session_transaction() as sess:
-            sess['role'] = 'admin'
+            sess['is_admin'] = True
             sess['username'] = 'admin'
             sess['user_id'] = 1
 
@@ -311,7 +311,7 @@ class TestAuditAPI:
 
     def test_get_user_stats(self, client):
         self._login_admin(client)
-        user_service.create_user("alice", "pass1", "admin")
+        user_service.create_user("alice", "pass1", is_admin=True)
         alice = user_service.get_user("alice")
         for i in range(5):
             audit_service.log(alice["id"], "create", "project", entity_id=i)
@@ -325,11 +325,11 @@ class TestAuditAPI:
 class TestProjectAccessFiltering:
     """Тесты фильтрации проектов по правам в реальных API endpoints."""
 
-    def _login_as(self, client, username, role, user_id):
-        user_service.create_user(username, "pass123", role)
+    def _login_as(self, client, username, is_admin=False):
+        user_service.create_user(username, "pass123", is_admin=is_admin)
         user = user_service.get_user(username)
         with client.session_transaction() as sess:
-            sess['role'] = role
+            sess['is_admin'] = is_admin
             sess['username'] = username
             sess['user_id'] = user["id"]
 
@@ -346,7 +346,7 @@ class TestProjectAccessFiltering:
 
         project_service.create_project("proj1")
         project_service.create_project("proj2")
-        self._login_as(client, "admin", "admin", 1)
+        self._login_as(client, "admin", is_admin=True)
 
         resp = client.get('/api/projects')
         data = resp.get_json()
@@ -358,19 +358,19 @@ class TestProjectAccessFiltering:
             app_module.USE_AUTH = old_use_auth
 
     def test_user_sees_only_assigned_projects(self, client, monkeypatch):
-        """Annotator видит только назначенные проекты."""
+        """Non-admin видит только назначенные проекты."""
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("proj1")
         project_service.create_project("proj2")
         project_service.create_project("proj3")
 
-        user_service.create_user("alice", "pass123", "annotator")
+        user_service.create_user("alice", "pass123")
         alice = user_service.get_user("alice")
         permission_service.grant_access(alice["id"], "proj1", "write")
         permission_service.grant_access(alice["id"], "proj3", "read")
 
         with client.session_transaction() as sess:
-            sess['role'] = 'annotator'
+            sess['is_admin'] = False
             sess['username'] = 'alice'
             sess['user_id'] = alice["id"]
 
@@ -386,11 +386,11 @@ class TestProjectAccessFiltering:
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("secret_proj")
 
-        user_service.create_user("nobody", "pass123", "annotator")
+        user_service.create_user("nobody", "pass123")
         nobody = user_service.get_user("nobody")
 
         with client.session_transaction() as sess:
-            sess['role'] = 'annotator'
+            sess['is_admin'] = False
             sess['username'] = 'nobody'
             sess['user_id'] = nobody["id"]
 
@@ -403,11 +403,11 @@ class TestProjectAccessFiltering:
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("restricted")
 
-        user_service.create_user("alice", "pass123", "annotator")
+        user_service.create_user("alice", "pass123")
         alice = user_service.get_user("alice")
 
         with client.session_transaction() as sess:
-            sess['role'] = 'annotator'
+            sess['is_admin'] = False
             sess['username'] = 'alice'
             sess['user_id'] = alice["id"]
 

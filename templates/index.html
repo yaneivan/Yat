@@ -139,14 +139,19 @@
                 <!-- Create user form -->
                 <div style="background:#f5f5f5; padding:15px; border-radius:8px; margin-bottom:20px;">
                     <h3 style="margin-top:0;">Создать пользователя</h3>
-                    <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                        <input type="text" id="new-username" placeholder="Имя пользователя" style="flex:1; min-width:150px;">
-                        <input type="password" id="new-password" placeholder="Пароль" style="flex:1; min-width:150px;">
-                        <select id="new-role" style="min-width:120px;">
-                            <option value="annotator">Annotator</option>
-                            <option value="viewer">Viewer</option>
-                            <option value="admin">Admin</option>
-                        </select>
+                    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+                        <div style="flex:1; min-width:150px;">
+                            <label style="font-size:12px;">Имя пользователя</label>
+                            <input type="text" id="new-username" placeholder="Имя пользователя" style="width:100%;">
+                        </div>
+                        <div style="flex:1; min-width:150px;">
+                            <label style="font-size:12px;">Пароль</label>
+                            <input type="password" id="new-password" placeholder="Пароль" style="width:100%;">
+                        </div>
+                        <div style="display:flex; align-items:center; gap:5px;">
+                            <input type="checkbox" id="new-is-admin">
+                            <label for="new-is-admin" style="font-size:13px;">Админ</label>
+                        </div>
                         <button class="btn btn-primary" onclick="createUser()">Создать</button>
                     </div>
                 </div>
@@ -157,7 +162,7 @@
                         <tr style="background:#333; color:white;">
                             <th style="padding:10px; text-align:left;">ID</th>
                             <th style="padding:10px; text-align:left;">Имя</th>
-                            <th style="padding:10px; text-align:left;">Роль</th>
+                            <th style="padding:10px; text-align:center;">Админ</th>
                             <th style="padding:10px; text-align:left;">Права на проекты</th>
                             <th style="padding:10px; text-align:center;">Действия</th>
                         </tr>
@@ -179,9 +184,8 @@
                 <div style="margin-bottom:15px; display:flex; gap:10px;">
                     <select id="perm-project" style="flex:1;"></select>
                     <select id="perm-role" style="min-width:120px;">
-                        <option value="read">Read</option>
-                        <option value="write">Write</option>
-                        <option value="admin">Admin</option>
+                        <option value="read">Чтение</option>
+                        <option value="write">Запись</option>
                     </select>
                     <button class="btn btn-primary" onclick="grantPermission()">Добавить</button>
                 </div>

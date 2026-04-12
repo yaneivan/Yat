@@ -58,19 +58,19 @@ def client():
 
 
 def _login_admin(client):
-    user_service.create_user("admin", "admin123", "admin")
+    user_service.create_user("admin", "admin123", is_admin=True)
     admin = user_service.get_user("admin")
     with client.session_transaction() as sess:
-        sess['role'] = 'admin'
+        sess['is_admin'] = True
         sess['username'] = 'admin'
         sess['user_id'] = admin["id"]
 
 
-def _login_user(client, username="alice", role="annotator"):
-    user_service.create_user(username, "pass123", role)
+def _login_user(client, username="alice"):
+    user_service.create_user(username, "pass123")
     user = user_service.get_user(username)
     with client.session_transaction() as sess:
-        sess['role'] = role
+        sess['is_admin'] = False
         sess['username'] = username
         sess['user_id'] = user["id"]
 
@@ -175,7 +175,7 @@ class TestAuditLogFromAPI:
 
     def test_login_writes_audit_log(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
-        user_service.create_user("alice", "secret123", "annotator")
+        user_service.create_user("alice", "secret123")
         resp = client.post('/login', data={
             'username': 'alice',
             'password': 'secret123'
@@ -188,7 +188,7 @@ class TestAuditLogFromAPI:
     def test_grant_permission_writes_audit_log(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         _login_admin(client)
-        user_service.create_user("alice", "pass1", "annotator")
+        user_service.create_user("alice", "pass1")
         project_service.create_project("Proj1")
         alice = user_service.get_user("alice")
         resp = client.post('/api/projects/Proj1/permissions', json={
@@ -203,7 +203,7 @@ class TestAuditLogFromAPI:
     def test_revoke_permission_writes_audit_log(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         _login_admin(client)
-        user_service.create_user("alice", "pass1", "annotator")
+        user_service.create_user("alice", "pass1")
         project_service.create_project("Proj1")
         alice = user_service.get_user("alice")
         permission_service.grant_access(alice['id'], "Proj1", "write")
@@ -224,7 +224,7 @@ class TestRequireProjectAccess:
     def test_save_annotation_without_access(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("SecretProj")
-        _login_user(client, "alice", "annotator")
+        _login_user(client, "alice")
 
         resp = client.post('/api/save?project=SecretProj', json={
             'image_name': 'test.png',
@@ -238,7 +238,7 @@ class TestRequireProjectAccess:
     def test_load_annotation_without_access(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("SecretProj")
-        _login_user(client, "alice", "annotator")
+        _login_user(client, "alice")
 
         resp = client.get('/api/load/test.png?project=SecretProj')
         assert resp.status_code == 403
@@ -246,7 +246,7 @@ class TestRequireProjectAccess:
     def test_images_list_without_access(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("SecretProj")
-        _login_user(client, "alice", "annotator")
+        _login_user(client, "alice")
 
         resp = client.get('/api/images_list?project=SecretProj')
         assert resp.status_code == 403
@@ -254,7 +254,7 @@ class TestRequireProjectAccess:
     def test_upload_without_access(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("SecretProj")
-        _login_user(client, "alice", "annotator")
+        _login_user(client, "alice")
 
         from io import BytesIO
         data = {'images': [(BytesIO(b'png'), 'test.png')]}
@@ -268,7 +268,7 @@ class TestRequireProjectAccess:
     def test_batch_detect_without_access(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("SecretProj")
-        _login_user(client, "alice", "annotator")
+        _login_user(client, "alice")
 
         resp = client.post('/api/projects/SecretProj/batch_detect')
         assert resp.status_code == 403
@@ -276,7 +276,7 @@ class TestRequireProjectAccess:
     def test_batch_recognize_without_access(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("SecretProj")
-        _login_user(client, "alice", "annotator")
+        _login_user(client, "alice")
 
         resp = client.post('/api/projects/SecretProj/batch_recognize')
         assert resp.status_code == 403
@@ -284,7 +284,7 @@ class TestRequireProjectAccess:
     def test_export_zip_without_access(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("SecretProj")
-        _login_user(client, "alice", "annotator")
+        _login_user(client, "alice")
 
         resp = client.get('/api/projects/SecretProj/export_zip')
         assert resp.status_code == 403
@@ -292,7 +292,7 @@ class TestRequireProjectAccess:
     def test_export_pdf_without_access(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("SecretProj")
-        _login_user(client, "alice", "annotator")
+        _login_user(client, "alice")
 
         resp = client.get('/api/projects/SecretProj/export_pdf')
         assert resp.status_code == 403
@@ -300,7 +300,7 @@ class TestRequireProjectAccess:
     def test_image_status_without_access(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("SecretProj")
-        _login_user(client, "alice", "annotator")
+        _login_user(client, "alice")
 
         resp = client.get('/api/projects/SecretProj/images/test.png/status')
         assert resp.status_code == 403
@@ -308,7 +308,7 @@ class TestRequireProjectAccess:
     def test_project_images_without_access(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("SecretProj")
-        _login_user(client, "alice", "annotator")
+        _login_user(client, "alice")
 
         resp = client.get('/api/projects/SecretProj/images')
         assert resp.status_code == 403
@@ -316,7 +316,7 @@ class TestRequireProjectAccess:
     def test_remove_image_without_access(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("SecretProj")
-        _login_user(client, "alice", "annotator")
+        _login_user(client, "alice")
 
         resp = client.delete('/api/projects/SecretProj/images', json={
             'image_name': 'test.png'
@@ -335,12 +335,12 @@ class TestAccessAllowedWithPermission:
     def test_save_annotation_with_access(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
-        user_service.create_user("alice", "pass1", "annotator")
+        user_service.create_user("alice", "pass1")
         alice = user_service.get_user("alice")
         permission_service.grant_access(alice['id'], "Proj1", "write")
 
         with client.session_transaction() as sess:
-            sess['role'] = 'annotator'
+            sess['is_admin'] = False
             sess['username'] = 'alice'
             sess['user_id'] = alice['id']
 
@@ -355,12 +355,12 @@ class TestAccessAllowedWithPermission:
     def test_images_list_with_access(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
-        user_service.create_user("alice", "pass1", "annotator")
+        user_service.create_user("alice", "pass1")
         alice = user_service.get_user("alice")
         permission_service.grant_access(alice['id'], "Proj1", "read")
 
         with client.session_transaction() as sess:
-            sess['role'] = 'annotator'
+            sess['is_admin'] = False
             sess['username'] = 'alice'
             sess['user_id'] = alice['id']
 
@@ -388,7 +388,7 @@ class TestPageEndpointAccess:
     def test_editor_without_access(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("SecretProj")
-        _login_user(client, "alice", "annotator")
+        _login_user(client, "alice")
 
         resp = client.get('/editor?image=test.png&project=SecretProj')
         assert resp.status_code == 403
@@ -396,7 +396,7 @@ class TestPageEndpointAccess:
     def test_text_editor_without_access(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("SecretProj")
-        _login_user(client, "alice", "annotator")
+        _login_user(client, "alice")
 
         resp = client.get('/text_editor?image=test.png&project=SecretProj')
         assert resp.status_code == 403
@@ -404,7 +404,7 @@ class TestPageEndpointAccess:
     def test_cropper_without_access(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("SecretProj")
-        _login_user(client, "alice", "annotator")
+        _login_user(client, "alice")
 
         resp = client.get('/cropper?image=test.png&project=SecretProj')
         assert resp.status_code == 403
@@ -412,12 +412,12 @@ class TestPageEndpointAccess:
     def test_editor_with_access(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
-        user_service.create_user("alice", "pass1", "annotator")
+        user_service.create_user("alice", "pass1")
         alice = user_service.get_user("alice")
         permission_service.grant_access(alice['id'], "Proj1", "write")
 
         with client.session_transaction() as sess:
-            sess['role'] = 'annotator'
+            sess['is_admin'] = False
             sess['username'] = 'alice'
             sess['user_id'] = alice['id']
 
@@ -436,7 +436,7 @@ class TestLoginEdgeCases:
 
     def test_login_empty_password(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
-        user_service.create_user("admin", "admin123", "admin")
+        user_service.create_user("admin", "admin123", is_admin=True)
         resp = client.post('/login', data={
             'username': 'admin',
             'password': ''
@@ -445,7 +445,7 @@ class TestLoginEdgeCases:
 
     def test_login_empty_username_and_password(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
-        user_service.create_user("admin", "admin123", "admin")
+        user_service.create_user("admin", "admin123", is_admin=True)
         resp = client.post('/login', data={
             'username': '',
             'password': ''
@@ -469,7 +469,7 @@ class TestLoginEdgeCases:
 
     def test_session_cleared_on_logout(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
-        user_service.create_user("admin", "admin123", "admin")
+        user_service.create_user("admin", "admin123", is_admin=True)
         # Login
         client.post('/login', data={
             'username': 'admin',
@@ -496,12 +496,12 @@ class TestPermissionIntegration:
         """Дать права → получить доступ → проверить."""
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
-        user_service.create_user("alice", "pass1", "annotator")
+        user_service.create_user("alice", "pass1")
         alice = user_service.get_user("alice")
         permission_service.grant_access(alice['id'], "Proj1", "write")
 
         with client.session_transaction() as sess:
-            sess['role'] = 'annotator'
+            sess['is_admin'] = False
             sess['username'] = 'alice'
             sess['user_id'] = alice['id']
 
@@ -512,12 +512,12 @@ class TestPermissionIntegration:
         """Отозвать права → доступ закрыт."""
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
-        user_service.create_user("alice", "pass1", "annotator")
+        user_service.create_user("alice", "pass1")
         alice = user_service.get_user("alice")
         permission_service.grant_access(alice['id'], "Proj1", "write")
 
         with client.session_transaction() as sess:
-            sess['role'] = 'annotator'
+            sess['is_admin'] = False
             sess['username'] = 'alice'
             sess['user_id'] = alice['id']
 
@@ -536,11 +536,11 @@ class TestPermissionIntegration:
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
         project_service.create_project("Proj2")
-        user_service.create_user("alice", "pass1", "annotator")
+        user_service.create_user("alice", "pass1")
         alice = user_service.get_user("alice")
 
         with client.session_transaction() as sess:
-            sess['role'] = 'annotator'
+            sess['is_admin'] = False
             sess['username'] = 'alice'
             sess['user_id'] = alice['id']
 
@@ -554,13 +554,13 @@ class TestPermissionIntegration:
         project_service.create_project("Proj1")
         project_service.create_project("Proj2")
         project_service.create_project("Proj3")
-        user_service.create_user("alice", "pass1", "annotator")
+        user_service.create_user("alice", "pass1")
         alice = user_service.get_user("alice")
         permission_service.grant_access(alice['id'], "Proj1", "read")
         permission_service.grant_access(alice['id'], "Proj3", "write")
 
         with client.session_transaction() as sess:
-            sess['role'] = 'annotator'
+            sess['is_admin'] = False
             sess['username'] = 'alice'
             sess['user_id'] = alice['id']
 
@@ -648,7 +648,7 @@ class TestFullWorkflow:
         assert resp.status_code == 200
 
         # 2. Admin создаёт пользователя и назначает права
-        user_service.create_user("worker", "workerpass", "annotator")
+        user_service.create_user("worker", "workerpass")
         worker = user_service.get_user("worker")
         resp = client.post('/api/projects/WorkflowTest/permissions', json={
             'user_id': worker['id'],
@@ -658,7 +658,7 @@ class TestFullWorkflow:
 
         # 3. Worker заходит и видит проект
         with client.session_transaction() as sess:
-            sess['role'] = 'annotator'
+            sess['is_admin'] = False
             sess['username'] = 'worker'
             sess['user_id'] = worker['id']
 
@@ -673,7 +673,7 @@ class TestFullWorkflow:
 
         # 5. Admin видит audit log
         with client.session_transaction() as sess:
-            sess['role'] = 'admin'
+            sess['is_admin'] = True
             sess['username'] = 'admin'
             admin = user_service.get_user("admin")
             sess['user_id'] = admin['id']
@@ -691,12 +691,12 @@ class TestFullWorkflow:
         monkeypatch.setattr("app.USE_AUTH", True)
         _login_admin(client)
         project_service.create_project("SecretProject")
-        user_service.create_user("alice", "pass1", "annotator")
+        user_service.create_user("alice", "pass1")
         alice = user_service.get_user("alice")
         # Права НЕ назначаем!
 
         with client.session_transaction() as sess:
-            sess['role'] = 'annotator'
+            sess['is_admin'] = False
             sess['username'] = 'alice'
             sess['user_id'] = alice['id']
 
@@ -707,35 +707,32 @@ class TestFullWorkflow:
         assert client.get('/text_editor?image=x.png&project=SecretProject').status_code == 403
 
 
-class TestViewerReadOnly:
-    """Viewer может только читать, не может писать."""
+class TestReadOnlyUser:
+    """User with project role='read' can only read, cannot write."""
 
-    def test_viewer_can_read_images_list(self, client, monkeypatch):
+    def _login_read_user(self, client, username="reader"):
+        user_service.create_user(username, "pass1")
+        user = user_service.get_user(username)
+        with client.session_transaction() as sess:
+            sess['is_admin'] = False
+            sess['username'] = username
+            sess['user_id'] = user["id"]
+        return user
+
+    def test_read_user_can_read_images_list(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
-        user_service.create_user("viewer1", "pass1", "viewer")
-        v = user_service.get_user("viewer1")
-        permission_service.grant_access(v['id'], "Proj1", "read")
-
-        with client.session_transaction() as sess:
-            sess['role'] = 'viewer'
-            sess['username'] = 'viewer1'
-            sess['user_id'] = v['id']
+        user = self._login_read_user(client, "reader1")
+        permission_service.grant_access(user['id'], "Proj1", "read")
 
         resp = client.get('/api/images_list?project=Proj1')
         assert resp.status_code == 200
 
-    def test_viewer_cannot_save_annotation(self, client, monkeypatch):
+    def test_read_user_cannot_save_annotation(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
-        user_service.create_user("viewer1", "pass1", "viewer")
-        v = user_service.get_user("viewer1")
-        permission_service.grant_access(v['id'], "Proj1", "read")
-
-        with client.session_transaction() as sess:
-            sess['role'] = 'viewer'
-            sess['username'] = 'viewer1'
-            sess['user_id'] = v['id']
+        user = self._login_read_user(client, "reader1")
+        permission_service.grant_access(user['id'], "Proj1", "read")
 
         resp = client.post('/api/save?project=Proj1', json={
             'image_name': 'test.png',
@@ -746,17 +743,11 @@ class TestViewerReadOnly:
         data = resp.get_json()
         assert 'просмотр' in data['msg'].lower()
 
-    def test_viewer_cannot_update_status(self, client, monkeypatch):
+    def test_read_user_cannot_update_status(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
-        user_service.create_user("viewer1", "pass1", "viewer")
-        v = user_service.get_user("viewer1")
-        permission_service.grant_access(v['id'], "Proj1", "read")
-
-        with client.session_transaction() as sess:
-            sess['role'] = 'viewer'
-            sess['username'] = 'viewer1'
-            sess['user_id'] = v['id']
+        user = self._login_read_user(client, "reader1")
+        permission_service.grant_access(user['id'], "Proj1", "read")
 
         resp = client.put('/api/projects/Proj1/images/test.png/status', json={
             'status': 'reviewed'
@@ -765,17 +756,11 @@ class TestViewerReadOnly:
         data = resp.get_json()
         assert 'просмотр' in data['msg'].lower()
 
-    def test_viewer_cannot_upload(self, client, monkeypatch):
+    def test_read_user_cannot_upload(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
-        user_service.create_user("viewer1", "pass1", "viewer")
-        v = user_service.get_user("viewer1")
-        permission_service.grant_access(v['id'], "Proj1", "read")
-
-        with client.session_transaction() as sess:
-            sess['role'] = 'viewer'
-            sess['username'] = 'viewer1'
-            sess['user_id'] = v['id']
+        user = self._login_read_user(client, "reader1")
+        permission_service.grant_access(user['id'], "Proj1", "read")
 
         from io import BytesIO
         data = {'images': [(BytesIO(b'png'), 'test.png')]}
@@ -786,32 +771,20 @@ class TestViewerReadOnly:
         )
         assert resp.status_code == 403
 
-    def test_viewer_cannot_batch_detect(self, client, monkeypatch):
+    def test_read_user_cannot_batch_detect(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
-        user_service.create_user("viewer1", "pass1", "viewer")
-        v = user_service.get_user("viewer1")
-        permission_service.grant_access(v['id'], "Proj1", "read")
-
-        with client.session_transaction() as sess:
-            sess['role'] = 'viewer'
-            sess['username'] = 'viewer1'
-            sess['user_id'] = v['id']
+        user = self._login_read_user(client, "reader1")
+        permission_service.grant_access(user['id'], "Proj1", "read")
 
         resp = client.post('/api/projects/Proj1/batch_detect')
         assert resp.status_code == 403
 
-    def test_viewer_cannot_batch_recognize(self, client, monkeypatch):
+    def test_read_user_cannot_batch_recognize(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
-        user_service.create_user("viewer1", "pass1", "viewer")
-        v = user_service.get_user("viewer1")
-        permission_service.grant_access(v['id'], "Proj1", "read")
-
-        with client.session_transaction() as sess:
-            sess['role'] = 'viewer'
-            sess['username'] = 'viewer1'
-            sess['user_id'] = v['id']
+        user = self._login_read_user(client, "reader1")
+        permission_service.grant_access(user['id'], "Proj1", "read")
 
         resp = client.post('/api/projects/Proj1/batch_recognize')
         assert resp.status_code == 403

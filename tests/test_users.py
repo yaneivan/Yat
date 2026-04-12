@@ -44,15 +44,14 @@ def clean_users():
 
 class TestUserCreate:
     def test_create_user(self):
-        result = user_service.create_user("alice", "secret123", "annotator")
+        result = user_service.create_user("alice", "secret123")
         assert result is not None
         assert result["username"] == "alice"
-        assert result["role"] == "annotator"
-        assert "password_hash" not in result  # пароль не возвращается
+        assert result["is_admin"] is False
 
     def test_create_admin(self):
-        result = user_service.create_user("boss", "adminpass", "admin")
-        assert result["role"] == "admin"
+        result = user_service.create_user("boss", "adminpass", is_admin=True)
+        assert result["is_admin"] is True
 
     def test_create_duplicate_username(self):
         user_service.create_user("alice", "secret123")
@@ -60,9 +59,9 @@ class TestUserCreate:
         assert result is None
 
     def test_create_user_default_role(self):
-        """Роль по умолчанию — annotator."""
+        """По умолчанию пользователь не админ."""
         result = user_service.create_user("bob", "pass123")
-        assert result["role"] == "annotator"
+        assert result["is_admin"] is False
 
     def test_password_is_hashed(self):
         """Пароль должен быть захеширован, не plaintext."""
@@ -76,11 +75,11 @@ class TestUserCreate:
 
 class TestUserAuthenticate:
     def test_authenticate_success(self):
-        user_service.create_user("alice", "secret123", "admin")
+        user_service.create_user("alice", "secret123", is_admin=True)
         result = user_service.authenticate("alice", "secret123")
         assert result is not None
         assert result["username"] == "alice"
-        assert result["role"] == "admin"
+        assert result["is_admin"] is True
 
     def test_authenticate_wrong_password(self):
         user_service.create_user("alice", "secret123")
@@ -98,10 +97,10 @@ class TestUserAuthenticate:
 
 
 class TestUserUpdate:
-    def test_update_role(self):
-        user_service.create_user("alice", "secret123", "annotator")
-        result = user_service.update_user("alice", role="admin")
-        assert result["role"] == "admin"
+    def test_update_to_admin(self):
+        user_service.create_user("alice", "secret123")
+        result = user_service.update_user("alice", is_admin=True)
+        assert result["is_admin"] is True
 
     def test_update_password(self):
         user_service.create_user("alice", "old_pass")
@@ -110,15 +109,15 @@ class TestUserUpdate:
         assert user_service.authenticate("alice", "new_pass") is not None
 
     def test_update_nonexistent_user(self):
-        result = user_service.update_user("ghost", role="admin")
+        result = user_service.update_user("ghost", is_admin=True)
         assert result is None
 
     def test_update_all_fields(self):
         """Проверяет что update_user работает без is_active."""
-        user_service.create_user("alice", "oldpass", "annotator")
-        result = user_service.update_user("alice", new_password="newpass", role="admin")
+        user_service.create_user("alice", "oldpass")
+        result = user_service.update_user("alice", new_password="newpass", is_admin=True)
         assert result is not None
-        assert result["role"] == "admin"
+        assert result["is_admin"] is True
 
 
 class TestUserDelete:
@@ -132,18 +131,18 @@ class TestUserDelete:
 
     def test_cannot_delete_last_admin(self):
         """Последний админ не может быть удалён."""
-        user_service.create_user("boss", "adminpass", "admin")
+        user_service.create_user("boss", "adminpass", is_admin=True)
         assert user_service.delete_user("boss") is False  # last admin
 
     def test_can_delete_admin_if_other_admin_exists(self):
         """Если есть другой админ — можно удалить."""
-        user_service.create_user("boss1", "pass1", "admin")
-        user_service.create_user("boss2", "pass2", "admin")
+        user_service.create_user("boss1", "pass1", is_admin=True)
+        user_service.create_user("boss2", "pass2", is_admin=True)
         assert user_service.delete_user("boss1") is True
 
     def test_can_delete_non_admin(self):
-        user_service.create_user("boss", "pass1", "admin")
-        user_service.create_user("alice", "pass2", "annotator")
+        user_service.create_user("boss", "pass1", is_admin=True)
+        user_service.create_user("alice", "pass2")
         assert user_service.delete_user("alice") is True
 
 
@@ -192,10 +191,10 @@ def client():
 
 def _login_admin_for_test(client):
     """Создаёт админа и логинит его."""
-    user_service.create_user("admin", "admin123", "admin")
+    user_service.create_user("admin", "admin123", is_admin=True)
     admin = user_service.get_user("admin")
     with client.session_transaction() as sess:
-        sess['role'] = 'admin'
+        sess['is_admin'] = True
         sess['username'] = 'admin'
         sess['user_id'] = admin["id"]
 
@@ -203,9 +202,9 @@ def _login_admin_for_test(client):
 class TestUserAPI:
     def _login(self, client, username="admin", password="admin123"):
         """Вход как админ для доступа к /api/users."""
-        user_service.create_user(username, password, "admin")
+        user_service.create_user(username, password, is_admin=True)
         with client.session_transaction() as sess:
-            sess['role'] = 'admin'
+            sess['is_admin'] = True
             sess['username'] = username
             sess['user_id'] = 1
 
@@ -222,7 +221,7 @@ class TestUserAPI:
         resp = client.post('/api/users', json={
             "username": "newuser",
             "password": "newpass",
-            "role": "annotator"
+            "is_admin": False
         })
         assert resp.status_code == 201
         data = resp.get_json()
@@ -234,7 +233,7 @@ class TestUserAPI:
         resp = client.post('/api/users', json={
             "username": "alice",
             "password": "pass2",
-            "role": "annotator"
+            "is_admin": False
         })
         assert resp.status_code == 409
 
@@ -243,34 +242,43 @@ class TestUserAPI:
         resp = client.post('/api/users', json={"username": "test"})
         assert resp.status_code == 400
 
-    def test_create_user_invalid_role(self, client):
-        self._login(client)
+    def test_create_user_is_admin_flag(self, client):
+        """is_admin=True создаёт админа."""
+        import uuid
+        uniq = uuid.uuid4().hex[:8]
+        user_service.create_user(f"admin_{uniq}", "admin123", is_admin=True)
+        with client.session_transaction() as sess:
+            sess['is_admin'] = True
+            sess['username'] = f'admin_{uniq}'
+            sess['user_id'] = user_service.get_user(f"admin_{uniq}")["id"]
         resp = client.post('/api/users', json={
-            "username": "test",
+            "username": f"user_{uniq}",
             "password": "pass",
-            "role": "superadmin"
+            "is_admin": True
         })
-        assert resp.status_code == 400
+        assert resp.status_code == 201
+        data = resp.get_json()
+        assert data["user"]["is_admin"] is True
 
     def test_update_user(self, client):
         self._login(client)
-        user_service.create_user("alice", "oldpass", "annotator")
+        user_service.create_user("alice", "oldpass")
         alice = user_service.get_user("alice")
         resp = client.put(f'/api/users/{alice["id"]}', json={
-            "role": "admin",
+            "is_admin": True,
             "new_password": "newpass"
         })
         assert resp.status_code == 200
-        assert resp.get_json()["user"]["role"] == "admin"
+        assert resp.get_json()["user"]["is_admin"] is True
 
     def test_update_nonexistent_user(self, client):
         self._login(client)
-        resp = client.put('/api/users/9999', json={"role": "admin"})
+        resp = client.put('/api/users/9999', json={"is_admin": True})
         assert resp.status_code == 404
 
     def test_delete_user(self, client):
         self._login(client)
-        user_service.create_user("boss2", "pass2", "admin")  # второй админ
+        user_service.create_user("boss2", "pass2", is_admin=True)  # второй админ
         user_service.create_user("alice", "pass1")
         alice = user_service.get_user("alice")
         resp = client.delete(f'/api/users/{alice["id"]}')
@@ -287,7 +295,6 @@ class TestUserAPI:
         self._login(client)
         resp = client.get('/api/auth/me')
         data = resp.get_json()
-        assert data["role"] == "admin"
         assert data["is_admin"] is True
         assert data["username"] == "admin"
 
@@ -301,11 +308,11 @@ class TestUserAPI:
         assert resp.status_code in (302, 403)
 
     def test_non_admin_cannot_access_users(self, client, monkeypatch):
-        """Annotator не может получить список пользователей."""
+        """Non-admin не может получить список пользователей."""
         monkeypatch.setattr("app.USE_AUTH", True)
-        user_service.create_user("regular", "pass123", "annotator")
+        user_service.create_user("regular", "pass123")
         with client.session_transaction() as sess:
-            sess['role'] = 'annotator'
+            sess['is_admin'] = False
             sess['username'] = 'regular'
             sess['user_id'] = 1
         resp = client.get('/api/users')
@@ -313,20 +320,20 @@ class TestUserAPI:
 
     def test_non_admin_cannot_create_user(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
-        user_service.create_user("regular", "pass123", "annotator")
+        user_service.create_user("regular", "pass123")
         with client.session_transaction() as sess:
-            sess['role'] = 'annotator'
+            sess['is_admin'] = False
             sess['username'] = 'regular'
             sess['user_id'] = 1
-        resp = client.post('/api/users', json={"username": "new", "password": "pass", "role": "annotator"})
+        resp = client.post('/api/users', json={"username": "new", "password": "pass", "is_admin": False})
         assert resp.status_code == 403
 
     def test_non_admin_cannot_delete_user(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
-        user_service.create_user("regular", "pass123", "annotator")
-        user_service.create_user("admin2", "pass", "admin")  # второй админ
+        user_service.create_user("regular", "pass123")
+        user_service.create_user("admin2", "pass", is_admin=True)  # второй админ
         with client.session_transaction() as sess:
-            sess['role'] = 'annotator'
+            sess['is_admin'] = False
             sess['username'] = 'regular'
             sess['user_id'] = 1
         resp = client.delete('/api/users/1')
@@ -338,12 +345,12 @@ class TestLoginFlow:
 
     def test_login_db_success(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
-        user_service.create_user("alice", "secret123", "admin")
+        user_service.create_user("alice", "secret123", is_admin=True)
         resp = client.post('/login', data={'username': 'alice', 'password': 'secret123'}, follow_redirects=False)
         assert resp.status_code in (302, 303)
         with client.session_transaction() as sess:
             assert sess['username'] == 'alice'
-            assert sess['role'] == 'admin'
+            assert sess.get('is_admin', False)
 
     def test_login_db_wrong_password(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
@@ -354,7 +361,7 @@ class TestLoginFlow:
 
     def test_login_empty_username(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
-        user_service.create_user("admin", "admin123", "admin")
+        user_service.create_user("admin", "admin123", is_admin=True)
         resp = client.post('/login', data={'username': '   ', 'password': 'admin123'}, follow_redirects=False)
         assert resp.status_code == 200  # ошибка — пустой username
 
@@ -387,7 +394,7 @@ class TestUserEdgeCases:
     def test_create_user_special_characters(self):
         username = "user@#$%^&*()"
         password = "p@$$w0rd!№;%:?"
-        result = user_service.create_user(username, password, "annotator")
+        result = user_service.create_user(username, password)
         assert result is not None
         assert user_service.authenticate(username, password) is not None
 
@@ -412,10 +419,10 @@ class TestPasswordChange:
 
     def test_change_own_password_success(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
-        user_service.create_user("alice", "oldpass", "annotator")
+        user_service.create_user("alice", "oldpass")
         alice = user_service.get_user("alice")
         with client.session_transaction() as sess:
-            sess['role'] = 'annotator'
+            sess['is_admin'] = False
             sess['username'] = 'alice'
             sess['user_id'] = alice['id']
 
@@ -430,10 +437,10 @@ class TestPasswordChange:
 
     def test_change_own_password_wrong_current(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
-        user_service.create_user("alice", "oldpass", "annotator")
+        user_service.create_user("alice", "oldpass")
         alice = user_service.get_user("alice")
         with client.session_transaction() as sess:
-            sess['role'] = 'annotator'
+            sess['is_admin'] = False
             sess['username'] = 'alice'
             sess['user_id'] = alice['id']
 
@@ -445,10 +452,10 @@ class TestPasswordChange:
 
     def test_change_own_password_empty_fields(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
-        user_service.create_user("alice", "oldpass", "annotator")
+        user_service.create_user("alice", "oldpass")
         alice = user_service.get_user("alice")
         with client.session_transaction() as sess:
-            sess['role'] = 'annotator'
+            sess['is_admin'] = False
             sess['username'] = 'alice'
             sess['user_id'] = alice['id']
 
@@ -470,7 +477,7 @@ class TestPasswordChange:
     def test_admin_reset_user_password(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         _login_admin_for_test(client)
-        user_service.create_user("alice", "oldpass", "annotator")
+        user_service.create_user("alice", "oldpass")
         alice = user_service.get_user("alice")
 
         resp = client.post(f'/api/users/{alice["id"]}/reset-password', json={
@@ -492,17 +499,17 @@ class TestPasswordChange:
     def test_admin_reset_password_empty(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         _login_admin_for_test(client)
-        user_service.create_user("alice", "oldpass", "annotator")
+        user_service.create_user("alice", "oldpass")
         alice = user_service.get_user("alice")
         resp = client.post(f'/api/users/{alice["id"]}/reset-password', json={})
         assert resp.status_code == 400
 
     def test_non_admin_cannot_reset_password(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
-        user_service.create_user("regular", "pass", "annotator")
+        user_service.create_user("regular", "pass")
         regular = user_service.get_user("regular")
         with client.session_transaction() as sess:
-            sess['role'] = 'annotator'
+            sess['is_admin'] = False
             sess['username'] = 'regular'
             sess['user_id'] = regular['id']
 
@@ -511,10 +518,10 @@ class TestPasswordChange:
 
     def test_change_password_writes_audit_log(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
-        user_service.create_user("alice", "oldpass", "annotator")
+        user_service.create_user("alice", "oldpass")
         alice = user_service.get_user("alice")
         with client.session_transaction() as sess:
-            sess['role'] = 'annotator'
+            sess['is_admin'] = False
             sess['username'] = 'alice'
             sess['user_id'] = alice['id']
 
@@ -529,7 +536,7 @@ class TestPasswordChange:
     def test_admin_reset_writes_audit_log(self, client, monkeypatch):
         monkeypatch.setattr("app.USE_AUTH", True)
         _login_admin_for_test(client)
-        user_service.create_user("alice", "oldpass", "annotator")
+        user_service.create_user("alice", "oldpass")
         alice = user_service.get_user("alice")
 
         client.post(f'/api/users/{alice["id"]}/reset-password', json={

@@ -2,9 +2,10 @@
 Permission Service — управление правами доступа к проектам.
 
 Логика:
-- admin → видит все проекты, полный доступ
-- annotator/reviewer → видит только назначенные проекты
-- Если прав нет → проект не виден
+- is_admin=True → видит все проекты, полный доступ
+- is_admin=False → видит только назначенные проекты
+  - project_permissions.role='read' → только просмотр
+  - project_permissions.role='write' → полный доступ к проекту
 """
 
 from typing import Dict, List, Optional
@@ -16,7 +17,7 @@ class PermissionService:
     """Управление правами пользователей на проекты."""
 
     def grant_access(self, user_id: int, project_name: str, role: str = 'write') -> Optional[Dict]:
-        """Дать пользователю доступ к проекту."""
+        """Дать пользователю доступ к проекту. role: 'read' или 'write'."""
         session = SessionLocal()
         try:
             project = session.query(Project).filter_by(name=project_name).first()
@@ -115,6 +116,21 @@ class PermissionService:
                 user_id=user_id, project_id=project.id
             ).first()
             return perm is not None
+        finally:
+            session.close()
+
+    def get_project_role(self, user_id: int, project_name: str) -> Optional[str]:
+        """Вернуть роль пользователя в проекте: 'read', 'write' или None."""
+        session = SessionLocal()
+        try:
+            project = session.query(Project).filter_by(name=project_name).first()
+            if not project:
+                return None
+
+            perm = session.query(ProjectPermission).filter_by(
+                user_id=user_id, project_id=project.id
+            ).first()
+            return perm.role if perm else None
         finally:
             session.close()
 

@@ -1,10 +1,10 @@
 """SQLAlchemy ORM models."""
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, JSON, Text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, JSON, Text
 from sqlalchemy.orm import relationship
 from database.session import Base
-from database.enums import ImageStatus, TaskStatus, UserRole
+from database.enums import ImageStatus, TaskStatus
 
 
 class User(Base):
@@ -15,7 +15,7 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(100), unique=True, nullable=False, index=True)
     password_hash = Column(String(256), nullable=False)
-    role = Column(String(20), default=UserRole.ANNOTATOR.value, nullable=False)  # UserRole
+    is_admin = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -27,7 +27,7 @@ class User(Base):
         return {
             'id': self.id,
             'username': self.username,
-            'role': self.role,
+            'is_admin': self.is_admin,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }

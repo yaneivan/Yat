@@ -1165,15 +1165,13 @@ async function loadUsersList() {
         const tbody = document.getElementById('users-tbody');
         tbody.innerHTML = '';
 
-        const roleLabels = { admin: '👑 Admin', annotator: '✏️ Annotator', viewer: '👁️ Viewer' };
-
         for (const user of (data.users || [])) {
             const tr = document.createElement('tr');
             tr.style.borderBottom = '1px solid #ddd';
             tr.innerHTML = `
                 <td style="padding:8px;">${user.id}</td>
                 <td style="padding:8px;">${user.username}</td>
-                <td style="padding:8px;">${roleLabels[user.role] || user.role}</td>
+                <td style="padding:8px; text-align:center;">${user.is_admin ? '👑' : '👤'}</td>
                 <td style="padding:8px;"><button class="btn" style="padding:2px 8px;" onclick="openUserPermissions(${user.id}, '${user.username}')">Настроить</button></td>
                 <td style="padding:8px; text-align:center;">
                     <button class="btn" style="padding:2px 8px; color:#ffc107;" onclick="openAdminResetPassword(${user.id}, '${user.username}')">🔑</button>
@@ -1190,7 +1188,7 @@ async function loadUsersList() {
 async function createUser() {
     const username = document.getElementById('new-username').value.trim();
     const password = document.getElementById('new-password').value;
-    const role = document.getElementById('new-role').value;
+    const isAdmin = document.getElementById('new-is-admin').checked;
 
     if (!username || !password) {
         alert('Заполни имя и пароль');
@@ -1201,13 +1199,14 @@ async function createUser() {
         const resp = await fetch('/api/users', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password, role })
+            body: JSON.stringify({ username, password, is_admin: isAdmin })
         });
         const data = await resp.json();
 
         if (resp.ok) {
             document.getElementById('new-username').value = '';
             document.getElementById('new-password').value = '';
+            document.getElementById('new-is-admin').checked = false;
             await loadUsersList();
         } else {
             alert(data.error || 'Ошибка создания пользователя');

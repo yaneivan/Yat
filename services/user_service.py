@@ -4,16 +4,14 @@ User Service for authentication and access control.
 Features:
 - User CRUD operations
 - Password hashing and verification (werkzeug)
-- Role-based access control
-- First admin auto-creation
+- is_admin boolean for global admin access
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Optional
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from database.session import SessionLocal
 from database.models import User
-from database.enums import UserRole
 
 
 class UserService:
@@ -34,13 +32,13 @@ class UserService:
         """Verify a password against its hash."""
         return check_password_hash(password_hash, password)
 
-    def _user_to_dict(self, user: User) -> Dict[str, Any]:
+    def _user_to_dict(self, user: User) -> Dict[str, any]:
         """Convert User model to dict (excludes password_hash)."""
         return user.to_dict()
 
     # ── User CRUD ──
 
-    def get_user(self, username: str) -> Optional[Dict[str, Any]]:
+    def get_user(self, username: str) -> Optional[Dict[str, any]]:
         """Get user by username."""
         session = self._get_session()
         try:
@@ -49,7 +47,7 @@ class UserService:
         finally:
             session.close()
 
-    def get_user_by_id(self, user_id: int) -> Optional[Dict[str, Any]]:
+    def get_user_by_id(self, user_id: int) -> Optional[Dict[str, any]]:
         """Get user by ID."""
         session = self._get_session()
         try:
@@ -58,7 +56,7 @@ class UserService:
         finally:
             session.close()
 
-    def get_all_users(self) -> List[Dict[str, Any]]:
+    def get_all_users(self) -> List[Dict[str, any]]:
         """Get all users."""
         session = self._get_session()
         try:
@@ -71,8 +69,8 @@ class UserService:
         self,
         username: str,
         password: str,
-        role: str = UserRole.ANNOTATOR.value,
-    ) -> Optional[Dict[str, Any]]:
+        is_admin: bool = False,
+    ) -> Optional[Dict[str, any]]:
         """
         Create a new user.
 
@@ -80,7 +78,6 @@ class UserService:
         """
         session = self._get_session()
         try:
-            # Check if username already exists
             existing = session.query(User).filter_by(username=username).first()
             if existing:
                 return None
@@ -88,7 +85,7 @@ class UserService:
             user = User(
                 username=username,
                 password_hash=self._hash_password(password),
-                role=role,
+                is_admin=is_admin,
             )
             session.add(user)
             session.commit()
@@ -105,8 +102,8 @@ class UserService:
         self,
         username: str,
         new_password: str = None,
-        role: str = None,
-    ) -> Optional[Dict[str, Any]]:
+        is_admin: bool = None,
+    ) -> Optional[Dict[str, any]]:
         """Update user fields. Returns updated user dict or None."""
         session = self._get_session()
         try:
@@ -116,8 +113,8 @@ class UserService:
 
             if new_password:
                 user.password_hash = self._hash_password(new_password)
-            if role:
-                user.role = role
+            if is_admin is not None:
+                user.is_admin = is_admin
 
             session.commit()
             session.refresh(user)
@@ -138,8 +135,8 @@ class UserService:
                 return False
 
             # Don't allow deleting yourself if only admin
-            admins = session.query(User).filter_by(role=UserRole.ADMIN.value).all()
-            if user.role == UserRole.ADMIN.value and len(admins) <= 1:
+            admins = session.query(User).filter_by(is_admin=True).all()
+            if user.is_admin and len(admins) <= 1:
                 return False  # Last admin cannot be deleted
 
             session.delete(user)
@@ -153,7 +150,7 @@ class UserService:
 
     # ── Authentication ──
 
-    def authenticate(self, username: str, password: str) -> Optional[Dict[str, Any]]:
+    def authenticate(self, username: str, password: str) -> Optional[Dict[str, any]]:
         """
         Authenticate user with username and password.
 
@@ -170,8 +167,6 @@ class UserService:
             return self._user_to_dict(user)
         finally:
             session.close()
-
-    # ── Helpers ──
 
     def has_users(self) -> bool:
         """Check if at least one user exists in database."""
