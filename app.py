@@ -1291,6 +1291,68 @@ def api_get_user_permissions(user_id):
 
 
 # =============================================================================
+# API: Password Change
+# =============================================================================
+@app.route('/api/users/me/password', methods=['POST'])
+def api_change_own_password():
+    """Сменить пароль текущего пользователя."""
+    if not USE_AUTH:
+        return jsonify({'error': 'Авторизация отключена'}), 400
+
+    username = session.get('username')
+    if not username:
+        return jsonify({'error': 'Не авторизован'}), 401
+
+    data = request.json
+    current_password = data.get('current_password', '')
+    new_password = data.get('new_password', '')
+
+    if not current_password or not new_password:
+        return jsonify({'error': 'Заполни текущий и новый пароль'}), 400
+
+    # Проверка текущего пароля
+    user = user_service.authenticate(username, current_password)
+    if not user:
+        return jsonify({'error': 'Неверный текущий пароль'}), 403
+
+    # Обновление пароля
+    result = user_service.update_user(username, new_password=new_password)
+    if not result:
+        return jsonify({'error': 'Ошибка обновления пароля'}), 500
+
+    audit_service.log(
+        session.get('user_id'), 'change_password', 'user',
+        entity_id=user['id'], details=f'User {username} changed password'
+    )
+    return jsonify({'message': 'Пароль изменён'})
+
+
+@app.route('/api/users/<int:user_id>/reset-password', methods=['POST'])
+@require_admin
+def api_reset_user_password(user_id):
+    """Админ сбрасывает пароль пользователя."""
+    user = user_service.get_user_by_id(user_id)
+    if not user:
+        return jsonify({'error': 'Пользователь не найден'}), 404
+
+    data = request.json
+    new_password = data.get('password', '')
+    if not new_password:
+        return jsonify({'error': 'Пароль обязателен'}), 400
+
+    result = user_service.update_user(user['username'], new_password=new_password)
+    if not result:
+        return jsonify({'error': 'Ошибка обновления'}), 500
+
+    audit_service.log(
+        session.get('user_id'), 'reset_password', 'user',
+        entity_id=user_id,
+        details=f'Admin reset password for {user["username"]}'
+    )
+    return jsonify({'message': f'Пароль пользователя {user["username"]} сброшен'})
+
+
+# =============================================================================
 # API: Audit Log (Admin only)
 # =============================================================================
 @app.route('/api/audit', methods=['GET'])

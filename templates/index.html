@@ -17,8 +17,8 @@
             </div>
             <div class="nav-actions">
                 {% if USE_AUTH %}
-                <span class="user-role-badge" style="margin-right:15px;font-size:0.85em;padding:4px 8px;background:{% if is_admin %}#28a745{% else %}#17a2b8{% endif %};color:white;border-radius:4px;">
-                    {% if is_admin %}👤 Admin{% else %}👤 User{% endif %}
+                <span class="user-role-badge" style="margin-right:15px;font-size:0.85em;padding:4px 8px;background:{% if is_admin %}#28a745{% else %}#17a2b8{% endif %};color:white;border-radius:4px;cursor:pointer;" onclick="openChangePasswordModal()" title="Сменить пароль">
+                    {% if is_admin %}👤 Admin{% else %}👤 {{ user_role }}{% endif %} 🔑
                 </span>
                 {% if is_admin %}
                 <a href="#" onclick="openUserManagement()" style="color:#ffc107;">👥 Пользователи</a>
@@ -200,6 +200,54 @@
             </div>
             <div class="modal-body" style="overflow-y: auto; max-height: calc(85vh - 80px);">
                 <div id="stats-content">Загрузка...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Change Password Modal (self) -->
+    <div id="changePasswordModal" class="modal">
+        <div class="modal-content" style="width: 400px;">
+            <div class="modal-header">
+                <h2>🔑 Сменить пароль</h2>
+                <span class="close" onclick="closeChangePassword()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Текущий пароль:</label>
+                    <input type="password" id="cp-current" placeholder="Текущий пароль">
+                </div>
+                <div class="form-group">
+                    <label>Новый пароль:</label>
+                    <input type="password" id="cp-new" placeholder="Новый пароль">
+                </div>
+                <div class="form-group">
+                    <label>Повторить:</label>
+                    <input type="password" id="cp-confirm" placeholder="Повторите новый пароль">
+                </div>
+                <div id="cp-error" style="color:red; display:none; margin-bottom:10px;"></div>
+                <div class="form-actions">
+                    <button class="btn btn-primary" onclick="changePassword()" style="width:100%;">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Reset Password Modal -->
+    <div id="adminResetPasswordModal" class="modal">
+        <div class="modal-content" style="width: 400px;">
+            <div class="modal-header">
+                <h2 id="rp-title">Сбросить пароль</h2>
+                <span class="close" onclick="closeAdminResetPassword()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Новый пароль:</label>
+                    <input type="password" id="rp-new" placeholder="Введите новый пароль">
+                </div>
+                <div id="rp-error" style="color:red; display:none; margin-bottom:10px;"></div>
+                <div class="form-actions">
+                    <button class="btn btn-primary" onclick="adminResetPassword()" style="width:100%;">Сбросить</button>
+                </div>
             </div>
         </div>
     </div>

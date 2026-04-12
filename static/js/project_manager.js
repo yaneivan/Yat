@@ -1177,6 +1177,7 @@ async function loadUsersList() {
                 <td style="padding:8px;">${user.is_active ? '✅' : '❌'}</td>
                 <td style="padding:8px;"><button class="btn" style="padding:2px 8px;" onclick="openUserPermissions(${user.id}, '${user.username}')">Настроить</button></td>
                 <td style="padding:8px; text-align:center;">
+                    <button class="btn" style="padding:2px 8px; color:#ffc107;" onclick="openAdminResetPassword(${user.id}, '${user.username}')">🔑</button>
                     <button class="btn" style="padding:2px 8px; color:#dc3545;" onclick="deleteUser(${user.id}, '${user.username}')">Удалить</button>
                 </td>
             `;
@@ -1430,5 +1431,109 @@ async function loadStatistics() {
         container.innerHTML = html;
     } catch (e) {
         container.innerHTML = `<p style="color:red;">Ошибка загрузки статистики: ${e.message}</p>`;
+    }
+}
+/* ═══════════════════════════════════════════════
+   Password Change (Self)
+   ═══════════════════════════════════════════════ */
+
+function openChangePasswordModal() {
+    document.getElementById('changePasswordModal').style.display = 'block';
+    document.getElementById('cp-current').value = '';
+    document.getElementById('cp-new').value = '';
+    document.getElementById('cp-confirm').value = '';
+    document.getElementById('cp-error').style.display = 'none';
+}
+
+function closeChangePassword() {
+    document.getElementById('changePasswordModal').style.display = 'none';
+}
+
+async function changePassword() {
+    const current = document.getElementById('cp-current').value;
+    const newPass = document.getElementById('cp-new').value;
+    const confirm = document.getElementById('cp-confirm').value;
+    const errorEl = document.getElementById('cp-error');
+    errorEl.style.display = 'none';
+
+    if (!current || !newPass) {
+        errorEl.textContent = 'Заполни все поля';
+        errorEl.style.display = 'block';
+        return;
+    }
+    if (newPass !== confirm) {
+        errorEl.textContent = 'Пароли не совпадают';
+        errorEl.style.display = 'block';
+        return;
+    }
+
+    try {
+        const resp = await fetch('/api/users/me/password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ current_password: current, new_password: newPass })
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+            closeChangePassword();
+            alert('Пароль изменён!');
+        } else {
+            errorEl.textContent = data.error || 'Ошибка';
+            errorEl.style.display = 'block';
+        }
+    } catch (e) {
+        errorEl.textContent = 'Ошибка: ' + e.message;
+        errorEl.style.display = 'block';
+    }
+}
+
+/* ═══════════════════════════════════════════════
+   Admin Reset Password
+   ═══════════════════════════════════════════════ */
+
+let _resetUserId = null;
+let _resetUsername = null;
+
+function openAdminResetPassword(userId, username) {
+    _resetUserId = userId;
+    _resetUsername = username;
+    document.getElementById('adminResetPasswordModal').style.display = 'block';
+    document.getElementById('rp-title').textContent = `Сбросить пароль: ${username}`;
+    document.getElementById('rp-new').value = '';
+    document.getElementById('rp-error').style.display = 'none';
+}
+
+function closeAdminResetPassword() {
+    document.getElementById('adminResetPasswordModal').style.display = 'none';
+}
+
+async function adminResetPassword() {
+    const newPass = document.getElementById('rp-new').value;
+    const errorEl = document.getElementById('rp-error');
+    errorEl.style.display = 'none';
+
+    if (!newPass) {
+        errorEl.textContent = 'Введи пароль';
+        errorEl.style.display = 'block';
+        return;
+    }
+
+    try {
+        const resp = await fetch(`/api/users/${_resetUserId}/reset-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: newPass })
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+            closeAdminResetPassword();
+            alert(`Пароль для ${_resetUsername} сброшен`);
+        } else {
+            errorEl.textContent = data.error || 'Ошибка';
+            errorEl.style.display = 'block';
+        }
+    } catch (e) {
+        errorEl.textContent = 'Ошибка: ' + e.message;
+        errorEl.style.display = 'block';
     }
 }

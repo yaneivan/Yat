@@ -14,6 +14,7 @@ from werkzeug.security import check_password_hash
 
 from app import app
 from services.user_service import user_service
+from services.audit_service import audit_service
 from database.session import SessionLocal
 from database.models import User
 
@@ -188,6 +189,16 @@ def client():
     app.config['WTF_CSRF_ENABLED'] = False
     with app.test_client() as test_client:
         yield test_client
+
+
+def _login_admin_for_test(client):
+    """Создаёт админа и логинит его."""
+    user_service.create_user("admin", "admin123", "admin")
+    admin = user_service.get_user("admin")
+    with client.session_transaction() as sess:
+        sess['role'] = 'admin'
+        sess['username'] = 'admin'
+        sess['user_id'] = admin["id"]
 
 
 class TestUserAPI:
@@ -395,3 +406,136 @@ class TestUserEdgeCases:
         assert result is not None
         user = user_service.get_user("<script>alert(1)</script>")
         assert user is not None  # имя сохраняется как есть, экранируется при выводе
+
+
+class TestPasswordChange:
+    """Тесты смены пароля."""
+
+    def test_change_own_password_success(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        user_service.create_user("alice", "oldpass", "annotator")
+        alice = user_service.get_user("alice")
+        with client.session_transaction() as sess:
+            sess['role'] = 'annotator'
+            sess['username'] = 'alice'
+            sess['user_id'] = alice['id']
+
+        resp = client.post('/api/users/me/password', json={
+            'current_password': 'oldpass',
+            'new_password': 'newpass'
+        })
+        assert resp.status_code == 200
+        # Проверяем что новый пароль работает
+        assert user_service.authenticate("alice", "oldpass") is None
+        assert user_service.authenticate("alice", "newpass") is not None
+
+    def test_change_own_password_wrong_current(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        user_service.create_user("alice", "oldpass", "annotator")
+        alice = user_service.get_user("alice")
+        with client.session_transaction() as sess:
+            sess['role'] = 'annotator'
+            sess['username'] = 'alice'
+            sess['user_id'] = alice['id']
+
+        resp = client.post('/api/users/me/password', json={
+            'current_password': 'wrong',
+            'new_password': 'newpass'
+        })
+        assert resp.status_code == 403
+
+    def test_change_own_password_empty_fields(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        user_service.create_user("alice", "oldpass", "annotator")
+        alice = user_service.get_user("alice")
+        with client.session_transaction() as sess:
+            sess['role'] = 'annotator'
+            sess['username'] = 'alice'
+            sess['user_id'] = alice['id']
+
+        resp = client.post('/api/users/me/password', json={
+            'current_password': '',
+            'new_password': ''
+        })
+        assert resp.status_code == 400
+
+    def test_change_own_password_not_authenticated(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        resp = client.post('/api/users/me/password', json={
+            'current_password': 'x',
+            'new_password': 'y'
+        }, follow_redirects=False)
+        # check_auth() редиректит на /login при отсутствии сессии
+        assert resp.status_code in (302, 401)
+
+    def test_admin_reset_user_password(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        _login_admin_for_test(client)
+        user_service.create_user("alice", "oldpass", "annotator")
+        alice = user_service.get_user("alice")
+
+        resp = client.post(f'/api/users/{alice["id"]}/reset-password', json={
+            'password': 'temppass'
+        })
+        assert resp.status_code == 200
+        # Проверяем что новый пароль работает
+        assert user_service.authenticate("alice", "oldpass") is None
+        assert user_service.authenticate("alice", "temppass") is not None
+
+    def test_admin_reset_password_nonexistent_user(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        _login_admin_for_test(client)
+        resp = client.post('/api/users/9999/reset-password', json={
+            'password': 'newpass'
+        })
+        assert resp.status_code == 404
+
+    def test_admin_reset_password_empty(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        _login_admin_for_test(client)
+        user_service.create_user("alice", "oldpass", "annotator")
+        alice = user_service.get_user("alice")
+        resp = client.post(f'/api/users/{alice["id"]}/reset-password', json={})
+        assert resp.status_code == 400
+
+    def test_non_admin_cannot_reset_password(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        user_service.create_user("regular", "pass", "annotator")
+        regular = user_service.get_user("regular")
+        with client.session_transaction() as sess:
+            sess['role'] = 'annotator'
+            sess['username'] = 'regular'
+            sess['user_id'] = regular['id']
+
+        resp = client.post('/api/users/1/reset-password', json={'password': 'hacked'})
+        assert resp.status_code == 403
+
+    def test_change_password_writes_audit_log(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        user_service.create_user("alice", "oldpass", "annotator")
+        alice = user_service.get_user("alice")
+        with client.session_transaction() as sess:
+            sess['role'] = 'annotator'
+            sess['username'] = 'alice'
+            sess['user_id'] = alice['id']
+
+        client.post('/api/users/me/password', json={
+            'current_password': 'oldpass',
+            'new_password': 'newpass'
+        })
+        logs = audit_service.get_logs(action="change_password")
+        assert len(logs) >= 1
+        assert "alice" in logs[0]["details"]
+
+    def test_admin_reset_writes_audit_log(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        _login_admin_for_test(client)
+        user_service.create_user("alice", "oldpass", "annotator")
+        alice = user_service.get_user("alice")
+
+        client.post(f'/api/users/{alice["id"]}/reset-password', json={
+            'password': 'temppass'
+        })
+        logs = audit_service.get_logs(action="reset_password")
+        assert len(logs) >= 1
+        assert "alice" in logs[0]["details"]
