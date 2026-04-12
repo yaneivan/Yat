@@ -1847,7 +1847,11 @@ class TextEditor {
                 status: 'recognized' // Status for text recognition completed
             };
 
-            await API.saveAnnotationWithTexts(this.filename, saveData.regions, saveData.texts, this.project);
+            const resp = await API.saveAnnotationWithTexts(this.filename, saveData.regions, saveData.texts, this.project);
+            if (!resp.ok) {
+                const data = await resp.json().catch(() => ({}));
+                throw new Error(data.msg || data.error || `HTTP ${resp.status}`);
+            }
 
             // Show saved indicator
             this.setSaveIndicator('saved');

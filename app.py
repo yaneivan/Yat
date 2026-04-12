@@ -488,6 +488,7 @@ def save_data():
 
 # --- API: Crop ---
 @app.route('/api/crop', methods=['POST'])
+@require_write_access
 def crop():
     data = request.json
     filename = data.get('image_name')

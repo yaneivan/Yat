@@ -713,15 +713,19 @@ class HTREditor {
         });
 
         try {
-            await API.saveAnnotation(this.filename, regions, this.project);
+            const resp = await API.saveAnnotation(this.filename, regions, this.project);
+            if (!resp.ok) {
+                const data = await resp.json().catch(() => ({}));
+                throw new Error(data.msg || data.error || `HTTP ${resp.status}`);
+            }
             this.setSaveIndicator('saved');
-            
+
             // Reset to idle after 2 seconds
             setTimeout(() => this.setSaveIndicator('idle'), 2000);
         } catch(e) {
             console.error('Save error:', e);
             this.setSaveIndicator('error');
-            
+
             // Reset to idle after 3 seconds
             setTimeout(() => this.setSaveIndicator('idle'), 3000);
         } finally {
