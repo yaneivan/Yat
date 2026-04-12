@@ -195,6 +195,16 @@ def login():
             session['role'] = user['role']
             session['user_id'] = user['id']
             session['username'] = user['username']
+
+            audit_service.log(
+                user_id=user['id'],
+                action='login',
+                entity_type='user',
+                entity_id=user['id'],
+                old_value=None,
+                new_value={'role': user['role']},
+                details=f'User {username} logged in',
+            )
             return redirect('/')
 
         return render_template('login.html', error='Неверный логин или пароль')
@@ -386,12 +396,14 @@ def save_data():
     try:
         # Validate filename to prevent path traversal
         validated = image_service._validate_filename(filename)
-        
+
         # Get project from query parameter
         project_name = request.args.get('project')
 
         # Load existing data with project scope
         existing_data = annotation_service.get_annotation(validated, project_name)
+        old_regions = existing_data.get('regions', [])
+        old_texts = existing_data.get('texts', {})
 
         # Update fields
         for key in ['regions', 'texts', 'status', 'processing_params', 'crop_params']:
@@ -401,9 +413,22 @@ def save_data():
         # Ensure image_name is set
         existing_data['image_name'] = validated
 
+        new_regions = existing_data.get('regions', [])
+        new_texts = existing_data.get('texts', {})
+
         logger.info(f"Saving annotation for {validated}: {len(incoming_data.get('regions', []))} regions")
 
         if annotation_service.save_annotation(validated, existing_data, project_name):
+            # Write audit log
+            audit_service.log(
+                user_id=session.get('user_id'),
+                action='save_annotation',
+                entity_type='annotation',
+                entity_id=None,
+                old_value={'regions_count': len(old_regions), 'texts': old_texts},
+                new_value={'regions_count': len(new_regions), 'texts': new_texts},
+                details=f'{validated} in {project_name}: {len(new_regions)} regions',
+            )
             logger.info("Save successful")
             return jsonify({'status': 'success'})
         logger.warning("Save failed - annotation_service returned False")
@@ -632,6 +657,15 @@ def projects():
             result = project_service.create_project(name, description)
 
             if result:
+                audit_service.log(
+                    user_id=session.get('user_id'),
+                    action='create_project',
+                    entity_type='project',
+                    entity_id=None,
+                    old_value=None,
+                    new_value={'name': name, 'description': description},
+                    details=f'Created project: {name}',
+                )
                 return jsonify({'status': 'success', 'project': result})
             else:
                 return jsonify({'status': 'error', 'msg': 'Project already exists'}), 400
@@ -685,6 +719,15 @@ def project(project_name):
         result = project_service.delete_project(sanitized_name)
 
         if result:
+            audit_service.log(
+                user_id=session.get('user_id'),
+                action='delete_project',
+                entity_type='project',
+                entity_id=None,
+                old_value={'name': sanitized_name},
+                new_value=None,
+                details=f'Deleted project: {sanitized_name}',
+            )
             return jsonify({'status': 'success', 'msg': 'Project deleted'})
         else:
             return jsonify({'status': 'error', 'msg': 'Project not found'}), 404
@@ -714,6 +757,15 @@ def project_images(project_name):
         result = project_service.remove_image(sanitized_name, image_name)
 
         if result:
+            audit_service.log(
+                user_id=session.get('user_id'),
+                action='remove_image',
+                entity_type='image',
+                entity_id=None,
+                old_value={'filename': image_name, 'project': sanitized_name},
+                new_value=None,
+                details=f'Removed {image_name} from {sanitized_name}',
+            )
             return jsonify({'status': 'success', 'msg': 'Image removed from project'})
         else:
             return jsonify({'status': 'error', 'msg': 'Image or project not found'}), 404
@@ -744,19 +796,36 @@ def image_status(project_name, filename):
         data = request.json
         new_status = data.get('status')
         new_comment = data.get('comment')
-        
+
+        # Get old values for audit
+        old_data = image_service.get_status(validated_filename, sanitized_name)
+        old_status = old_data.get('status') if old_data else None
+        old_comment = old_data.get('comment', '') if old_data else ''
+
         success = image_service.update_status(
             validated_filename,
             sanitized_name,
             status=new_status,
             comment=new_comment
         )
-        
+
         if not success:
             return jsonify({'status': 'error', 'msg': 'Image not found'}), 404
         
         # Return updated status
         updated = image_service.get_status(validated_filename, sanitized_name)
+
+        # Write audit log
+        audit_service.log(
+            user_id=session.get('user_id'),
+            action='update_status',
+            entity_type='image',
+            entity_id=None,
+            old_value={'status': old_status, 'comment': old_comment},
+            new_value={'status': new_status, 'comment': new_comment},
+            details=f'{validated_filename} in {sanitized_name}: {old_status} → {new_status}',
+        )
+
         return jsonify({
             'status': 'success',
             'message': 'Status updated',
@@ -800,10 +869,23 @@ def upload_project_images(project_name):
             'msg': 'Все файлы уже существуют в проекте (дубликаты)'
         }), 409
 
-    return jsonify({
+    result = {
         'status': 'success',
         'msg': f'Загружено {uploaded_count} изображений' + (f' ({skipped_count} пропущено)' if skipped_count > 0 else '')
-    })
+    }
+
+    if uploaded_count > 0:
+        audit_service.log(
+            user_id=session.get('user_id'),
+            action='upload_images',
+            entity_type='project',
+            entity_id=None,
+            old_value=None,
+            new_value={'uploaded_count': uploaded_count, 'skipped_count': skipped_count},
+            details=f'{sanitized_name}: +{uploaded_count} images',
+        )
+
+    return jsonify(result)
 
 
 @app.route('/api/projects/<project_name>/export_zip')
