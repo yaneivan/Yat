@@ -18,7 +18,7 @@
             <div class="nav-actions">
                 {% if USE_AUTH %}
                 <span class="user-role-badge" style="margin-right:15px;font-size:0.85em;padding:4px 8px;background:{% if is_admin %}#28a745{% else %}#17a2b8{% endif %};color:white;border-radius:4px;cursor:pointer;display:inline-flex;align-items:center;vertical-align:middle;" onclick="openChangePasswordModal()" title="Сменить пароль">
-                    {% if is_admin %}👤 Admin{% else %}👤 {{ user_role }}{% endif %} 🔑
+                    {{ current_username or 'User' }}
                 </span>
                 {% if is_admin %}
                 <a href="#" onclick="openUserManagement()" style="color:#ffc107;">Пользователи</a>
@@ -162,7 +162,7 @@
                         <tr style="background:#333; color:white;">
                             <th style="padding:10px; text-align:left;">ID</th>
                             <th style="padding:10px; text-align:left;">Имя</th>
-                            <th style="padding:10px; text-align:center;">Админ</th>
+                            <th style="padding:10px; text-align:left;">Тип</th>
                             <th style="padding:10px; text-align:left;">Права на проекты</th>
                             <th style="padding:10px; text-align:center;">Действия</th>
                         </tr>

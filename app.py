@@ -206,7 +206,14 @@ def check_auth():
         return
 
     # No session - redirect to login
-    if 'is_admin' not in session:
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    # Verify user still exists in database (kicked if deleted)
+    if not user_service.get_user_by_id(session['user_id']):
+        session.pop('is_admin', None)
+        session.pop('user_id', None)
+        session.pop('username', None)
         return redirect(url_for('login'))
 
 

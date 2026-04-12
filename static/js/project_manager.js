@@ -1171,7 +1171,7 @@ async function loadUsersList() {
             tr.innerHTML = `
                 <td style="padding:8px;">${user.id}</td>
                 <td style="padding:8px;">${user.username}</td>
-                <td style="padding:8px; text-align:center;">${user.is_admin ? '👑' : '👤'}</td>
+                <td style="padding:8px;">${user.is_admin ? 'Админ' : 'Пользователь'}</td>
                 <td style="padding:8px;"><button class="btn" style="padding:2px 8px;" onclick="openUserPermissions(${user.id}, '${user.username}')">Настроить</button></td>
                 <td style="padding:8px; text-align:center;">
                     <button class="btn" style="padding:2px 8px; color:#ffc107;" onclick="openAdminResetPassword(${user.id}, '${user.username}')">🔑</button>
