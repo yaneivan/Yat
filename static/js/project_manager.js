@@ -819,7 +819,7 @@ class ProjectManager {
     }
 
     openCreateProjectModal() {
-        document.getElementById('createProjectModal').style.display = 'flex';
+        document.getElementById('createProjectModal').classList.add('active');
         document.getElementById('project-name').focus();
     }
 
@@ -830,7 +830,7 @@ class ProjectManager {
     }
 
     openImportModal() {
-        document.getElementById('importModal').style.display = 'flex';
+        document.getElementById('importModal').classList.add('active');
     }
 
     closeImportModal() {
@@ -1440,3 +1440,28 @@ async function adminResetPassword() {
         errorEl.style.display = 'block';
     }
 }
+
+/* ═══════════════════════════════════════════════
+   Global: Close modals on Escape
+   ═══════════════════════════════════════════════ */
+document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+
+    const modals = [
+        'createProjectModal',
+        'importModal',
+        'userManagementModal',
+        'userPermissionsModal',
+        'changePasswordModal',
+        'adminResetPasswordModal',
+        'addImagesModal'
+    ];
+
+    for (const id of modals) {
+        const el = document.getElementById(id);
+        if (el && el.classList.contains('active')) {
+            el.classList.remove('active');
+            break;
+        }
+    }
+});
