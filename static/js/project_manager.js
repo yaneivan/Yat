@@ -1165,7 +1165,7 @@ async function loadUsersList() {
         const tbody = document.getElementById('users-tbody');
         tbody.innerHTML = '';
 
-        const roleLabels = { admin: '👑 Admin', annotator: '✏️ Annotator', reviewer: '👁️ Reviewer' };
+        const roleLabels = { admin: '👑 Admin', annotator: '✏️ Annotator', viewer: '👁️ Viewer' };
 
         for (const user of (data.users || [])) {
             const tr = document.createElement('tr');

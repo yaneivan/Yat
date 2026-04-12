@@ -25,6 +25,6 @@ class TaskStatus(str, Enum):
 class UserRole(str, Enum):
     """User roles for access control."""
 
-    ADMIN = 'admin'     # Full access: manage users, projects, annotations
+    ADMIN = 'admin'       # Full access: manage users, projects, annotations
     ANNOTATOR = 'annotator'  # Can annotate and edit assigned projects
-    REVIEWER = 'reviewer'    # Can review and approve, read-only otherwise
+    VIEWER = 'viewer'     # Read-only access to assigned projects

@@ -705,3 +705,113 @@ class TestFullWorkflow:
         assert client.get('/api/images_list?project=SecretProj').status_code != 200 or True  # проект не найден или 403
         assert client.get('/editor?image=x.png&project=SecretProject').status_code == 403
         assert client.get('/text_editor?image=x.png&project=SecretProject').status_code == 403
+
+
+class TestViewerReadOnly:
+    """Viewer может только читать, не может писать."""
+
+    def test_viewer_can_read_images_list(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        project_service.create_project("Proj1")
+        user_service.create_user("viewer1", "pass1", "viewer")
+        v = user_service.get_user("viewer1")
+        permission_service.grant_access(v['id'], "Proj1", "read")
+
+        with client.session_transaction() as sess:
+            sess['role'] = 'viewer'
+            sess['username'] = 'viewer1'
+            sess['user_id'] = v['id']
+
+        resp = client.get('/api/images_list?project=Proj1')
+        assert resp.status_code == 200
+
+    def test_viewer_cannot_save_annotation(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        project_service.create_project("Proj1")
+        user_service.create_user("viewer1", "pass1", "viewer")
+        v = user_service.get_user("viewer1")
+        permission_service.grant_access(v['id'], "Proj1", "read")
+
+        with client.session_transaction() as sess:
+            sess['role'] = 'viewer'
+            sess['username'] = 'viewer1'
+            sess['user_id'] = v['id']
+
+        resp = client.post('/api/save?project=Proj1', json={
+            'image_name': 'test.png',
+            'regions': [],
+            'texts': {}
+        })
+        assert resp.status_code == 403
+        data = resp.get_json()
+        assert 'просмотр' in data['msg'].lower()
+
+    def test_viewer_cannot_update_status(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        project_service.create_project("Proj1")
+        user_service.create_user("viewer1", "pass1", "viewer")
+        v = user_service.get_user("viewer1")
+        permission_service.grant_access(v['id'], "Proj1", "read")
+
+        with client.session_transaction() as sess:
+            sess['role'] = 'viewer'
+            sess['username'] = 'viewer1'
+            sess['user_id'] = v['id']
+
+        resp = client.put('/api/projects/Proj1/images/test.png/status', json={
+            'status': 'reviewed'
+        })
+        assert resp.status_code == 403
+        data = resp.get_json()
+        assert 'просмотр' in data['msg'].lower()
+
+    def test_viewer_cannot_upload(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        project_service.create_project("Proj1")
+        user_service.create_user("viewer1", "pass1", "viewer")
+        v = user_service.get_user("viewer1")
+        permission_service.grant_access(v['id'], "Proj1", "read")
+
+        with client.session_transaction() as sess:
+            sess['role'] = 'viewer'
+            sess['username'] = 'viewer1'
+            sess['user_id'] = v['id']
+
+        from io import BytesIO
+        data = {'images': [(BytesIO(b'png'), 'test.png')]}
+        resp = client.post(
+            '/api/projects/Proj1/upload_images',
+            data=data,
+            content_type='multipart/form-data'
+        )
+        assert resp.status_code == 403
+
+    def test_viewer_cannot_batch_detect(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        project_service.create_project("Proj1")
+        user_service.create_user("viewer1", "pass1", "viewer")
+        v = user_service.get_user("viewer1")
+        permission_service.grant_access(v['id'], "Proj1", "read")
+
+        with client.session_transaction() as sess:
+            sess['role'] = 'viewer'
+            sess['username'] = 'viewer1'
+            sess['user_id'] = v['id']
+
+        resp = client.post('/api/projects/Proj1/batch_detect')
+        assert resp.status_code == 403
+
+    def test_viewer_cannot_batch_recognize(self, client, monkeypatch):
+        monkeypatch.setattr("app.USE_AUTH", True)
+        project_service.create_project("Proj1")
+        user_service.create_user("viewer1", "pass1", "viewer")
+        v = user_service.get_user("viewer1")
+        permission_service.grant_access(v['id'], "Proj1", "read")
+
+        with client.session_transaction() as sess:
+            sess['role'] = 'viewer'
+            sess['username'] = 'viewer1'
+            sess['user_id'] = v['id']
+
+        resp = client.post('/api/projects/Proj1/batch_recognize')
+        assert resp.status_code == 403

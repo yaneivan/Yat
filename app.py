@@ -162,6 +162,40 @@ def require_project_access(f):
     return decorated_function
 
 
+def require_write_access(f):
+    """
+    Декоратор: проверяет доступ к проекту + что пользователь НЕ viewer.
+    Viewer получает 403 на все write-операции.
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # 1. Проверка доступа к проекту
+        project_name = kwargs.get('project_name') or request.args.get('project')
+        if project_name and not check_project_access(project_name):
+            return jsonify({'status': 'error', 'msg': 'Нет доступа к проекту'}), 403
+
+        # 2. Проверка: viewer не может писать
+        if USE_AUTH:
+            user_role = get_user_role()
+            if user_role == 'viewer':
+                return jsonify({'status': 'error', 'msg': 'Только просмотр'}), 403
+
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def _get_project_id(name):
+    """Получить ID проекта по имени."""
+    from database.session import SessionLocal
+    from database.models import Project
+    s = SessionLocal()
+    try:
+        p = s.query(Project).filter_by(name=name).first()
+        return p.id if p else None
+    finally:
+        s.close()
+
+
 @app.before_request
 def check_auth():
     """Check authorization if password protection is enabled."""
@@ -385,7 +419,7 @@ def load_data(filename):
         return jsonify({'status': 'error', 'msg': str(e)}), 500
 
 @app.route('/api/save', methods=['POST'])
-@require_project_access
+@require_write_access
 def save_data():
     incoming_data = request.json
     filename = incoming_data.get('image_name')
@@ -657,11 +691,14 @@ def projects():
             result = project_service.create_project(name, description)
 
             if result:
+                # Get project ID for audit log
+                proj_id = _get_project_id(name)
+
                 audit_service.log(
                     user_id=session.get('user_id'),
                     action='create_project',
                     entity_type='project',
-                    entity_id=None,
+                    entity_id=proj_id,
                     old_value=None,
                     new_value={'name': name, 'description': description},
                     details=f'Created project: {name}',
@@ -719,11 +756,13 @@ def project(project_name):
         result = project_service.delete_project(sanitized_name)
 
         if result:
+            proj_id = _get_project_id(sanitized_name)
+
             audit_service.log(
                 user_id=session.get('user_id'),
                 action='delete_project',
                 entity_type='project',
-                entity_id=None,
+                entity_id=proj_id,
                 old_value={'name': sanitized_name},
                 new_value=None,
                 details=f'Deleted project: {sanitized_name}',
@@ -777,7 +816,7 @@ def image_status(project_name, filename):
     """Get or update image status and comment."""
     # Sanitize project name and filename
     sanitized_name = project_service._sanitize_name(project_name)
-    
+
     try:
         validated_filename = image_service._validate_filename(filename)
     except ValueError:
@@ -788,10 +827,13 @@ def image_status(project_name, filename):
         result = image_service.get_status(validated_filename, sanitized_name)
         if not result:
             return jsonify({'status': 'error', 'msg': 'Image not found'}), 404
-        
+
         return jsonify(result)
 
     elif request.method == 'PUT':
+        # Viewer cannot change status
+        if USE_AUTH and get_user_role() == 'viewer':
+            return jsonify({'status': 'error', 'msg': 'Только просмотр'}), 403
         # Update status and/or comment
         data = request.json
         new_status = data.get('status')
@@ -834,7 +876,7 @@ def image_status(project_name, filename):
 
 
 @app.route('/api/projects/<project_name>/upload_images', methods=['POST'])
-@require_project_access
+@require_write_access
 def upload_project_images(project_name):
     # Admin only: upload images
     if USE_AUTH and not is_admin():
@@ -947,7 +989,7 @@ def export_project_pdf(project_name):
 
 
 @app.route('/api/projects/<project_name>/batch_detect', methods=['POST'])
-@require_project_access
+@require_write_access
 def batch_detect(project_name):
     # Admin only: batch detection
     if USE_AUTH and not is_admin():
@@ -1024,7 +1066,7 @@ def batch_detect(project_name):
 
 
 @app.route('/api/projects/<project_name>/batch_recognize', methods=['POST'])
-@require_project_access
+@require_write_access
 def batch_recognize(project_name):
     # Admin only: batch recognition
     if USE_AUTH and not is_admin():
@@ -1144,7 +1186,7 @@ def api_create_user():
     if not username or not password:
         return jsonify({'error': 'username и password обязательны'}), 400
 
-    if role not in ('admin', 'annotator', 'reviewer'):
+    if role not in ('admin', 'annotator', 'viewer'):
         return jsonify({'error': 'Недопустимая роль'}), 400
 
     result = user_service.create_user(username=username, password=password, role=role)
@@ -1214,9 +1256,10 @@ def api_grant_project_permission(project_name):
     if not result:
         return jsonify({'error': 'Проект не найден'}), 404
 
+    proj_id = _get_project_id(project_name)
     audit_service.log(
         session.get('user_id'), 'grant_permission', 'project',
-        entity_id=None, details=f'User {user_id} → {project_name} ({role})'
+        entity_id=proj_id, details=f'User {user_id} → {project_name} ({role})'
     )
     return jsonify({'permission': result}), 201
 
@@ -1226,9 +1269,10 @@ def api_grant_project_permission(project_name):
 def api_revoke_project_permission(project_name, user_id):
     """Revoke user access from a project."""
     if permission_service.revoke_access(user_id, project_name):
+        proj_id = _get_project_id(project_name)
         audit_service.log(
             session.get('user_id'), 'revoke_permission', 'project',
-            entity_id=None, details=f'User {user_id} ← {project_name}'
+            entity_id=proj_id, details=f'User {user_id} ← {project_name}'
         )
         return jsonify({'message': 'Доступ отозван'})
     return jsonify({'error': 'Доступ не найден'}), 404
