@@ -284,6 +284,11 @@ def index():
     images = image_service.get_all_images()
     return render_template('index.html', files=images)
 
+@app.route('/stats')
+@require_admin
+def stats_page():
+    return render_template('stats.html')
+
 @app.route('/editor')
 def editor():
     filename = request.args.get('image')
