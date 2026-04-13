@@ -857,9 +857,11 @@ def project_images(project_name):
         return jsonify({'images': images})
 
     elif request.method == 'DELETE':
-        # Admin only: remove image from project
+        # project_admin or app admin can remove images
         if USE_AUTH and not is_admin():
-            return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
+            user_id = session.get('user_id')
+            if not user_id or not permission_service.can_manage_project(user_id, sanitized_name):
+                return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
         
         data = request.json
         image_name = data.get('image_name')
@@ -956,10 +958,6 @@ def image_status(project_name, filename):
 @app.route('/api/projects/<project_name>/upload_images', methods=['POST'])
 @require_project_admin
 def upload_project_images(project_name):
-    # Admin only: upload images
-    if USE_AUTH and not is_admin():
-        return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
-    
     # Sanitize project name to prevent path traversal
     sanitized_name = project_service._sanitize_name(project_name)
 
@@ -1069,10 +1067,6 @@ def export_project_pdf(project_name):
 @app.route('/api/projects/<project_name>/batch_detect', methods=['POST'])
 @require_project_admin
 def batch_detect(project_name):
-    # Admin only: batch detection
-    if USE_AUTH and not is_admin():
-        return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
-
     logger.info(f"POST /api/projects/{project_name}/batch_detect")
 
     # Sanitize project name to prevent path traversal
@@ -1146,10 +1140,6 @@ def batch_detect(project_name):
 @app.route('/api/projects/<project_name>/batch_recognize', methods=['POST'])
 @require_project_admin
 def batch_recognize(project_name):
-    # Admin only: batch recognition
-    if USE_AUTH and not is_admin():
-        return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
-
     # Sanitize project name to prevent path traversal
     sanitized_name = project_service._sanitize_name(project_name)
 
