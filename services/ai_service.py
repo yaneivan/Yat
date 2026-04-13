@@ -6,6 +6,7 @@ with lazy initialization and model caching.
 """
 
 import os
+import logging
 import threading
 from typing import Dict, List, Any, Optional, Callable
 
@@ -26,6 +27,8 @@ try:
 except ImportError:
     TROCR_AVAILABLE = False
     Image = None
+
+logger = logging.getLogger(__name__)
 
 
 class AIService:
@@ -305,7 +308,7 @@ class AIService:
         from database.enums import ImageStatus
 
         msg = f"[recognize_text] START: filename={filename}, regions={len(regions) if regions else 0}, project={project_name}, user_id={user_id}"
-        print(msg, flush=True)
+        logger.info(msg)
 
         # Load image
         image = image_service.get_image(filename, project_name)
@@ -322,7 +325,7 @@ class AIService:
         if regions is None:
             regions = annotation_data.get('regions', [])
 
-        print(f"[recognize_text] regions count: {len(regions)}")
+        logger.info(f"[recognize_text] regions count: {len(regions)}")
 
         recognized_texts = {}
         total_regions = len(regions)
@@ -337,14 +340,14 @@ class AIService:
                 # Recognize text
                 text = self.recognize_text_in_region(image, bbox)
                 recognized_texts[idx] = text
-                print(f"[recognize_text] Region {idx} done, text len={len(text)}")
+                logger.info(f"[recognize_text] Region {idx} done, text len={len(text)}")
 
                 # Update progress
                 if progress_callback:
                     progress_callback(idx + 1, total_regions)
 
             except Exception as e:
-                print(f"Error processing region {idx}: {e}")
+                logger.error(f"Error processing region {idx}: {e}", exc_info=True)
                 recognized_texts[idx] = ""
 
         # Update annotation with recognized texts
@@ -362,13 +365,13 @@ class AIService:
                 can_save = False
 
         if can_save:
-            print(f"[recognize_text] Saving annotation for {filename}")
+            logger.info(f"[recognize_text] Saving annotation for {filename}")
             annotation_service.save_annotation(filename, annotation_data, project_name)
         else:
             # Текст распознан, но НЕ сохранён — read-only
-            print(f"[recognize_text] Text recognized but NOT saved (read-only): {filename}")
+            logger.info(f"[recognize_text] Text recognized but NOT saved (read-only): {filename}")
 
-        print(f"[recognize_text] COMPLETED")
+        logger.info("[recognize_text] COMPLETED")
         return recognized_texts
     
     def initialize_models(self, trocr_model_name: str = "raxtemur/trocr-base-ru"):
@@ -382,17 +385,17 @@ class AIService:
         if YOLO_AVAILABLE:
             try:
                 self._get_yolo_model()
-                print("YOLO model initialized")
+                logger.info("YOLO model initialized")
             except Exception as e:
-                print(f"Failed to initialize YOLO: {e}")
-        
+                logger.error(f"Failed to initialize YOLO: {e}")
+
         # Initialize TROCR
         if TROCR_AVAILABLE:
             try:
                 self._initialize_trocr(trocr_model_name)
-                print(f"TROCR model initialized on {self._get_device()}")
+                logger.info(f"TROCR model initialized on {self._get_device()}")
             except Exception as e:
-                print(f"Failed to initialize TROCR: {e}")
+                logger.error(f"Failed to initialize TROCR: {e}")
 
 
 # Global AI service instance
