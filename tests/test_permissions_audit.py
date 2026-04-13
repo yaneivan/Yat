@@ -54,21 +54,21 @@ class TestPermissionGrantRevoke:
         alice = user_service.get_user("alice")
         project_service.create_project("proj1", "desc")
 
-        result = permission_service.grant_access(alice["id"], "proj1", "read")
+        result = permission_service.grant_access(alice["id"], "proj1", "viewer")
         assert result is not None
-        assert result["role"] == "read"
+        assert result["role"] == "viewer"
 
     def test_grant_access_nonexistent_project(self):
         user_service.create_user("alice", "pass1")
         alice = user_service.get_user("alice")
-        result = permission_service.grant_access(alice["id"], "no_project", "read")
+        result = permission_service.grant_access(alice["id"], "no_project", "viewer")
         assert result is None
 
     def test_revoke_access(self):
         user_service.create_user("alice", "pass1")
         alice = user_service.get_user("alice")
         project_service.create_project("proj1")
-        permission_service.grant_access(alice["id"], "proj1", "write")
+        permission_service.grant_access(alice["id"], "proj1", "annotator")
 
         assert permission_service.revoke_access(alice["id"], "proj1") is True
         assert permission_service.can_access_project(alice["id"], "proj1") is False
@@ -83,12 +83,12 @@ class TestPermissionGrantRevoke:
         alice = user_service.get_user("alice")
         project_service.create_project("proj1")
 
-        permission_service.grant_access(alice["id"], "proj1", "read")
-        permission_service.grant_access(alice["id"], "proj1", "write")
+        permission_service.grant_access(alice["id"], "proj1", "viewer")
+        permission_service.grant_access(alice["id"], "proj1", "annotator")
 
         perms = permission_service.get_user_permissions(alice["id"])
         assert len(perms) == 1
-        assert perms[0]["role"] == "write"
+        assert perms[0]["role"] == "annotator"
 
 
 class TestPermissionQueries:
@@ -106,8 +106,8 @@ class TestPermissionQueries:
         alice = user_service.get_user("alice")
         project_service.create_project("proj1")
         project_service.create_project("proj2")
-        permission_service.grant_access(alice["id"], "proj1", "read")
-        permission_service.grant_access(alice["id"], "proj2", "write")
+        permission_service.grant_access(alice["id"], "proj1", "viewer")
+        permission_service.grant_access(alice["id"], "proj2", "annotator")
 
         perms = permission_service.get_user_permissions(alice["id"])
         assert len(perms) == 2
@@ -120,8 +120,8 @@ class TestPermissionQueries:
         alice = user_service.get_user("alice")
         bob = user_service.get_user("bob")
         project_service.create_project("proj1")
-        permission_service.grant_access(alice["id"], "proj1", "read")
-        permission_service.grant_access(bob["id"], "proj1", "write")
+        permission_service.grant_access(alice["id"], "proj1", "viewer")
+        permission_service.grant_access(bob["id"], "proj1", "annotator")
 
         perms = permission_service.get_project_permissions("proj1")
         assert len(perms) == 2
@@ -236,16 +236,16 @@ class TestPermissionAPI:
 
         resp = client.post('/api/projects/proj1/permissions', json={
             "user_id": alice["id"],
-            "role": "read"
+            "role": "viewer"
         })
         assert resp.status_code == 201
         data = resp.get_json()
-        assert data["permission"]["role"] == "read"
+        assert data["permission"]["role"] == "viewer"
 
     def test_grant_permission_no_user_id(self, client):
         self._login_admin(client)
         project_service.create_project("proj1")
-        resp = client.post('/api/projects/proj1/permissions', json={"role": "read"})
+        resp = client.post('/api/projects/proj1/permissions', json={"role": "viewer"})
         assert resp.status_code == 400
 
     def test_get_project_permissions(self, client):
@@ -253,7 +253,7 @@ class TestPermissionAPI:
         user_service.create_user("alice", "pass1")
         alice = user_service.get_user("alice")
         project_service.create_project("proj1")
-        permission_service.grant_access(alice["id"], "proj1", "write")
+        permission_service.grant_access(alice["id"], "proj1", "annotator")
 
         resp = client.get('/api/projects/proj1/permissions')
         assert resp.status_code == 200
@@ -275,7 +275,7 @@ class TestPermissionAPI:
         user_service.create_user("alice", "pass1")
         alice = user_service.get_user("alice")
         project_service.create_project("proj1")
-        permission_service.grant_access(alice["id"], "proj1", "write")
+        permission_service.grant_access(alice["id"], "proj1", "annotator")
 
         resp = client.get(f'/api/users/{alice["id"]}/permissions')
         assert resp.status_code == 200
@@ -366,8 +366,8 @@ class TestProjectAccessFiltering:
 
         user_service.create_user("alice", "pass123")
         alice = user_service.get_user("alice")
-        permission_service.grant_access(alice["id"], "proj1", "write")
-        permission_service.grant_access(alice["id"], "proj3", "read")
+        permission_service.grant_access(alice["id"], "proj1", "annotator")
+        permission_service.grant_access(alice["id"], "proj3", "viewer")
 
         with client.session_transaction() as sess:
             sess['is_admin'] = False

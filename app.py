@@ -163,8 +163,8 @@ def require_project_access(f):
 
 def require_write_access(f):
     """
-    Декоратор: проверяет доступ к проекту + что пользователь имеет 'write' роль.
-    С ролью 'read' — только просмотр, write запрещён.
+    Декоратор: проверяет доступ к проекту + что пользователь имеет право на запись.
+    viewer → только просмотр, annotator и project_admin → запись разрешена.
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -196,8 +196,37 @@ def require_write_access(f):
         user_id = session.get('user_id')
         if user_id:
             proj_role = permission_service.get_project_role(user_id, project_name)
-            if proj_role == 'read':
+            if proj_role == 'viewer':
                 return jsonify({'status': 'error', 'msg': 'Только просмотр'}), 403
+
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def require_project_admin(f):
+    """
+    Декоратор: проверяет что пользователь — project_admin (или app admin).
+    Нужно для: batch detect/recognize, загрузка/удаление изображений, импорт/экспорт.
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if is_admin():
+            return f(*args, **kwargs)
+
+        project_name = kwargs.get('project_name') or request.args.get('project')
+
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({'status': 'error', 'msg': 'Нет доступа'}), 403
+
+        if not project_name:
+            return jsonify({'status': 'error', 'msg': 'Нет доступа к проекту'}), 403
+
+        if not permission_service.can_access_project(user_id, project_name):
+            return jsonify({'status': 'error', 'msg': 'Нет доступа к проекту'}), 403
+
+        if not permission_service.can_manage_project(user_id, project_name):
+            return jsonify({'status': 'error', 'msg': 'Нужны права администратора проекта'}), 403
 
         return f(*args, **kwargs)
     return decorated_function
@@ -540,12 +569,8 @@ def crop():
 
 # --- API: Import/Export ---
 @app.route('/api/import_zip', methods=['POST'])
+@require_project_admin
 def import_zip_route():
-    # Admin only: import ZIP
-    if USE_AUTH and not is_admin():
-        logger.warning(f"[ZIP Import] Access denied: user={get_current_user() if USE_AUTH else 'anonymous'}")
-        return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
-
     try:
         logger.info("[ZIP Import] Request received")
         logger.debug(f"[ZIP Import] Form keys: {list(request.form.keys())}")
@@ -881,11 +906,11 @@ def image_status(project_name, filename):
 
     elif request.method == 'PUT':
         # Проверка write access через декоратор уже сделана, но для PUT status
-        # нужно проверить что пользователь не 'read' на уровне проекта
+        # нужно проверить что пользователь не 'viewer' на уровне проекта
         if USE_AUTH and not is_admin():
             user_id = session.get('user_id')
             proj_role = permission_service.get_project_role(user_id, sanitized_name) if user_id else None
-            if proj_role == 'read':
+            if proj_role == 'viewer':
                 return jsonify({'status': 'error', 'msg': 'Только просмотр'}), 403
         # Update status and/or comment
         data = request.json
@@ -929,7 +954,7 @@ def image_status(project_name, filename):
 
 
 @app.route('/api/projects/<project_name>/upload_images', methods=['POST'])
-@require_write_access
+@require_project_admin
 def upload_project_images(project_name):
     # Admin only: upload images
     if USE_AUTH and not is_admin():
@@ -984,7 +1009,7 @@ def upload_project_images(project_name):
 
 
 @app.route('/api/projects/<project_name>/export_zip')
-@require_project_access
+@require_project_admin
 def export_project_zip(project_name):
     # Sanitize project name to prevent path traversal
     sanitized_name = project_service._sanitize_name(project_name)
@@ -1003,7 +1028,7 @@ def export_project_zip(project_name):
 
 
 @app.route('/api/projects/<project_name>/export_pdf')
-@require_project_access
+@require_project_admin
 def export_project_pdf(project_name):
     # Sanitize project name to prevent path traversal
     sanitized_name = project_service._sanitize_name(project_name)
@@ -1042,7 +1067,7 @@ def export_project_pdf(project_name):
 
 
 @app.route('/api/projects/<project_name>/batch_detect', methods=['POST'])
-@require_write_access
+@require_project_admin
 def batch_detect(project_name):
     # Admin only: batch detection
     if USE_AUTH and not is_admin():
@@ -1119,7 +1144,7 @@ def batch_detect(project_name):
 
 
 @app.route('/api/projects/<project_name>/batch_recognize', methods=['POST'])
-@require_write_access
+@require_project_admin
 def batch_recognize(project_name):
     # Admin only: batch recognition
     if USE_AUTH and not is_admin():
@@ -1294,7 +1319,7 @@ def api_grant_project_permission(project_name):
     """Grant access to a user. Body: {user_id, role?}."""
     data = request.json
     user_id = data.get('user_id')
-    role = data.get('role', 'write')
+    role = data.get('role', 'annotator')
 
     if not user_id:
         return jsonify({'error': 'user_id обязателен'}), 400

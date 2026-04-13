@@ -193,7 +193,7 @@ class TestAuditLogFromAPI:
         alice = user_service.get_user("alice")
         resp = client.post('/api/projects/Proj1/permissions', json={
             'user_id': alice['id'],
-            'role': 'write'
+            'role': 'annotator'
         })
         assert resp.status_code == 201
         logs = audit_service.get_logs(action="grant_permission")
@@ -206,7 +206,7 @@ class TestAuditLogFromAPI:
         user_service.create_user("alice", "pass1")
         project_service.create_project("Proj1")
         alice = user_service.get_user("alice")
-        permission_service.grant_access(alice['id'], "Proj1", "write")
+        permission_service.grant_access(alice['id'], "Proj1", "annotator")
         resp = client.delete(f'/api/projects/Proj1/permissions/{alice["id"]}')
         assert resp.status_code == 200
         logs = audit_service.get_logs(action="revoke_permission")
@@ -337,7 +337,7 @@ class TestAccessAllowedWithPermission:
         project_service.create_project("Proj1")
         user_service.create_user("alice", "pass1")
         alice = user_service.get_user("alice")
-        permission_service.grant_access(alice['id'], "Proj1", "write")
+        permission_service.grant_access(alice['id'], "Proj1", "annotator")
 
         with client.session_transaction() as sess:
             sess['is_admin'] = False
@@ -357,7 +357,7 @@ class TestAccessAllowedWithPermission:
         project_service.create_project("Proj1")
         user_service.create_user("alice", "pass1")
         alice = user_service.get_user("alice")
-        permission_service.grant_access(alice['id'], "Proj1", "read")
+        permission_service.grant_access(alice['id'], "Proj1", "viewer")
 
         with client.session_transaction() as sess:
             sess['is_admin'] = False
@@ -414,7 +414,7 @@ class TestPageEndpointAccess:
         project_service.create_project("Proj1")
         user_service.create_user("alice", "pass1")
         alice = user_service.get_user("alice")
-        permission_service.grant_access(alice['id'], "Proj1", "write")
+        permission_service.grant_access(alice['id'], "Proj1", "annotator")
 
         with client.session_transaction() as sess:
             sess['is_admin'] = False
@@ -498,7 +498,7 @@ class TestPermissionIntegration:
         project_service.create_project("Proj1")
         user_service.create_user("alice", "pass1")
         alice = user_service.get_user("alice")
-        permission_service.grant_access(alice['id'], "Proj1", "write")
+        permission_service.grant_access(alice['id'], "Proj1", "annotator")
 
         with client.session_transaction() as sess:
             sess['is_admin'] = False
@@ -514,7 +514,7 @@ class TestPermissionIntegration:
         project_service.create_project("Proj1")
         user_service.create_user("alice", "pass1")
         alice = user_service.get_user("alice")
-        permission_service.grant_access(alice['id'], "Proj1", "write")
+        permission_service.grant_access(alice['id'], "Proj1", "annotator")
 
         with client.session_transaction() as sess:
             sess['is_admin'] = False
@@ -556,8 +556,8 @@ class TestPermissionIntegration:
         project_service.create_project("Proj3")
         user_service.create_user("alice", "pass1")
         alice = user_service.get_user("alice")
-        permission_service.grant_access(alice['id'], "Proj1", "read")
-        permission_service.grant_access(alice['id'], "Proj3", "write")
+        permission_service.grant_access(alice['id'], "Proj1", "viewer")
+        permission_service.grant_access(alice['id'], "Proj3", "annotator")
 
         with client.session_transaction() as sess:
             sess['is_admin'] = False
@@ -652,7 +652,7 @@ class TestFullWorkflow:
         worker = user_service.get_user("worker")
         resp = client.post('/api/projects/WorkflowTest/permissions', json={
             'user_id': worker['id'],
-            'role': 'write'
+            'role': 'annotator'
         })
         assert resp.status_code == 201
 
@@ -708,7 +708,7 @@ class TestFullWorkflow:
 
 
 class TestReadOnlyUser:
-    """User with project role='read' can only read, cannot write."""
+    """User with project role='viewer' can only read, cannot write."""
 
     def _login_read_user(self, client, username="reader"):
         user_service.create_user(username, "pass1")
@@ -723,7 +723,7 @@ class TestReadOnlyUser:
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
         user = self._login_read_user(client, "reader1")
-        permission_service.grant_access(user['id'], "Proj1", "read")
+        permission_service.grant_access(user['id'], "Proj1", "viewer")
 
         resp = client.get('/api/images_list?project=Proj1')
         assert resp.status_code == 200
@@ -732,7 +732,7 @@ class TestReadOnlyUser:
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
         user = self._login_read_user(client, "reader1")
-        permission_service.grant_access(user['id'], "Proj1", "read")
+        permission_service.grant_access(user['id'], "Proj1", "viewer")
 
         resp = client.post('/api/save?project=Proj1', json={
             'image_name': 'test.png',
@@ -747,7 +747,7 @@ class TestReadOnlyUser:
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
         user = self._login_read_user(client, "reader1")
-        permission_service.grant_access(user['id'], "Proj1", "read")
+        permission_service.grant_access(user['id'], "Proj1", "viewer")
 
         resp = client.put('/api/projects/Proj1/images/test.png/status', json={
             'status': 'reviewed'
@@ -760,7 +760,7 @@ class TestReadOnlyUser:
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
         user = self._login_read_user(client, "reader1")
-        permission_service.grant_access(user['id'], "Proj1", "read")
+        permission_service.grant_access(user['id'], "Proj1", "viewer")
 
         from io import BytesIO
         data = {'images': [(BytesIO(b'png'), 'test.png')]}
@@ -775,7 +775,7 @@ class TestReadOnlyUser:
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
         user = self._login_read_user(client, "reader1")
-        permission_service.grant_access(user['id'], "Proj1", "read")
+        permission_service.grant_access(user['id'], "Proj1", "viewer")
 
         resp = client.post('/api/projects/Proj1/batch_detect')
         assert resp.status_code == 403
@@ -784,7 +784,7 @@ class TestReadOnlyUser:
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
         user = self._login_read_user(client, "reader1")
-        permission_service.grant_access(user['id'], "Proj1", "read")
+        permission_service.grant_access(user['id'], "Proj1", "viewer")
 
         resp = client.post('/api/projects/Proj1/batch_recognize')
         assert resp.status_code == 403
@@ -794,7 +794,7 @@ class TestReadOnlyUser:
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
         user = self._login_read_user(client, "reader1")
-        permission_service.grant_access(user['id'], "Proj1", "read")
+        permission_service.grant_access(user['id'], "Proj1", "viewer")
 
         # Endpoint возвращает 200 (запуск фонового процесса), а не 403
         resp = client.post('/api/recognize_text', json={
@@ -811,7 +811,7 @@ class TestReadOnlyUser:
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
         user = self._login_read_user(client, "reader1")
-        permission_service.grant_access(user['id'], "Proj1", "read")
+        permission_service.grant_access(user['id'], "Proj1", "viewer")
 
         # @require_write_access блокирует без вызова ИИ
         resp = client.post('/api/detect_lines?project=Proj1', json={
@@ -827,7 +827,7 @@ class TestReadOnlyUser:
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
         user = self._login_read_user(client, "reader1")
-        permission_service.grant_access(user['id'], "Proj1", "read")
+        permission_service.grant_access(user['id'], "Proj1", "viewer")
 
         resp = client.post('/api/crop?project=Proj1', json={
             'image_name': 'test.png',

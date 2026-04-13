@@ -184,8 +184,9 @@
                 <div style="margin-bottom:15px; display:flex; gap:10px;">
                     <select id="perm-project" style="flex:1;"></select>
                     <select id="perm-role" style="min-width:120px;">
-                        <option value="read">Чтение</option>
-                        <option value="write">Запись</option>
+                        <option value="viewer">Зритель</option>
+                        <option value="annotator" selected>Аннотатор</option>
+                        <option value="project_admin">Администратор</option>
                     </select>
                     <button class="btn btn-primary" onclick="grantPermission()">Добавить</button>
                 </div>

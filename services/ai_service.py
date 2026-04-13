@@ -361,7 +361,7 @@ class AIService:
             from services.permission_service import permission_service
             proj_role = permission_service.get_project_role(user_id, project_name)
             print(f"[recognize_text] user_id={user_id}, project={project_name}, role={proj_role}")
-            if proj_role == 'read':
+            if proj_role == 'viewer':
                 can_save = False
 
         if can_save:
