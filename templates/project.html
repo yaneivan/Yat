@@ -860,14 +860,33 @@
     <script>
         // Export modal functions
         function openExportModal() {
-            document.getElementById('exportModal').style.display = 'flex';
+            const modal = document.getElementById('exportModal');
+            modal.classList.add('active');
+            modal.style.display = '';
         }
 
         function closeExportModal() {
-            document.getElementById('exportModal').style.display = 'none';
+            const modal = document.getElementById('exportModal');
+            modal.classList.remove('active');
+            modal.style.display = 'none';
+            // Remove Esc handler
+            document.removeEventListener('keydown', escHandler);
             // Restore original content
             document.querySelector('#exportModal .modal-content').innerHTML = getExportModalContent();
         }
+
+        function escHandler(e) {
+            if (e.key === 'Escape') {
+                closeExportModal();
+            }
+        }
+
+        // Переопределим openExportModal чтобы добавлял обработчик Esc
+        const _origOpenExport = openExportModal;
+        openExportModal = function() {
+            _origOpenExport();
+            document.addEventListener('keydown', escHandler);
+        };
 
         function getExportModalContent() {
             return `
