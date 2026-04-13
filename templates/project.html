@@ -41,6 +41,12 @@
             </div>
         </div>
 
+        {% if project_role == 'read' %}
+        <div class="read-only-banner">
+            ⚠️ Режим только чтения — изменения сохранять нельзя
+        </div>
+        {% endif %}
+
         {% if is_admin %}
         <div class="batch-actions">
         <!-- Batch Processing Block -->

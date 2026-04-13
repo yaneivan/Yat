@@ -41,12 +41,23 @@ if 'pytest' not in sys.modules:
     logger.info("Database initialized")
 
     # ── Seed admin user from env (first-run only) ──
-    # Creates admin if the users table is empty
     _admin_username = os.environ.get('ADMIN_USERNAME', 'admin')
     _admin_password = os.environ.get('ADMIN_PASSWORD', None)
     if _admin_password and not user_service.has_users():
         user_service.create_user(_admin_username, _admin_password, 'admin')
         logger.info(f"Seed admin user '{_admin_username}' created")
+
+
+def _get_project_role_for_template(project_name):
+    """Вернуть роль пользователя на проект для шаблонов."""
+    if not project_name:
+        return 'admin'
+    if is_admin():
+        return 'admin'
+    user_id = session.get('user_id')
+    if user_id:
+        return permission_service.get_project_role(user_id, project_name)
+    return None
 
 # Initialize AI models at startup
 if ai_service.is_trocr_available():
@@ -164,17 +175,33 @@ def require_write_access(f):
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        project_name = kwargs.get('project_name') or request.args.get('project')
-        if project_name and not check_project_access(project_name):
-            return jsonify({'status': 'error', 'msg': 'Нет доступа к проекту'}), 403
-
-        # Admin bypasses project-level role checks
+        # Admin bypasses all checks
         if is_admin():
             return f(*args, **kwargs)
 
+        # Ищем project_name: URL path → query param → JSON body
+        project_name = kwargs.get('project_name') or request.args.get('project')
+        if not project_name and request.is_json:
+            try:
+                data = request.get_json(cache=True)
+                if data:
+                    project_name = data.get('project')
+            except Exception:
+                pass
+
+        if not project_name:
+            # Нет проекта — обычный пользователь, проверяем сессию
+            user_id = session.get('user_id')
+            if not user_id:
+                return jsonify({'status': 'error', 'msg': 'Нет доступа'}), 403
+            return f(*args, **kwargs)
+
+        if not check_project_access(project_name):
+            return jsonify({'status': 'error', 'msg': 'Нет доступа к проекту'}), 403
+
         # Check project-level permission
         user_id = session.get('user_id')
-        if user_id and project_name:
+        if user_id:
             proj_role = permission_service.get_project_role(user_id, project_name)
             if proj_role == 'read':
                 return jsonify({'status': 'error', 'msg': 'Только просмотр'}), 403
@@ -302,7 +329,8 @@ def editor():
         return redirect(url_for('index'))
     if project_name and not check_project_access(project_name):
         abort(403)
-    return render_template('editor.html', filename=filename, project=project_name)
+    project_role = _get_project_role_for_template(project_name)
+    return render_template('editor.html', filename=filename, project=project_name, project_role=project_role)
 
 @app.route('/text_editor')
 def text_editor():
@@ -312,7 +340,8 @@ def text_editor():
         return redirect(url_for('index'))
     if project_name and not check_project_access(project_name):
         abort(403)
-    return render_template('text_editor.html', filename=filename, project=project_name)
+    project_role = _get_project_role_for_template(project_name)
+    return render_template('text_editor.html', filename=filename, project=project_name, project_role=project_role)
 
 @app.route('/cropper')
 def cropper():
@@ -325,7 +354,8 @@ def cropper():
     # Проверка существования файла
     if not image_service.get_original_path(filename, project_name):
         abort(404)
-    return render_template('cropper.html', filename=filename, project=project_name)
+    project_role = _get_project_role_for_template(project_name)
+    return render_template('cropper.html', filename=filename, project=project_name, project_role=project_role)
 
 # --- API: Images ---
 @app.route('/api/images_list')
@@ -558,6 +588,7 @@ def import_zip_route():
 
 # --- API: AI Operations ---
 @app.route('/api/detect_lines', methods=['POST'])
+@require_write_access
 def detect_lines():
     data = request.json
     filename = data.get('image_name')
@@ -583,6 +614,7 @@ def detect_lines():
 recognition_progress = {}
 
 @app.route('/api/recognize_text', methods=['POST'])
+@require_project_access
 def recognize_text():
     data = request.json
     filename = data.get('image_name')
@@ -608,6 +640,9 @@ def recognize_text():
     total_regions = len(regions)
     recognition_progress[validated] = {'processed': 0, 'total': total_regions, 'status': 'processing'}
 
+    # Сохраняем user_id ДО запуска thread (session недоступна в фоне)
+    current_user_id = session.get('user_id')
+
     # Async background processing
     def task():
         def update_progress(processed, total):
@@ -617,13 +652,16 @@ def recognize_text():
                 'status': 'processing'
             }
 
+        logger.info(f"[recognize_text thread] START: {validated}, regions={len(regions) if regions else 0}, project={project_name}")
         try:
-            ai_service.recognize_text(validated, regions, progress_callback=update_progress, project_name=project_name)
+            texts = ai_service.recognize_text(validated, regions, progress_callback=update_progress, project_name=project_name, user_id=current_user_id)
             recognition_progress[validated] = {
                 'processed': total_regions,
                 'total': total_regions,
-                'status': 'completed'
+                'status': 'completed',
+                'texts': texts  # Возвращаем тексты фронтенду
             }
+            logger.info(f"[recognize_text thread] COMPLETED: {validated}")
         except Exception as e:
             # При ошибке тоже очищаем запись
             recognition_progress[validated] = {
@@ -632,6 +670,7 @@ def recognize_text():
                 'status': 'failed',
                 'error': str(e)
             }
+            logger.error(f"[recognize_text thread] FAILED: {validated} - {e}", exc_info=True)
         finally:
             # 🔧 Очистка записи после завершения (предотвращает утечку памяти)
             # Даём клиенту время (5 секунд) прочитать финальный статус перед удалением
@@ -656,18 +695,24 @@ def recognize_progress(filename):
         validated,
         {'processed': 0, 'total': 0, 'status': 'not_started'}
     )
-    
+
     if progress_data['total'] > 0:
         percentage = int((progress_data['processed'] / progress_data['total']) * 100)
     else:
         percentage = 0
 
-    return jsonify({
+    result = {
         'status': progress_data['status'],
         'processed': progress_data['processed'],
         'total': progress_data['total'],
         'percentage': percentage
-    })
+    }
+
+    # Если есть распознанные тексты — вернём их клиенту
+    if 'texts' in progress_data:
+        result['texts'] = progress_data['texts']
+
+    return jsonify(result)
 
 # --- API: Projects ---
 @app.route('/api/projects', methods=['GET', 'POST'])
@@ -1407,7 +1452,14 @@ def project_page(project_name):
     images = project_service.get_images(sanitized_name)
     project_data['images'] = images
 
-    return render_template('project.html', project=project_data)
+    # Определяем роль пользователя на проект
+    project_role = 'admin' if is_admin() else None
+    if not project_role:
+        user_id = session.get('user_id')
+        if user_id:
+            project_role = permission_service.get_project_role(user_id, sanitized_name)
+
+    return render_template('project.html', project=project_data, project_role=project_role)
 
 
 # --- Error Handlers ---

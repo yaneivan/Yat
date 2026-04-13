@@ -2242,6 +2242,19 @@ body.error-page {
     min-height: 4px;
     transition: height 0.3s ease;
 }
+
+/* Read-only banner */
+.read-only-banner {
+    background: #fff3cd;
+    color: #856404;
+    padding: 10px 20px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 14px;
+    border: 1px solid #ffeeba;
+    margin: 10px 0;
+    border-radius: 6px;
+}
 .stat-bar-label {
     font-size: 11px;
     color: #555;

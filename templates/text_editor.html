@@ -33,6 +33,12 @@
         <span id="save-indicator" class="save-indicator" title="Ожидание изменений"></span>
     </div>
 
+    {% if project_role == 'read' %}
+    <div class="read-only-banner" style="margin:0; border-radius:0;">
+        ⚠️ Режим только чтения — изменения сохранять нельзя
+    </div>
+    {% endif %}
+
     <div id="workspace" class="text-editor">
         <div class="panel left">
             <div class="panel-title">Оригинальное изображение</div>

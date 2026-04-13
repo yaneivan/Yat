@@ -33,6 +33,12 @@
     <span id="status-badge" class="status-badge" onclick="statusWidget.openPopover()" style="cursor:pointer; padding:4px 8px; border-radius:4px; font-size:0.85em; font-weight:600; margin-left:10px;">Загрузка...</span>
 </div>
 
+{% if project_role == 'read' %}
+<div class="read-only-banner" style="margin:0; border-radius:0;">
+    ⚠️ Режим только чтения — изменения сохранять нельзя
+</div>
+{% endif %}
+
 <div id="workspace">
     <canvas id="c"></canvas>
 </div>

@@ -545,6 +545,82 @@ class TextEditor {
         });
     }
 
+    applyRecognizedTexts(recognizedTexts) {
+        /**
+         * Применит распознанные тексты к интерфейсу без сохранения в БД.
+         * recognizedTexts: { region_index: "text" } — оригинальные индексы.
+         */
+        console.log('[applyRecognizedTexts] Applying texts:', recognizedTexts);
+
+        // Загружаем annotation чтобы получить оригинальные регионы
+        API.loadAnnotation(this.filename, this.project).then(data => {
+            const originalRegions = data.regions || [];
+
+            // Сортируем регионы (как это делает loadRegions)
+            const sortedRegions = this.sortRegionsTopToBottom([...originalRegions]);
+
+            // Создаём маппинг: original index -> sorted index
+            const origToSorted = new Map();
+            for (let sortedIdx = 0; sortedIdx < sortedRegions.length; sortedIdx++) {
+                const sortedRegion = sortedRegions[sortedIdx];
+                for (let origIdx = 0; origIdx < originalRegions.length; origIdx++) {
+                    if (this.regionsAreEqual(sortedRegion, originalRegions[origIdx])) {
+                        origToSorted.set(origIdx, sortedIdx);
+                        break;
+                    }
+                }
+            }
+
+            // Применяем тексты к this.texts
+            this.texts = {};
+            for (const [origIdxStr, text] of Object.entries(recognizedTexts)) {
+                const origIdx = parseInt(origIdxStr, 10);
+                const sortedIdx = origToSorted.get(origIdx);
+                if (sortedIdx !== undefined) {
+                    this.texts[sortedIdx] = text;
+                }
+            }
+
+            // Применяем тексты к UI
+            this.regions.forEach((region, index) => {
+                const textContent = this.texts[index] || '';
+
+                // Левый канвас — обновим цвет полигона
+                const leftPoly = this.leftCanvas.getObjects().find(obj => obj.index === index);
+                if (leftPoly) {
+                    leftPoly.set({ hasText: textContent !== '', textContent: textContent });
+                    if (textContent) {
+                        leftPoly.set({ fill: 'rgba(0, 128, 0, 0.3)', stroke: '#00cc66' });
+                    } else {
+                        leftPoly.set({ fill: 'rgba(0, 255, 0, 0.2)', stroke: 'green' });
+                    }
+                }
+
+                // Правый канвас — белый фон + текст
+                const rightPoly = this.rightCanvas.getObjects().find(obj => obj.index === index);
+                if (rightPoly) {
+                    rightPoly.set({ hasText: textContent !== '', textContent: textContent });
+                    if (textContent) {
+                        rightPoly.set({ fill: 'rgba(255, 255, 255, 1.0)', stroke: '#0066ff' });
+                        this.updatePolygonText(rightPoly, textContent);
+                    } else {
+                        rightPoly.set({ fill: 'rgba(0, 0, 255, 0.2)', stroke: 'blue' });
+                        this.updatePolygonText(rightPoly, '');
+                    }
+                }
+            });
+
+            this.leftCanvas.requestRenderAll();
+            this.rightCanvas.requestRenderAll();
+
+            // Уведомление
+            const count = Object.keys(this.texts).length;
+            console.log(`[applyRecognizedTexts] Applied ${count} texts. Кликните на регион чтобы увидеть текст.`);
+        }).catch(err => {
+            console.error('[applyRecognizedTexts] Error:', err);
+        });
+    }
+
     async loadTextData(originalRegions = null) {
         try {
             const data = await API.loadAnnotation(this.filename, this.project);
@@ -1848,10 +1924,8 @@ class TextEditor {
             };
 
             const resp = await API.saveAnnotationWithTexts(this.filename, saveData.regions, saveData.texts, this.project);
-            if (!resp.ok) {
-                const data = await resp.json().catch(() => ({}));
-                throw new Error(data.msg || data.error || `HTTP ${resp.status}`);
-            }
+            // API.saveAnnotationWithTexts возвращает JSON объект, не Response
+            // Если ошибка — catch уже бросил Error внутри функции
 
             // Show saved indicator
             this.setSaveIndicator('saved');
@@ -1938,17 +2012,23 @@ class TextEditor {
                 if (progress.status === 'completed') {
                     // Recognition complete, update UI
                     btn.textContent = '✓ Распознано';
-                    
-                    // Update the local texts data
-                    const data = await API.loadAnnotation(this.filename, this.project);
-                    // Load the text data with the original regions to map correctly to sorted order
-                    const originalData = await API.loadAnnotation(this.filename, this.project);
-                    const originalRegions = originalData.regions || [];
-                    this.loadTextData(originalRegions);
 
-                    // Auto-save after recognition is complete
-                    this.autoSave();
-                    
+                    // Если есть тексты из распознавания — покажем их
+                    if (progress.texts && Object.keys(progress.texts).length > 0) {
+                        console.log('[recognizeText] Got texts from server:', progress.texts);
+                        this.applyRecognizedTexts(progress.texts);
+                    } else {
+                        console.log('[recognizeText] No texts in response, loading from DB');
+                        // Fallback: загрузим из БД (для пользователей с write правами)
+                        const originalData = await API.loadAnnotation(this.filename, this.project);
+                        const originalRegions = originalData.regions || [];
+                        this.loadTextData(originalRegions);
+                    }
+
+                    // НЕ сохраняем автоматически — текст только отображается
+                    // Пользователь с правами write сохранит вручную
+                    this.setSaveIndicator('idle');
+
                     // Разблокируем кнопку через 2 секунды
                     setTimeout(() => {
                         btn.disabled = false;

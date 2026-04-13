@@ -788,3 +788,51 @@ class TestReadOnlyUser:
 
         resp = client.post('/api/projects/Proj1/batch_recognize')
         assert resp.status_code == 403
+
+    def test_read_user_can_start_recognition(self, client, monkeypatch):
+        """Read-only пользователь может запустить распознавание (ИИ работает)."""
+        monkeypatch.setattr("app.USE_AUTH", True)
+        project_service.create_project("Proj1")
+        user = self._login_read_user(client, "reader1")
+        permission_service.grant_access(user['id'], "Proj1", "read")
+
+        # Endpoint возвращает 200 (запуск фонового процесса), а не 403
+        resp = client.post('/api/recognize_text', json={
+            'image_name': 'test.png',
+            'regions': [],
+            'project': 'Proj1'
+        })
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['status'] == 'success'
+
+    def test_read_user_cannot_detect_lines(self, client, monkeypatch):
+        """Read-only пользователь НЕ может запустить авто-разметку."""
+        monkeypatch.setattr("app.USE_AUTH", True)
+        project_service.create_project("Proj1")
+        user = self._login_read_user(client, "reader1")
+        permission_service.grant_access(user['id'], "Proj1", "read")
+
+        # @require_write_access блокирует без вызова ИИ
+        resp = client.post('/api/detect_lines?project=Proj1', json={
+            'image_name': 'test.png',
+            'settings': {}
+        })
+        assert resp.status_code == 403
+        data = resp.get_json()
+        assert 'просмотр' in data['msg'].lower()
+
+    def test_read_user_cannot_crop(self, client, monkeypatch):
+        """Read-only пользователь НЕ может кадрировать."""
+        monkeypatch.setattr("app.USE_AUTH", True)
+        project_service.create_project("Proj1")
+        user = self._login_read_user(client, "reader1")
+        permission_service.grant_access(user['id'], "Proj1", "read")
+
+        resp = client.post('/api/crop?project=Proj1', json={
+            'image_name': 'test.png',
+            'box': [0, 0, 100, 100]
+        })
+        assert resp.status_code == 403
+        data = resp.get_json()
+        assert 'просмотр' in data['msg'].lower()

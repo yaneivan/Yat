@@ -30,7 +30,7 @@
     <div class="main-content">
         <div class="dashboard-container">
             <div class="header">
-                <h1>📊 Статистика работы</h1>
+                <h1>Статистика работы</h1>
             </div>
             <div id="stats-content">Загрузка...</div>
         </div>
@@ -80,14 +80,13 @@
 
             html += '<h2>Детализация</h2>';
             html += '<table style="width:100%; border-collapse:collapse;">';
-            html += '<tr style="background:#333; color:white;"><th style="padding:8px; text-align:left;">Пользователь</th><th style="padding:8px;">Роль</th><th style="padding:8px;">Всего действий</th><th style="padding:8px;">По типам</th></tr>';
+            html += '<tr style="background:#333; color:white;"><th style="padding:8px; text-align:left;">Пользователь</th><th style="padding:8px;">Всего действий</th><th style="padding:8px;">По типам</th></tr>';
             for (const entry of userStats) {
                 const u = entry.user;
                 const s = entry.stats;
                 const byAction = Object.entries(s.by_action || {}).map(([k, v]) => `${k}: ${v}`).join(', ') || '—';
                 html += `<tr style="border-bottom:1px solid #ddd;">
                     <td style="padding:8px;">${u.username}</td>
-                    <td style="padding:8px; text-align:center;">${u.role}</td>
                     <td style="padding:8px; text-align:center;">${s.total_actions || 0}</td>
                     <td style="padding:8px; font-size:12px;">${byAction}</td>
                 </tr>`;
