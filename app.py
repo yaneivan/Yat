@@ -44,8 +44,11 @@ if 'pytest' not in sys.modules:
     _admin_username = os.environ.get('ADMIN_USERNAME', 'admin')
     _admin_password = os.environ.get('ADMIN_PASSWORD', None)
     if _admin_password and not user_service.has_users():
-        user_service.create_user(_admin_username, _admin_password, 'admin')
-        logger.info(f"Seed admin user '{_admin_username}' created")
+        result = user_service.create_user(_admin_username, _admin_password, is_admin=True)
+        if result:
+            logger.info(f"Seed admin user '{_admin_username}' created")
+        else:
+            logger.error(f"Failed to create seed admin user '{_admin_username}'")
 
 
 def _get_project_role_for_template(project_name):
