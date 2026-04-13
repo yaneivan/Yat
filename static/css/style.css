@@ -953,6 +953,7 @@ body.dashboard {
     gap: 6px;
     flex: 1;
     min-width: 0;
+    flex-wrap: wrap;
 }
 
 .image-title-row .select-checkbox {
