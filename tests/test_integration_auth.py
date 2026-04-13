@@ -806,21 +806,20 @@ class TestReadOnlyUser:
         data = resp.get_json()
         assert data['status'] == 'success'
 
-    def test_read_user_cannot_detect_lines(self, client, monkeypatch):
-        """Read-only пользователь НЕ может запустить авто-разметку."""
+    def test_read_user_can_detect_lines(self, client, monkeypatch):
+        """Read-only пользователь МОЖЕТ запустить авто-разметку (но НЕ сохранит)."""
         monkeypatch.setattr("app.USE_AUTH", True)
         project_service.create_project("Proj1")
         user = self._login_read_user(client, "reader1")
         permission_service.grant_access(user['id'], "Proj1", "viewer")
 
-        # @require_write_access блокирует без вызова ИИ
+        # Зритель может вызвать detect_lines, но не может сохранить результат
         resp = client.post('/api/detect_lines?project=Proj1', json={
             'image_name': 'test.png',
             'settings': {}
         })
-        assert resp.status_code == 403
-        data = resp.get_json()
-        assert 'просмотр' in data['msg'].lower()
+        # Вернёт 500 (файла нет) или 200 — но НЕ 403
+        assert resp.status_code != 403
 
     def test_read_user_cannot_crop(self, client, monkeypatch):
         """Read-only пользователь НЕ может кадрировать."""

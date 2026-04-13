@@ -606,7 +606,7 @@ def import_zip_route():
 
 # --- API: AI Operations ---
 @app.route('/api/detect_lines', methods=['POST'])
-@require_write_access
+@require_project_access
 def detect_lines():
     data = request.json
     filename = data.get('image_name')
