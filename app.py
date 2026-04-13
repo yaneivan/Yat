@@ -860,7 +860,8 @@ def project_images(project_name):
         # project_admin or app admin can remove images
         if USE_AUTH and not is_admin():
             user_id = session.get('user_id')
-            if not user_id or not permission_service.can_manage_project(user_id, sanitized_name):
+            role = permission_service.get_project_role(user_id, sanitized_name) if user_id else None
+            if not user_id or role != 'project_admin':
                 return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
         
         data = request.json
