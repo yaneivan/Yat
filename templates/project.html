@@ -295,16 +295,28 @@
             document.querySelectorAll('input[name="batchMode"]').forEach(r => r.checked = false);
             
             // Show modal
-            document.getElementById('batchModal').style.display = 'flex';
+            const modal = document.getElementById('batchModal');
+            modal.classList.add('active');
+            modal.style.display = '';
+            document.addEventListener('keydown', batchEscHandler);
         }
-        
+
         function selectBatchOption(option) {
             batchMode = option;
             document.getElementById(`batchMode${option.charAt(0).toUpperCase() + option.slice(1)}`).checked = true;
         }
-        
+
         function closeBatchModal() {
-            document.getElementById('batchModal').style.display = 'none';
+            const modal = document.getElementById('batchModal');
+            modal.classList.remove('active');
+            modal.style.display = 'none';
+            document.removeEventListener('keydown', batchEscHandler);
+        }
+
+        function batchEscHandler(e) {
+            if (e.key === 'Escape') {
+                closeBatchModal();
+            }
         }
         
         function confirmBatchProcessing() {
@@ -994,11 +1006,23 @@
 
         // Import modal functions
         function openImportModal() {
-            document.getElementById('importModal').style.display = 'flex';
+            const modal = document.getElementById('importModal');
+            modal.classList.add('active');
+            modal.style.display = '';
+            document.addEventListener('keydown', importEscHandler);
         }
 
         function closeImportModal() {
-            document.getElementById('importModal').style.display = 'none';
+            const modal = document.getElementById('importModal');
+            modal.classList.remove('active');
+            modal.style.display = 'none';
+            document.removeEventListener('keydown', importEscHandler);
+        }
+
+        function importEscHandler(e) {
+            if (e.key === 'Escape') {
+                closeImportModal();
+            }
         }
 
         async function submitZipImport() {
