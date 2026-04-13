@@ -17,9 +17,12 @@
             </div>
             <div class="nav-actions">
                 {% if USE_AUTH %}
-                <span class="user-role-badge" style="margin-right:15px;font-size:0.85em;padding:4px 8px;background:{% if is_admin %}#28a745{% else %}#17a2b8{% endif %};color:white;border-radius:4px;">
-                    {% if is_admin %}👤 Admin{% else %}👤 User{% endif %}
+                <span class="user-role-badge" style="margin-right:15px;font-size:0.85em;padding:4px 8px;background:{% if is_admin %}#28a745{% else %}#17a2b8{% endif %};color:white;border-radius:4px;cursor:pointer;display:inline-flex;align-items:center;vertical-align:middle;" onclick="openChangePasswordModal()" title="Сменить пароль">
+                    {{ current_username or 'User' }}
                 </span>
+                {% if is_admin %}
+                <a href="#" onclick="openUserManagement()" style="color:#ffc107;">Пользователи</a>
+                {% endif %}
                 <a href="/logout" style="color:#dc3545;">Выйти</a>
                 {% endif %}
                 {% if is_admin %}
@@ -52,6 +55,7 @@
                     <h2>Проекты</h2>
                     <div style="display: flex; gap: 10px;">
                         {% if is_admin %}
+                        <a href="/stats" class="btn" style="background:#17a2b8; color:white; text-decoration:none; padding:8px 16px; border-radius:4px;">📊 Статистика</a>
                         <button class="btn create-project-btn" onclick="openCreateProjectModal()">+ Создать проект</button>
                         {% endif %}
                     </div>
@@ -123,5 +127,120 @@
 
     <script src="/static/js/api.js"></script>
     <script src="/static/js/project_manager.js"></script>
+
+    <!-- User Management Modal -->
+    <div id="userManagementModal" class="modal">
+        <div class="modal-content" style="width: 90%; max-width: 1000px; max-height: 85vh;">
+            <div class="modal-header">
+                <h2>Управление пользователями</h2>
+                <span class="close" onclick="closeUserManagement()">&times;</span>
+            </div>
+            <div class="modal-body" style="overflow-y: auto; max-height: calc(85vh - 120px);">
+                <!-- Create user form -->
+                <div style="background:#f5f5f5; padding:15px; border-radius:8px; margin-bottom:20px;">
+                    <h3 style="margin-top:0;">Создать пользователя</h3>
+                    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+                        <div style="flex:1; min-width:150px;">
+                            <label style="font-size:12px;">Имя пользователя</label>
+                            <input type="text" id="new-username" placeholder="Имя пользователя" style="width:100%;">
+                        </div>
+                        <div style="flex:1; min-width:150px;">
+                            <label style="font-size:12px;">Пароль</label>
+                            <input type="password" id="new-password" placeholder="Пароль" style="width:100%;">
+                        </div>
+                        <div style="display:flex; align-items:center; gap:5px;">
+                            <input type="checkbox" id="new-is-admin">
+                            <label for="new-is-admin" style="font-size:13px;">Админ</label>
+                        </div>
+                        <button class="btn btn-primary" onclick="createUser()">Создать</button>
+                    </div>
+                </div>
+
+                <!-- Users list -->
+                <table id="users-table" style="width:100%; border-collapse:collapse;">
+                    <thead>
+                        <tr style="background:#333; color:white;">
+                            <th style="padding:10px; text-align:left;">ID</th>
+                            <th style="padding:10px; text-align:left;">Имя</th>
+                            <th style="padding:10px; text-align:left;">Тип</th>
+                            <th style="padding:10px; text-align:left;">Права на проекты</th>
+                            <th style="padding:10px; text-align:center;">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Permissions Modal -->
+    <div id="userPermissionsModal" class="modal">
+        <div class="modal-content" style="width: 70%; max-width: 600px;">
+            <div class="modal-header">
+                <h2 id="perms-title">Права пользователя</h2>
+                <span class="close" onclick="closeUserPermissions()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom:15px; display:flex; gap:10px;">
+                    <select id="perm-project" style="flex:1;"></select>
+                    <select id="perm-role" style="min-width:120px;">
+                        <option value="viewer">Зритель</option>
+                        <option value="annotator" selected>Аннотатор</option>
+                        <option value="project_admin">Администратор</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="grantPermission()">Добавить</button>
+                </div>
+                <ul id="perms-list" style="list-style:none; padding:0;"></ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Change Password Modal (self) -->
+    <div id="changePasswordModal" class="modal">
+        <div class="modal-content" style="width: 400px;">
+            <div class="modal-header">
+                <h2>🔑 Сменить пароль</h2>
+                <span class="close" onclick="closeChangePassword()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Текущий пароль:</label>
+                    <input type="password" id="cp-current" placeholder="Текущий пароль">
+                </div>
+                <div class="form-group">
+                    <label>Новый пароль:</label>
+                    <input type="password" id="cp-new" placeholder="Новый пароль">
+                </div>
+                <div class="form-group">
+                    <label>Повторить:</label>
+                    <input type="password" id="cp-confirm" placeholder="Повторите новый пароль">
+                </div>
+                <div id="cp-error" style="color:red; display:none; margin-bottom:10px;"></div>
+                <div class="form-actions">
+                    <button class="btn btn-primary" onclick="changePassword()" style="width:100%;">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Reset Password Modal -->
+    <div id="adminResetPasswordModal" class="modal">
+        <div class="modal-content" style="width: 400px;">
+            <div class="modal-header">
+                <h2 id="rp-title">Сбросить пароль</h2>
+                <span class="close" onclick="closeAdminResetPassword()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Новый пароль:</label>
+                    <input type="password" id="rp-new" placeholder="Введите новый пароль">
+                </div>
+                <div id="rp-error" style="color:red; display:none; margin-bottom:10px;"></div>
+                <div class="form-actions">
+                    <button class="btn btn-primary" onclick="adminResetPassword()" style="width:100%;">Сбросить</button>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

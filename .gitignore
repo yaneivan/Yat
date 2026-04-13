@@ -15,3 +15,4 @@ database.db
 /database/repository/__pycache__
 /services/__pycache__
 .env
+.qwen/

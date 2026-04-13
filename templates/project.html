@@ -17,7 +17,7 @@
                 <a href="/project/{{ project.name }}" class="active">Текущий проект</a>
             </div>
             <div class="nav-actions">
-                {% if is_admin %}
+                {% if is_admin or project_role == 'project_admin' %}
                 <a href="#" onclick="openImportModal()">Импорт</a>
                 {% endif %}
                 <a href="#" onclick="openExportModal()">Экспорт</a>
@@ -31,7 +31,9 @@
                 <div>
                     <div class="project-title-container">
                         <h1 class="project-title" id="project-title" data-original-name="{{ project.name }}">{{ project.name }}</h1>
+                        {% if is_admin or project_role == 'project_admin' %}
                         <button class="btn btn-icon" onclick="editProjectInfo()" title="Редактировать проект" style="vertical-align: middle; margin-left: 10px; font-size: 0.8em;">✏️</button>
+                        {% endif %}
                     </div>
                     <p id="project-description">{{ project.description or 'Без описания' }}</p>
                     <div class="project-stats">
@@ -41,7 +43,13 @@
             </div>
         </div>
 
-        {% if is_admin %}
+        {% if project_role == 'viewer' %}
+        <div class="read-only-banner">
+            ⚠️ Режим только чтения — изменения сохранять нельзя
+        </div>
+        {% endif %}
+
+        {% if is_admin or project_role == 'project_admin' %}
         <div class="batch-actions">
         <!-- Batch Processing Block -->
         <div class="batch-block">
@@ -76,7 +84,7 @@
         </div>
         {% endif %}
 
-        {% if is_admin %}
+        {% if is_admin or project_role == 'project_admin' %}
         <div class="drop-area" id="dropArea">
             <p>Перетащите изображения сюда или нажмите для выбора</p>
             <div class="upload-spinner">⏳ Загрузка...</div>
@@ -91,7 +99,7 @@
                 <div class="image-meta">
                     <div class="image-info">
                         <div class="image-title-row">
-                            {% if is_admin %}
+                            {% if is_admin or project_role == 'project_admin' %}
                             <input type="checkbox" class="select-checkbox" data-image="{{ image.filename }}">
                             {% endif %}
                             <span class="image-name" title="{{ image.filename }}">{{ image.filename }}</span>
@@ -146,41 +154,42 @@
         // File upload functionality
         const dropArea = document.getElementById('dropArea');
         const fileInput = document.getElementById('fileInput');
-        
-        dropArea.addEventListener('click', () => {
-            fileInput.click();
-        });
-        
-        fileInput.addEventListener('change', handleFileSelect);
-        
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            dropArea.addEventListener(eventName, preventDefaults, false);
-        });
-        
-        function preventDefaults(e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
-        
-        ['dragenter', 'dragover'].forEach(eventName => {
-            dropArea.addEventListener(eventName, highlight, false);
-        });
-        
-        ['dragleave', 'drop'].forEach(eventName => {
-            dropArea.addEventListener(eventName, unhighlight, false);
-        });
-        
-        function highlight() {
-            dropArea.classList.add('highlight');
-        }
-        
-        function unhighlight() {
-            dropArea.classList.remove('highlight');
-        }
-        
-        dropArea.addEventListener('drop', handleDrop, false);
-        
-        function handleDrop(e) {
+
+        if (dropArea && fileInput) {
+            dropArea.addEventListener('click', () => {
+                fileInput.click();
+            });
+
+            fileInput.addEventListener('change', handleFileSelect);
+
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, preventDefaults, false);
+            });
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropArea.addEventListener(eventName, highlight, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, unhighlight, false);
+            });
+
+            function highlight() {
+                dropArea.classList.add('highlight');
+            }
+
+            function unhighlight() {
+                dropArea.classList.remove('highlight');
+            }
+
+            dropArea.addEventListener('drop', handleDrop, false);
+
+            function handleDrop(e) {
             const dt = e.dataTransfer;
             const files = dt.files;
             handleFiles(files);
@@ -235,7 +244,8 @@
                 dropArea.classList.remove('uploading');
             }
         }
-        
+        }  // if (dropArea && fileInput)
+
         function showNotification(message, type) {
             const notification = document.createElement('div');
             notification.className = `notification ${type}`;
@@ -285,16 +295,28 @@
             document.querySelectorAll('input[name="batchMode"]').forEach(r => r.checked = false);
             
             // Show modal
-            document.getElementById('batchModal').style.display = 'flex';
+            const modal = document.getElementById('batchModal');
+            modal.classList.add('active');
+            modal.style.display = '';
+            document.addEventListener('keydown', batchEscHandler);
         }
-        
+
         function selectBatchOption(option) {
             batchMode = option;
             document.getElementById(`batchMode${option.charAt(0).toUpperCase() + option.slice(1)}`).checked = true;
         }
-        
+
         function closeBatchModal() {
-            document.getElementById('batchModal').style.display = 'none';
+            const modal = document.getElementById('batchModal');
+            modal.classList.remove('active');
+            modal.style.display = 'none';
+            document.removeEventListener('keydown', batchEscHandler);
+        }
+
+        function batchEscHandler(e) {
+            if (e.key === 'Escape') {
+                closeBatchModal();
+            }
         }
         
         function confirmBatchProcessing() {
@@ -854,14 +876,33 @@
     <script>
         // Export modal functions
         function openExportModal() {
-            document.getElementById('exportModal').style.display = 'flex';
+            const modal = document.getElementById('exportModal');
+            modal.classList.add('active');
+            modal.style.display = '';
         }
 
         function closeExportModal() {
-            document.getElementById('exportModal').style.display = 'none';
+            const modal = document.getElementById('exportModal');
+            modal.classList.remove('active');
+            modal.style.display = 'none';
+            // Remove Esc handler
+            document.removeEventListener('keydown', escHandler);
             // Restore original content
             document.querySelector('#exportModal .modal-content').innerHTML = getExportModalContent();
         }
+
+        function escHandler(e) {
+            if (e.key === 'Escape') {
+                closeExportModal();
+            }
+        }
+
+        // Переопределим openExportModal чтобы добавлял обработчик Esc
+        const _origOpenExport = openExportModal;
+        openExportModal = function() {
+            _origOpenExport();
+            document.addEventListener('keydown', escHandler);
+        };
 
         function getExportModalContent() {
             return `
@@ -965,11 +1006,23 @@
 
         // Import modal functions
         function openImportModal() {
-            document.getElementById('importModal').style.display = 'flex';
+            const modal = document.getElementById('importModal');
+            modal.classList.add('active');
+            modal.style.display = '';
+            document.addEventListener('keydown', importEscHandler);
         }
 
         function closeImportModal() {
-            document.getElementById('importModal').style.display = 'none';
+            const modal = document.getElementById('importModal');
+            modal.classList.remove('active');
+            modal.style.display = 'none';
+            document.removeEventListener('keydown', importEscHandler);
+        }
+
+        function importEscHandler(e) {
+            if (e.key === 'Escape') {
+                closeImportModal();
+            }
         }
 
         async function submitZipImport() {

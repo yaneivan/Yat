@@ -15,7 +15,7 @@ class ImageStatus(str, Enum):
 
 class TaskStatus(str, Enum):
     """Status values for background tasks."""
-    
+
     PENDING = 'pending'     # Task created, waiting to start
     RUNNING = 'running'     # Task is executing
     COMPLETED = 'completed' # Task finished successfully

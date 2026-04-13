@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>Статистика — Yat</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="dashboard">
+    <div class="nav-header">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="/">Yat</a>
+            </div>
+            <div class="nav-links">
+                <a href="/">Проекты</a>
+                <a href="/stats" class="active">Статистика</a>
+            </div>
+            <div class="nav-actions">
+                {% if USE_AUTH %}
+                <span class="user-role-badge" style="margin-right:15px;font-size:0.85em;padding:4px 8px;background:{% if is_admin %}#28a745{% else %}#17a2b8{% endif %};color:white;border-radius:4px;cursor:pointer;" onclick="window.location.href='/'" title="На главную">
+                    {% if is_admin %}👤 Admin{% else %}👤 {{ user_role }}{% endif %}
+                </span>
+                <a href="/logout" style="color:#dc3545;">Выйти</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="dashboard-container">
+            <div class="header">
+                <h1>Статистика работы</h1>
+            </div>
+            <div id="stats-content">Загрузка...</div>
+        </div>
+    </div>
+
+    <script src="/static/js/api.js"></script>
+    <script>
+    async function loadStats() {
+        const container = document.getElementById('stats-content');
+
+        try {
+            const usersResp = await fetch('/api/users');
+            const usersData = await usersResp.json();
+            const users = usersData.users || [];
+
+            if (users.length === 0) {
+                container.innerHTML = '<p>Нет пользователей для отображения статистики.</p>';
+                return;
+            }
+
+            const userStats = await Promise.all(users.map(async (user) => {
+                try {
+                    const resp = await fetch(`/api/audit/stats/${user.id}`);
+                    const data = await resp.json();
+                    return { user, stats: data.stats };
+                } catch {
+                    return { user, stats: { total_actions: 0, by_action: {}, by_entity_type: {} } };
+                }
+            }));
+
+            userStats.sort((a, b) => (b.stats.total_actions || 0) - (a.stats.total_actions || 0));
+            const maxActions = Math.max(1, ...userStats.map(u => u.stats.total_actions || 0));
+
+            let html = '<h2>Рейтинг по активности</h2>';
+            html += '<div class="stat-bar-container">';
+            for (const entry of userStats) {
+                const total = entry.stats.total_actions || 0;
+                const height = Math.max(4, (total / maxActions) * 170);
+                html += `
+                    <div class="stat-bar-item">
+                        <div class="stat-bar-value">${total}</div>
+                        <div class="stat-bar-fill" style="height:${height}px;"></div>
+                        <div class="stat-bar-label">${entry.user.username}</div>
+                    </div>`;
+            }
+            html += '</div>';
+
+            html += '<h2>Детализация</h2>';
+            html += '<table style="width:100%; border-collapse:collapse;">';
+            html += '<tr style="background:#333; color:white;"><th style="padding:8px; text-align:left;">Пользователь</th><th style="padding:8px;">Всего действий</th><th style="padding:8px;">По типам</th></tr>';
+            for (const entry of userStats) {
+                const u = entry.user;
+                const s = entry.stats;
+                const byAction = Object.entries(s.by_action || {}).map(([k, v]) => `${k}: ${v}`).join(', ') || '—';
+                html += `<tr style="border-bottom:1px solid #ddd;">
+                    <td style="padding:8px;">${u.username}</td>
+                    <td style="padding:8px; text-align:center;">${s.total_actions || 0}</td>
+                    <td style="padding:8px; font-size:12px;">${byAction}</td>
+                </tr>`;
+            }
+            html += '</table>';
+
+            const logsResp = await fetch('/api/audit?limit=50');
+            const logsData = await logsResp.json();
+            if (logsData.logs && logsData.logs.length > 0) {
+                html += '<h2 style="margin-top:20px;">Последние действия</h2>';
+                html += '<table style="width:100%; border-collapse:collapse;">';
+                html += '<tr style="background:#333; color:white;"><th style="padding:8px; text-align:left;">Время</th><th style="padding:8px; text-align:left;">Кто</th><th style="padding:8px;">Действие</th><th style="padding:8px;">Объект</th><th style="padding:8px;">Описание</th></tr>';
+                for (const log of logsData.logs) {
+                    const time = log.created_at ? log.created_at.replace('T', ' ').substring(0, 19) : '—';
+                    html += `<tr style="border-bottom:1px solid #ddd;">
+                        <td style="padding:6px; font-size:12px;">${time}</td>
+                        <td style="padding:6px;">${log.username || '—'}</td>
+                        <td style="padding:6px; text-align:center;">${log.action}</td>
+                        <td style="padding:6px; font-size:12px;">${log.entity_type} #${log.entity_id || '—'}</td>
+                        <td style="padding:6px; font-size:12px;">${log.details || '—'}</td>
+                    </tr>`;
+                }
+                html += '</table>';
+            }
+
+            container.innerHTML = html;
+        } catch (e) {
+            container.innerHTML = `<p style="color:red;">Ошибка загрузки статистики: ${e.message}</p>`;
+        }
+    }
+
+    loadStats();
+    </script>
+</body>
+</html>

@@ -6,6 +6,7 @@ with lazy initialization and model caching.
 """
 
 import os
+import logging
 import threading
 from typing import Dict, List, Any, Optional, Callable
 
@@ -26,6 +27,8 @@ try:
 except ImportError:
     TROCR_AVAILABLE = False
     Image = None
+
+logger = logging.getLogger(__name__)
 
 
 class AIService:
@@ -282,7 +285,8 @@ class AIService:
         filename: str,
         regions: List[Dict[str, Any]] = None,
         progress_callback: Callable = None,
-        project_name: str = None
+        project_name: str = None,
+        user_id: int = None,
     ) -> Dict[int, str]:
         """
         Recognize text in image regions using TROCR.
@@ -303,6 +307,9 @@ class AIService:
         from services.annotation_service import annotation_service
         from database.enums import ImageStatus
 
+        msg = f"[recognize_text] START: filename={filename}, regions={len(regions) if regions else 0}, project={project_name}, user_id={user_id}"
+        logger.info(msg)
+
         # Load image
         image = image_service.get_image(filename, project_name)
 
@@ -313,39 +320,58 @@ class AIService:
 
         # Load annotation data with project scope
         annotation_data = annotation_service.get_annotation(filename, project_name)
-        
+
         # Use provided regions or get from annotation
         if regions is None:
             regions = annotation_data.get('regions', [])
-        
+
+        logger.info(f"[recognize_text] regions count: {len(regions)}")
+
         recognized_texts = {}
         total_regions = len(regions)
-        
+
         for idx, region in enumerate(regions):
             try:
                 # Calculate bounding box
                 xs = [p['x'] for p in region['points']]
                 ys = [p['y'] for p in region['points']]
                 bbox = (min(xs), min(ys), max(xs), max(ys))
-                
+
                 # Recognize text
                 text = self.recognize_text_in_region(image, bbox)
                 recognized_texts[idx] = text
-                
+                logger.info(f"[recognize_text] Region {idx} done, text len={len(text)}")
+
                 # Update progress
                 if progress_callback:
                     progress_callback(idx + 1, total_regions)
-                    
+
             except Exception as e:
-                print(f"Error processing region {idx}: {e}")
+                logger.error(f"Error processing region {idx}: {e}", exc_info=True)
                 recognized_texts[idx] = ""
-        
+
         # Update annotation with recognized texts
         annotation_data['texts'] = recognized_texts
         annotation_data['status'] = ImageStatus.RECOGNIZED.value
         annotation_data['image_name'] = filename
-        annotation_service.save_annotation(filename, annotation_data, project_name)
 
+        # Проверка прав на запись перед сохранением
+        can_save = True
+        if user_id and project_name:
+            from services.permission_service import permission_service
+            proj_role = permission_service.get_project_role(user_id, project_name)
+            print(f"[recognize_text] user_id={user_id}, project={project_name}, role={proj_role}")
+            if proj_role == 'viewer':
+                can_save = False
+
+        if can_save:
+            logger.info(f"[recognize_text] Saving annotation for {filename}")
+            annotation_service.save_annotation(filename, annotation_data, project_name)
+        else:
+            # Текст распознан, но НЕ сохранён — read-only
+            logger.info(f"[recognize_text] Text recognized but NOT saved (read-only): {filename}")
+
+        logger.info("[recognize_text] COMPLETED")
         return recognized_texts
     
     def initialize_models(self, trocr_model_name: str = "raxtemur/trocr-base-ru"):
@@ -359,17 +385,17 @@ class AIService:
         if YOLO_AVAILABLE:
             try:
                 self._get_yolo_model()
-                print("YOLO model initialized")
+                logger.info("YOLO model initialized")
             except Exception as e:
-                print(f"Failed to initialize YOLO: {e}")
-        
+                logger.error(f"Failed to initialize YOLO: {e}")
+
         # Initialize TROCR
         if TROCR_AVAILABLE:
             try:
                 self._initialize_trocr(trocr_model_name)
-                print(f"TROCR model initialized on {self._get_device()}")
+                logger.info(f"TROCR model initialized on {self._get_device()}")
             except Exception as e:
-                print(f"Failed to initialize TROCR: {e}")
+                logger.error(f"Failed to initialize TROCR: {e}")
 
 
 # Global AI service instance

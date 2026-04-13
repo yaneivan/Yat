@@ -41,6 +41,12 @@
     <span id="save-indicator" class="save-indicator" title="Сохранено"></span>
 </div>
 
+{% if project_role == 'viewer' %}
+<div class="read-only-banner" style="margin:0; border-radius:0;">
+    ⚠️ Режим только чтения — изменения сохранять нельзя
+</div>
+{% endif %}
+
 <div id="workspace" oncontextmenu="return false;">
     <canvas id="c"></canvas>
     <div class="help-overlay">Space: Пан | ПКМ: Пан | Колесо: Зум | ESC: Отмена | Клик в начало: Замкнуть | Ctrl+A: Всё</div>
