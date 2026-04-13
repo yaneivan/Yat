@@ -97,11 +97,3 @@ class TaskRepository:
         self.session.delete(task)
         self.session.commit()
         return True
-    
-    def get_pending_tasks(self) -> List[Task]:
-        """Get all pending tasks."""
-        return self.get_all(status=TaskStatus.PENDING)
-
-    def get_running_tasks(self) -> List[Task]:
-        """Get all running tasks."""
-        return self.get_all(status=TaskStatus.RUNNING)

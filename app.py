@@ -109,13 +109,6 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # Allow cross-site for navigation
 USE_AUTH = config.ENABLE_AUTH
 
 
-def get_user_role():
-    """Get current user's role from session."""
-    if not USE_AUTH:
-        return 'admin'  # Open access mode
-    return session.get('role', None)
-
-
 def is_admin():
     """Check if current user is admin."""
     if not USE_AUTH:

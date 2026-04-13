@@ -66,11 +66,6 @@ class ImageRepository:
         stmt = select(Image).offset(skip).limit(limit).order_by(Image.created_at)
         return self.session.execute(stmt).scalars().all()
 
-    def get_by_status(self, status: ImageStatus) -> List[Image]:
-        """Get all images with a specific status."""
-        stmt = select(Image).where(Image.status == status.value)
-        return self.session.execute(stmt).scalars().all()
-
     def update(
         self,
         image: Image,
@@ -97,13 +92,3 @@ class ImageRepository:
         self.session.delete(image)
         self.session.commit()
         return True
-    
-    def count_by_project(self, project_id: int) -> int:
-        """Get number of images in a project."""
-        stmt = select(Image).where(Image.project_id == project_id)
-        return self.session.execute(stmt).scalars().count()
-    
-    def count_by_status(self, status: ImageStatus) -> int:
-        """Get number of images with a specific status."""
-        stmt = select(Image).where(Image.status == status.value)
-        return self.session.execute(stmt).scalars().count()

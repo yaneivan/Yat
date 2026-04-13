@@ -226,52 +226,6 @@ class AnnotationService:
         finally:
             session.close()
 
-    def update_fields(self, filename: str, **fields) -> Dict[str, Any]:
-        """
-        Update specific fields in an annotation.
-
-        Args:
-            filename: The image filename
-            **fields: Fields to update (regions, texts, status, crop_params, etc.)
-
-        Returns:
-            Updated annotation data
-        """
-        validated_filename = self._validate_filename(filename)
-        
-        session, annotation_repo, image_repo = self._get_session()
-        try:
-            # Find image
-            image = image_repo.get_by_filename(validated_filename)
-            if not image:
-                return {}
-            
-            # Update image fields
-            if 'status' in fields:
-                image_repo.update(image, status=fields['status'])
-            if 'crop_params' in fields:
-                image_repo.update(image, crop_params=fields['crop_params'])
-            
-            # Update annotation fields
-            annotation = annotation_repo.get_by_image(image.id)
-            if annotation and 'regions' in fields:
-                # Convert regions to polygons
-                regions = fields['regions']
-                texts = fields.get('texts', {})
-                polygons = []
-                for i, region in enumerate(regions):
-                    polygon = {
-                        'points': region,
-                        'text': texts.get(str(i), texts.get(i, ''))
-                    }
-                    polygons.append(polygon)
-                annotation_repo.update(annotation, polygons=polygons)
-            
-            # Return updated data
-            return self.get_annotation(validated_filename)
-        finally:
-            session.close()
-
     def delete_annotation(self, filename: str, project_name: str = None) -> bool:
         """
         Delete annotation for an image.
