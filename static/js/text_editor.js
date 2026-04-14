@@ -1919,8 +1919,8 @@ class TextEditor {
             const saveData = {
                 image_name: this.filename,
                 regions: originalRegions, // Use original regions order
-                texts: textsInOriginalOrder,
-                status: 'recognized' // Status for text recognition completed
+                texts: textsInOriginalOrder
+                // Статус определяет бэкенд по факту заполнения полигонов
             };
 
             const resp = await API.saveAnnotationWithTexts(this.filename, saveData.regions, saveData.texts, this.project);

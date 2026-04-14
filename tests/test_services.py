@@ -315,9 +315,11 @@ class TestAnnotationServiceAutoRecognize:
         session.commit()
         session.close()
 
-    def test_save_annotation_does_not_change_status_when_explicit(self):
+    def test_save_annotation_ignores_explicit_status_and_auto_promotes(self):
         """
-        Тест: если статус явно указан в данных, он НЕ меняется автоматически.
+        Тест: бэкенд сам решает статус по факту заполнения полигонов,
+        игнорируя явно переданный status в data.
+        Если все полигоны заполнены — автоматически повышает до recognized.
         """
         from services.annotation_service import annotation_service
         from database.session import SessionLocal
@@ -341,6 +343,7 @@ class TestAnnotationServiceAutoRecognize:
         session.commit()
 
         # Сохранить аннотацию с явно указанным статусом cropped
+        # но все полигоны заполнены текстом
         data = {
             'regions': [
                 {'points': [[0, 0], [100, 0], [100, 50], [0, 50]]},
@@ -348,15 +351,16 @@ class TestAnnotationServiceAutoRecognize:
             'texts': {
                 '0': 'распознанный текст',
             },
-            'status': ImageStatus.CROPPED.value  # Явно указанный статус
+            'status': ImageStatus.CROPPED.value  # Явно указанный статус (игнорируется)
         }
 
         result = annotation_service.save_annotation('test_img2.png', data, project_name='NoAutoChangeTest')
         assert result is True
 
-        # Статус должен остаться тем что был указан явно (cropped)
+        # Статус должен быть автоматически повышен до recognized
+        # потому что все полигоны заполнены
         session.refresh(image)
-        assert image.status == ImageStatus.CROPPED.value
+        assert image.status == ImageStatus.RECOGNIZED.value
 
         # Cleanup
         session.delete(image)

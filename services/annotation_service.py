@@ -208,14 +208,17 @@ class AnnotationService:
                     annotation_repo.create(image_id=image.id, polygons=polygons)
                     print("[AnnotationService] Created new annotation")
 
-                # Автоматическая смена статуса на recognized если все полигоны заполнены
-                if 'status' not in data and self._all_polygons_filled(polygons):
-                    # Статус не был явно указан, но все полигоны заполнены
-                    # Не понижаем статус: reviewed > recognized > segmented > ...
-                    current_status = image.status
-                    if current_status not in (ImageStatus.RECOGNIZED.value, ImageStatus.REVIEWED.value):
-                        image_repo.update(image, status=ImageStatus.RECOGNIZED)
-                        print(f"[AnnotationService] Auto-set status to recognized for {filename}")
+                # Определяем статус по факту заполнения полигонов
+                # Повышаем автоматически, но НЕ понижаем
+                current_status = image.status
+
+                # Reviewed никогда не перезаписываем
+                if current_status != ImageStatus.REVIEWED.value:
+                    # Если все полигоны заполнены — повышаем до recognized
+                    if self._all_polygons_filled(polygons):
+                        if current_status in (ImageStatus.UPLOADED.value, ImageStatus.CROPPED.value, ImageStatus.SEGMENTED.value):
+                            image_repo.update(image, status=ImageStatus.RECOGNIZED)
+                            print(f"[AnnotationService] Auto-promoted status to recognized for {filename}")
 
                 return True
             except Exception as e:
