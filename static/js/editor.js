@@ -532,16 +532,6 @@ class HTREditor {
             }
         });
 
-        this.canvas.on('mouse:wheel', (opt) => {
-            let zoom = this.canvas.getZoom();
-            zoom *= 0.995 ** opt.e.deltaY;
-            if (zoom > 20) zoom = 20;
-            if (zoom < 0.01) zoom = 0.01;
-            this.canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
-            opt.e.preventDefault();
-            opt.e.stopPropagation();
-        });
-
         const onSelectionChange = (e) => {
             if (e.deselected) {
                 e.deselected.forEach(obj => this.disablePolyEdit(obj));

@@ -60,6 +60,25 @@ class ZoomController {
         this.canvas.zoomToPoint({ x: rect.width / 2, y: rect.height / 2 }, this.baseZoom);
         this._syncCanvasZoom();
         this._updateUI();
+        if (this.afterZoom) {
+            this.afterZoom();
+        }
+    }
+
+    /** Обработчик колесика мыши — вызывается из editor.js, cropper.html, text_editor.js */
+    onMouseWheel(opt) {
+        let zoom = this.canvas.getZoom();
+        zoom *= 0.995 ** opt.e.deltaY;
+        zoom = Math.min(this.maxZoom, Math.max(this.minZoom, zoom));
+        this.canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
+        this._syncCanvasZoom();
+        this._updateUI();
+        opt.e.preventDefault();
+        opt.e.stopPropagation();
+        // Вызываем callback после зума (если есть, напр. для cropRect)
+        if (this.afterZoom) {
+            this.afterZoom();
+        }
     }
 
     _syncCanvasZoom() {
@@ -72,8 +91,13 @@ class ZoomController {
         document.removeEventListener('keydown', this._onKeyDownBound);
         document.removeEventListener('keyup', this._onKeyUpBound);
         this._unbindMousePan();
+        this._disableWheelZoom();
         this._removeOverlay();
         if (this._secondaryUnbind) this._secondaryUnbind();
+        if (this._secondaryWheelUnbind) {
+            this._secondaryWheelUnbind.forEach(fn => fn());
+            this._secondaryWheelUnbind = [];
+        }
     }
 
     /**
@@ -133,14 +157,57 @@ class ZoomController {
         };
     }
 
+    /**
+     * Включить wheel zoom на дополнительном canvas (для правого холста text_editor).
+     * Когда юзер крутит колесо на этом canvas, зум идёт от него,
+     * а syncCanvas (left) синхронизируется.
+     */
+    enableSecondaryWheel(secondaryCanvas, syncTarget) {
+        if (!secondaryCanvas) return;
+        const self = this;
+
+        function onWheel(opt) {
+            // Временно меняем canvas
+            const origCanvas = self.canvas;
+            const origSync = self.syncCanvas;
+            self.canvas = secondaryCanvas;
+            self.syncCanvas = syncTarget || origCanvas;
+            self.onMouseWheel(opt);
+            self.canvas = origCanvas;
+            self.syncCanvas = origSync;
+        }
+
+        secondaryCanvas.on('mouse:wheel', onWheel);
+
+        if (!this._secondaryWheelUnbind) {
+            this._secondaryWheelUnbind = [];
+        }
+        this._secondaryWheelUnbind.push(() => secondaryCanvas.off('mouse:wheel', onWheel));
+    }
+
     /* ── Private: attach ── */
 
     _attach() {
         document.addEventListener('keydown', this._onKeyDownBound);
         document.addEventListener('keyup', this._onKeyUpBound);
         this._enableMousePan();
+        this._enableWheelZoom();
         this._createOverlay();
         this._updateUI();
+    }
+
+    _enableWheelZoom() {
+        const self = this;
+        this._wheelHandler = function (opt) {
+            self.onMouseWheel(opt);
+        };
+        this.canvas.on('mouse:wheel', this._wheelHandler);
+    }
+
+    _disableWheelZoom() {
+        if (this._wheelHandler) {
+            this.canvas.off('mouse:wheel', this._wheelHandler);
+        }
     }
 
     /* ── Private: overlay UI ── */
@@ -172,6 +239,9 @@ class ZoomController {
             this._syncCanvasZoom();
             this._updateIndicator();
             this._updatingSlider = false;
+            if (this.afterZoom) {
+                this.afterZoom();
+            }
         });
 
         document.getElementById('zoom-indicator').addEventListener('click', () => this.resetZoom());
@@ -362,6 +432,9 @@ class ZoomController {
         this.canvas.zoomToPoint({ x: cx, y: cy }, zoom);
         this._syncCanvasZoom();
         this._updateUI();
+        if (this.afterZoom) {
+            this.afterZoom();
+        }
     }
 
     _isTyping(e) {

@@ -279,28 +279,20 @@
         canvas.setActiveObject(cropRect);
         canvas.requestRenderAll();
     }
-    
 
-
-    canvas.on('mouse:wheel', (opt) => {
-        let zoom = canvas.getZoom();
-        zoom *= 0.995 ** opt.e.deltaY;
-        if (zoom > 20) zoom = 20;
-        if (zoom < 0.01) zoom = 0.01;
-        canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
-
-        if(cropRect) {
-            // Обновляем толщину обводки и размер углов так, чтобы они оставались 
-            // визуально одинакового размера при любом зуме (с ограничением 4-20px)
-            const strokeWidth = Math.max(1, Math.min(3, 2 / zoom));
-            const cornerSize = Math.max(4, Math.min(20, 10 / zoom));
-            cropRect.set('strokeWidth', strokeWidth);
-            cropRect.set('cornerSize', cornerSize);
-            canvas.requestRenderAll();
-        }
-        opt.e.preventDefault();
-        opt.e.stopPropagation();
-    });
+    // ZoomController обрабатывает зум; после зума подстраиваем cropRect
+    if (zoomCtrl) {
+        zoomCtrl.afterZoom = () => {
+            if (cropRect) {
+                const zoom = canvas.getZoom();
+                const strokeWidth = Math.max(1, Math.min(3, 2 / zoom));
+                const cornerSize = Math.max(4, Math.min(20, 10 / zoom));
+                cropRect.set('strokeWidth', strokeWidth);
+                cropRect.set('cornerSize', cornerSize);
+                canvas.requestRenderAll();
+            }
+        };
+    }
 
     let isPanning = false, lastMouse = {x:0, y:0};
     canvas.on('mouse:down', opt => {

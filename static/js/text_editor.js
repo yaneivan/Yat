@@ -1211,43 +1211,8 @@ class TextEditor {
             }
         });
 
-        // Add mouse wheel zoom to left canvas
-        this.leftCanvas.wrapperEl.addEventListener('wheel', (e) => {
-            e.preventDefault();
-
-            const delta = e.deltaY;
-            const zoom = this.leftCanvas.getZoom();
-            const zoomFactor = delta > 0 ? 0.95 : 1.05; // Zoom out or in
-            const newZoom = zoom * zoomFactor;
-
-            // Limit zoom range
-            if (newZoom < 0.1 || newZoom > 10) return;
-
-            // Calculate new viewport transform
-            const vpt = this.leftCanvas.viewportTransform;
-            const rect = this.leftCanvas.wrapperEl.getBoundingClientRect();
-            const offsetX = e.clientX - rect.left;
-            const offsetY = e.clientY - rect.top;
-
-            // Calculate the point over which we're zooming
-            const point = {
-                x: (offsetX - vpt[4]) / vpt[0],
-                y: (offsetY - vpt[5]) / vpt[3]
-            };
-
-            // Apply new zoom
-            vpt[0] = newZoom; // scaleX
-            vpt[3] = newZoom; // scaleY
-
-            // Adjust translation to zoom towards mouse position
-            vpt[4] = offsetX - point.x * newZoom; // tx
-            vpt[5] = offsetY - point.y * newZoom; // ty
-
-            this.leftCanvas.requestRenderAll();
-
-            // Sync right canvas
-            this.syncViewports(this.leftCanvas, this.rightCanvas);
-        });
+        // ZoomController обрабатывает зум колесиком на leftCanvas
+        // (ZoomController уже подключил обработчик через _enableWheelZoom())
 
         // Right canvas events
         this.rightCanvas.on('mouse:down', (opt) => {
@@ -1304,43 +1269,7 @@ class TextEditor {
             }
         });
 
-        // Add mouse wheel zoom to right canvas
-        this.rightCanvas.wrapperEl.addEventListener('wheel', (e) => {
-            e.preventDefault();
-
-            const delta = e.deltaY;
-            const zoom = this.rightCanvas.getZoom();
-            const zoomFactor = delta > 0 ? 0.95 : 1.05; // Zoom out or in
-            const newZoom = zoom * zoomFactor;
-
-            // Limit zoom range
-            if (newZoom < 0.1 || newZoom > 10) return;
-
-            // Calculate new viewport transform
-            const vpt = this.rightCanvas.viewportTransform;
-            const rect = this.rightCanvas.wrapperEl.getBoundingClientRect();
-            const offsetX = e.clientX - rect.left;
-            const offsetY = e.clientY - rect.top;
-
-            // Calculate the point over which we're zooming
-            const point = {
-                x: (offsetX - vpt[4]) / vpt[0],
-                y: (offsetY - vpt[5]) / vpt[3]
-            };
-
-            // Apply new zoom
-            vpt[0] = newZoom; // scaleX
-            vpt[3] = newZoom; // scaleY
-
-            // Adjust translation to zoom towards mouse position
-            vpt[4] = offsetX - point.x * newZoom; // tx
-            vpt[5] = offsetY - point.y * newZoom; // ty
-
-            this.rightCanvas.requestRenderAll();
-
-            // Sync left canvas
-            this.syncViewports(this.rightCanvas, this.leftCanvas);
-        });
+        // ZoomController обрабатывает зум колесиком на rightCanvas через enableSecondaryWheel
     }
 
     openTextModal(regionIndex) {
