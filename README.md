@@ -55,6 +55,7 @@ HTR Polygon Annotation Tool - это веб-приложение для подг
 1. **YOLOv9** — детекция текстовых строк
    - Модель: [yolov9-lines-within-regions-1](https://huggingface.co/Riksarkivet/yolov9-lines-within-regions-1)
    - Файл модели: `./models/model.pt`
+   - **Нужно скачать вручную** перед запуском
    - Используется для автоматической сегментации
 
 2. **TROCR** — распознавание текста внутри полигонов
@@ -89,23 +90,27 @@ htr_tool/
 ├── config.py             # Конфигурация (модели, устройство)
 ├── services/             # Сервисный слой (бизнес-логика)
 │   ├── __init__.py
-│   ├── task_service.py   # Управление фоновыми задачами
-│   ├── annotation_service.py # Работа с аннотациями
-│   ├── image_service.py  # Работа с изображениями
-│   ├── project_service.py # Управление проектами
-│   └── ai_service.py     # AI модели (YOLOv9, TROCR)
+│   ├── ai_service.py     # AI модели (YOLOv9, TROCR)
+│   ├── annotation_service.py  # Работа с аннотациями
+│   ├── audit_service.py       # Аудит действий пользователей
+│   ├── image_service.py       # Обработка изображений
+│   ├── image_storage_service.py # Управление хранилищем изображений
+│   ├── permission_service.py  # Управление правами доступа
+│   ├── pdf_export_service.py  # Экспорт в PDF
+│   ├── project_service.py     # Управление проектами
+│   └── task_service.py        # Управление фоновыми задачами
 ├── database/             # База данных и репозитории
 │   ├── __init__.py
+│   ├── enums.py          # Перечисления (ImageStatus и др.)
 │   ├── models.py         # SQLAlchemy модели (Project, Image, Annotation, Task)
-│   ├── enums.py          # Перечисления (ImageStatus)
-│   ├── session.py        # Инициализация БД
-│   └── repository/       # Репозитории (ProjectRepository, AnnotationRepository, etc.)
+│   ├── repository/       # Репозитории (ProjectRepository, etc.)
+│   └── session.py        # Инициализация БД
 ├── data/                 # Хранилище файлов
+│   ├── annotations/      # Аннотации (JSON, обратная совместимость)
 │   ├── images/           # Рабочие (обрезанные) изображения
-│   ├── originals/        # Бэкапы оригиналов (для повторной обрезки)
+│   ├── originals/        # Оригиналы изображений
 │   ├── projects/         # Временные файлы проектов
-│   ├── temp_export/      # Временный экспорт (ZIP, PDF)
-│   └── temp_import/      # Временный импорт
+│   └── thumbnails/       # Миниатюры изображений
 ├── database.db           # SQLite база данных (проекты, изображения, аннотации, задачи)
 ├── static/
 │   ├── css/style.css     # Стили
@@ -113,18 +118,18 @@ htr_tool/
 │       ├── api.js        # API клиент
 │       ├── editor.js     # Логика редактора разметки
 │       ├── project_manager.js  # Логика дашборда
+│       ├── status_widget.js    # Виджет статусов
 │       ├── text_editor.js      # Логика текстового редактора
-│       └── status_widget.js    # Виджет статусов
+│       └── zoom-controller.js  # Контроль зума
 ├── templates/            # HTML шаблоны
-│   ├── index.html        # Дашборд
-│   ├── editor.html       # Редактор сегментации
+│   ├── 404.html          # Страница 404
 │   ├── cropper.html      # Инструмент кадрирования
-│   ├── text_editor.html  # Редактор текста
-│   ├── project.html      # Страница проекта
+│   ├── editor.html       # Редактор сегментации
+│   ├── index.html        # Дашборд
 │   ├── login.html        # Страница входа
-│   └── 404.html          # Страница 404
-├── services/
-│   └── pdf_export_service.py  # Экспорт в PDF
+│   ├── project.html      # Страница проекта
+│   ├── stats.html        # Статистика
+│   └── text_editor.html  # Редактор текста
 ```
 
 > **Примечание:** Аннотации хранятся в SQLite (`database.db`), а не в JSON-файлах. Папка `data/annotations/` сохранена для обратной совместимости.
