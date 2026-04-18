@@ -11,7 +11,7 @@
 
 <div id="toolbar">
     <button class="btn" onclick="window.location.href='/'" title="Home">🏠</button>
-    {% if project %}
+    {% if project_id %}
         <button class="btn" onclick="window.location.href='/project/{{ project_id }}'" title="Назад к проекту">📋 Проект</button>
         <div class="sep"></div>
         <button class="btn" onclick="window.location.href='/editor?image={{ filename }}&project_id={{ project_id }}'" title="Редактор сегментов">📋 Сегменты</button>
@@ -72,6 +72,7 @@
 
 <script src="/static/js/api.js"></script>
 <script src="/static/js/status_widget.js"></script>
+<script src="/static/js/zoom-controller.js"></script>
 <script>
     const filename = "{{ filename }}";
     const projectId = {{ project_id if project_id else 'null' }};
@@ -94,6 +95,7 @@
     let cropRect = null;
     let imgObj = null;
     let imageList = [];
+    let zoomCtrl = null;
 
     // Функция для поворота точки вокруг центра
     function rotate_pointJS(x, y, cx, cy, angle_deg) {
@@ -118,7 +120,7 @@
             canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
 
             fitImageHeight(img);
-            if (typeof zoomCtrl !== 'undefined') {
+            if (zoomCtrl) {
                 zoomCtrl.setBaseZoom(canvas.getZoom());
             }
             loadExistingCropData();
