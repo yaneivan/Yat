@@ -1234,7 +1234,7 @@ def batch_detect(project_id):
     task_service.run_background(
         task=task,
         func=logic.run_batch_detection_for_project,
-        project_name=project_name,
+        project_id=project_id,
         settings=settings,
         task_id=task.id,
     )
@@ -1286,7 +1286,7 @@ def batch_recognize(project_id):
     task_service.run_background(
         task=task,
         func=logic.run_batch_recognition_for_project,
-        project_name=project_name,
+        project_id=project_id,
         task_id=task.id,
     )
 

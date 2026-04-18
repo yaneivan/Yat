@@ -744,22 +744,20 @@ def process_zip_import(file, simplify_val=0, project_id=None):
 # =============================================================================
 
 
-def run_batch_detection_for_project(project_name, settings=None, task_id=None):
+def run_batch_detection_for_project(project_id, settings=None, task_id=None):
     """
     Run batch detection for all images in a project.
 
     Args:
-        project_name: Project name
+        project_id: Project ID
         settings: YOLO detection settings
         task_id: Task ID from task_service (passed by app.py)
     """
     if settings is None:
         settings = {}
 
-    # Use project_service to get images from database
     from services import project_service, task_service, ai_service, annotation_service
 
-    # Get task to find which images to process
     if not task_id:
         logger.error("Error: task_id not provided for batch detection")
         return
@@ -769,7 +767,6 @@ def run_batch_detection_for_project(project_name, settings=None, task_id=None):
         logger.error(f"Error: task {task_id} not found")
         return
 
-    # Use images from task (may be a subset if user selected specific images)
     image_names = task.images or []
 
     if not image_names:
@@ -781,18 +778,17 @@ def run_batch_detection_for_project(project_name, settings=None, task_id=None):
 
         for idx, image_name in enumerate(image_names):
             try:
-                regions = ai_service.detect_lines(image_name, settings, project_name)
+                regions = ai_service.detect_lines(image_name, settings, project_id)
 
-                # Use annotation_service instead of old storage layer
                 annotation_data = annotation_service.get_annotation(
-                    image_name, project_name
+                    image_name, project_id
                 )
                 annotation_data["regions"] = regions
                 if annotation_data.get("status") != ImageStatus.CROPPED.value:
                     annotation_data["status"] = ImageStatus.SEGMENTED.value
 
                 annotation_service.save_annotation(
-                    image_name, annotation_data, project_name
+                    image_name, annotation_data, project_id
                 )
                 task_service.update_progress(task.id, idx + 1)
 
@@ -803,25 +799,23 @@ def run_batch_detection_for_project(project_name, settings=None, task_id=None):
         task_service.update_progress(
             task.id, len(image_names), status=TaskStatus.COMPLETED
         )
-        logger.info(f"Batch detection completed for project {project_name}")
+        logger.info(f"Batch detection completed for project {project_id}")
 
     except Exception as e:
-        logger.error(f"Error in batch detection for project {project_name}: {e}")
+        logger.error(f"Error in batch detection for project {project_id}: {e}")
         task_service.fail_task(task.id, str(e))
 
 
-def run_batch_recognition_for_project(project_name, task_id=None):
+def run_batch_recognition_for_project(project_id, task_id=None):
     """
     Run batch recognition for all images in a project.
 
     Args:
-        project_name: Project name
+        project_id: Project ID
         task_id: Task ID from task_service (passed by app.py)
     """
-    # Import services
     from services import task_service, ai_service
 
-    # Get task by ID (passed from app.py)
     if not task_id:
         logger.error("Error: task_id not provided for batch recognition")
         return
@@ -831,7 +825,6 @@ def run_batch_recognition_for_project(project_name, task_id=None):
         logger.error(f"Error: task {task_id} not found")
         return
 
-    # Use images from task (may be a subset if user selected specific images)
     image_names = task.images or []
 
     if not image_names:
@@ -843,7 +836,7 @@ def run_batch_recognition_for_project(project_name, task_id=None):
 
         for idx, image_name in enumerate(image_names):
             try:
-                ai_service.recognize_text(image_name, None, project_name=project_name)
+                ai_service.recognize_text(image_name, None, project_id=project_id)
                 task_service.update_progress(task.id, idx + 1)
 
             except Exception as e:
@@ -853,10 +846,10 @@ def run_batch_recognition_for_project(project_name, task_id=None):
         task_service.update_progress(
             task.id, len(image_names), status=TaskStatus.COMPLETED
         )
-        logger.info(f"Batch recognition completed for project {project_name}")
+        logger.info(f"Batch recognition completed for project {project_id}")
 
     except Exception as e:
-        logger.error(f"Error in batch recognition for project {project_name}: {e}")
+        logger.error(f"Error in batch recognition for project {project_id}: {e}")
         task_service.fail_task(task.id, str(e))
 
 
