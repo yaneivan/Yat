@@ -347,11 +347,11 @@
             ]
         };
 
-        const url = projectId ? `/api/crop?project_id=${projectId}` : '/api/crop';
+        const url = '/api/crop';
         const resp = await fetch(url, {
             method: 'POST',
             headers: API.getCsrfHeaders(),
-            body: JSON.stringify({ image_name: filename, box: cropData })
+            body: JSON.stringify({ image_name: filename, box: cropData, project_id: projectId })
         });
 
         if (resp.ok) {
