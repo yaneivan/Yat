@@ -660,13 +660,7 @@ def import_zip_route():
         logger.debug(f"[ZIP Import] Files keys: {list(request.files.keys())}")
 
         simp = int(request.form.get("simplify", 0))
-        project_name = request.form.get("project_name", None)
         project_id = request.form.get("project_id", type=int)
-
-        if project_name:
-            project_data = project_service.get_project_by_name(project_name)
-            if project_data:
-                project_id = project_data["id"]
 
         if is_admin():
             pass
@@ -675,7 +669,7 @@ def import_zip_route():
         ):
             return jsonify({"status": "error", "msg": "No access to project"}), 403
 
-        logger.info(f"[ZIP Import] simplify={simp}, project_name={project_name}")
+        logger.info(f"[ZIP Import] simplify={simp}, project_id={project_id}")
 
         if "file" not in request.files:
             logger.error(
@@ -692,14 +686,19 @@ def import_zip_route():
             f"[ZIP Import] File: {uploaded_file.filename}, size: {uploaded_file.content_length}"
         )
 
-        count, final_project_name = logic.process_zip_import(
-            uploaded_file, simp, project_name
+        count, final_project_id, final_project_name = logic.process_zip_import(
+            uploaded_file, simp, project_id
         )
         logger.info(
-            f"[ZIP Import] Success: {count} images imported to '{final_project_name}'"
+            f"[ZIP Import] Success: {count} images imported to project {final_project_id}"
         )
         return jsonify(
-            {"status": "success", "count": count, "project_name": final_project_name}
+            {
+                "status": "success",
+                "count": count,
+                "project_id": final_project_id,
+                "project_name": final_project_name,
+            }
         )
 
     except Exception as e:
