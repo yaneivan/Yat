@@ -95,7 +95,6 @@
     let cropRect = null;
     let imgObj = null;
     let imageList = [];
-    let zoomCtrl = null;
 
     // Функция для поворота точки вокруг центра
     function rotate_pointJS(x, y, cx, cy, angle_deg) {
@@ -372,7 +371,6 @@
         window.location.href = newUrl;
     }
 </script>
-<script src="/static/js/zoom-controller.js"></script>
 <script>
     const zoomCtrl = new ZoomController(canvas, {
         wrapper: document.getElementById('workspace')
