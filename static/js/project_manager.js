@@ -422,19 +422,19 @@ class ProjectManager {
         cardActions.className = 'card-actions';
 
         const cropLink = document.createElement('a');
-        cropLink.href = `/cropper?image=${encodeURIComponent(image)}`;
+        cropLink.href = `/cropper?project_id=${projectId}&image=${encodeURIComponent(filename)}`;
         cropLink.className = 'action-btn action-crop';
         cropLink.title = 'Кадрировать';
         cropLink.textContent = '✂️ Crop';
 
         const segmentLink = document.createElement('a');
-        segmentLink.href = `/editor?image=${encodeURIComponent(image)}`;
+        segmentLink.href = `/editor?project_id=${projectId}&image=${encodeURIComponent(filename)}`;
         segmentLink.className = 'action-btn action-segment';
         segmentLink.title = 'Размечать';
         segmentLink.textContent = '✏️ Seg';
 
         const textLink = document.createElement('a');
-        textLink.href = `/text_editor?image=${encodeURIComponent(image)}`;
+        textLink.href = `/text_editor?project_id=${projectId}&image=${encodeURIComponent(filename)}`;
         textLink.className = 'action-btn';
         textLink.title = 'Распознавание текста';
         textLink.textContent = '📝 Расп';
