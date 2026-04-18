@@ -321,7 +321,7 @@ class ProjectService:
                     image_name = image_item["filename"]
 
                     image_path = image_storage_service.get_image_path(
-                        image_name, project_name
+                        image_name, project_id
                     )
 
                     if not os.path.exists(image_path):
@@ -332,7 +332,7 @@ class ProjectService:
                     annotation_name = os.path.splitext(image_name)[0] + ".xml"
 
                     annotation_data = annotation_service.get_annotation(
-                        image_name, project_name
+                        image_name, project_id
                     )
 
                     root = ET.Element(
