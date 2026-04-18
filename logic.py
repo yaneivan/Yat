@@ -669,10 +669,27 @@ def process_zip_import(file, simplify_val=0, project_id=None):
 
         logger.info("[ZIP Import] Walking through extracted files...")
         for root, _, files in os.walk(extract_path):
+            logger.info(f"[ZIP Import] Directory: {root}, files: {files}")
             for f in files:
+                logger.info(
+                    f"[ZIP Import] Found file: {f}, ext check: {f.lower().endswith(tuple(storage.ALLOWED_EXTENSIONS))}"
+                )
                 if f.lower().endswith(tuple(storage.ALLOWED_EXTENSIONS)):
                     logger.info(f"[ZIP Import] Processing image: {f}")
                     src = os.path.join(root, f)
+
+                    xml_cands = [os.path.splitext(src)[0] + ".xml", src + ".xml"]
+                    xml_found = False
+                    regs, texts = [], {}
+                    for xc in xml_cands:
+                        if os.path.exists(xc):
+                            xml_found = True
+                            logger.info(f"[ZIP Import] Found XML: {xc}")
+                            regs, texts = parse_page_xml(xc, simplify_val)
+                            logger.info(
+                                f"[ZIP Import] Parsed XML: {len(regs)} regions, {len(texts)} texts"
+                            )
+                            break
 
                     from services.image_storage_service import image_storage_service
 
@@ -686,39 +703,28 @@ def process_zip_import(file, simplify_val=0, project_id=None):
                     shutil.copy(dest_path, original_dest)
                     logger.info(f"[ZIP Import] Copied to originals: {original_dest}")
 
-                    xml_cands = [os.path.splitext(src)[0] + ".xml", src + ".xml"]
-                    xml_found = False
-                    for xc in xml_cands:
-                        if os.path.exists(xc):
-                            xml_found = True
-                            logger.info(f"[ZIP Import] Found XML: {xc}")
-                            regs, texts = parse_page_xml(xc, simplify_val)
-                            logger.info(
-                                f"[ZIP Import] Parsed XML: {len(regs)} regions, {len(texts)} texts"
-                            )
+                    logger.info(f"[ZIP Import] Adding image to project: {f}")
+                    project_service.add_image(
+                        project_id=project_id,
+                        filename=f,
+                        original_path=original_dest,
+                        cropped_path=dest_path,
+                        status=ImageStatus.SEGMENTED,
+                        crop_params=None,
+                    )
 
-                            logger.info(f"[ZIP Import] Adding image to project: {f}")
-                            project_service.add_image(
-                                project_id=project_id,
-                                filename=f,
-                                original_path=original_dest,
-                                cropped_path=dest_path,
-                                status=ImageStatus.SEGMENTED,
-                                crop_params=None,
-                            )
-
-                            logger.info(f"[ZIP Import] Saving annotation for: {f}")
-                            annotation_data = {
-                                "image_name": f,
-                                "regions": regs,
-                                "texts": texts,
-                                "status": ImageStatus.SEGMENTED.value,
-                            }
-                            annotation_service.save_annotation(
-                                f, annotation_data, project_id
-                            )
-                            logger.info(f"[ZIP Import] Annotation saved for: {f}")
-                            break
+                    if xml_found:
+                        logger.info(f"[ZIP Import] Saving annotation for: {f}")
+                        annotation_data = {
+                            "image_name": f,
+                            "regions": regs,
+                            "texts": texts,
+                            "status": ImageStatus.SEGMENTED.value,
+                        }
+                        annotation_service.save_annotation(
+                            f, annotation_data, project_id
+                        )
+                        logger.info(f"[ZIP Import] Annotation saved for: {f}")
 
                     if not xml_found:
                         logger.warning(f"[ZIP Import] No XML found for image: {f}")
