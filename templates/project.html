@@ -14,7 +14,7 @@
             </div>
             <div class="nav-links">
                 <a href="/">Проекты</a>
-                <a href="/project/{{ project.name }}" class="active">Текущий проект</a>
+                <a href="/project/{{ project.id }}" class="active">Текущий проект</a>
             </div>
             <div class="nav-actions">
                 {% if is_admin or project_role == 'project_admin' %}
@@ -218,8 +218,8 @@
             dropArea.classList.add('uploading');
 
             try {
-                const projectName = "{{ project.name }}";
-                const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/upload_images`, {
+                const projectId = {{ project.id }};
+                const response = await fetch(`/api/projects/${projectId}/upload_images`, {
                     method: 'POST',
                     headers: {
                         'X-CSRFToken': API.getCsrfToken()
@@ -366,7 +366,7 @@
         async function executeBatchProcessing() {
             closeBatchModal();
             
-            const projectName = "{{ project.name }}";
+            const projectId = {{ project.id }};
             let url, images = [];
             
             if (batchMode === 'selected') {
@@ -378,19 +378,18 @@
                     return card.querySelector('.image-name').textContent.trim();
                 });
             }
-            // batchMode === 'all' - images array is empty, server will process all
             
             url = batchType === 'detect' 
-                ? `/api/projects/${encodeURIComponent(projectName)}/batch_detect`
-                : `/api/projects/${encodeURIComponent(projectName)}/batch_recognize`;
+                ? `/api/projects/${projectId}/batch_detect`
+                : `/api/projects/${projectId}/batch_recognize`;
             
             console.log('[executeBatchProcessing] Sending request:', {
                 url,
                 batchType,
                 batchMode,
-                projectName,
+                projectId,
                 imagesCount: images.length,
-                images: images.slice(0, 5) // First 5 only
+                images: images.slice(0, 5)
             });
             
             try {
@@ -497,11 +496,11 @@
                 })));
 
                 // Filter tasks for current project
-                const projectName = "{{ project.name }}";
-                console.log('[refreshTasks] Current project:', projectName);
+                const projectId = {{ project.id }};
+                console.log('[refreshTasks] Current project id:', projectId);
                 const projectTasks = tasks.filter(t => {
-                    const match = t.project_name === projectName;
-                    console.log('[refreshTasks] Task', t.id, t.project_name, '===', projectName, '?', match);
+                    const match = t.project_id === projectId;
+                    console.log('[refreshTasks] Task', t.id, 'project_id:', t.project_id, '===', projectId, '?', match);
                     return match;
                 });
 
@@ -720,15 +719,15 @@
         
         async function deleteImages(imageNames) {
             try {
-                const projectName = "{{ project.name }}";
+                const projectId = {{ project.id }};
 
                 for (const imageName of imageNames) {
-                    const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/images`, {
+                    const response = await fetch(`/api/projects/${projectId}/images`, {
                         method: 'DELETE',
                         headers: API.getCsrfHeaders(),
                         body: JSON.stringify({
                             image_name: imageName,
-                            delete_file: true  // Полное удаление файлов
+                            delete_file: true
                         })
                     });
 
@@ -741,7 +740,6 @@
                 }
 
                 showNotification(`Успешно удалено ${imageNames.length} изображений`, 'success');
-                // Reload the page to reflect changes
                 location.reload();
             } catch (error) {
                 console.error('Error deleting images:', error);
@@ -960,10 +958,10 @@
         }
 
         function startExport(variant) {
+            const projectId = {{ project.id }};
             const projectName = "{{ project.name }}";
             const modalContent = document.querySelector('#exportModal .modal-content');
             
-            // Show loading animation
             modalContent.innerHTML = `
                 <h3>Экспорт проекта</h3>
                 <div class="export-loading">
@@ -979,7 +977,6 @@
                 </div>
             `;
             
-            // Determine download URL and filename
             const variantNames = {
                 'zip': 'export',
                 'overlay': 'with_text_overlay',
@@ -989,12 +986,11 @@
             };
             
             const url = variant === 'zip' 
-                ? `/api/projects/${encodeURIComponent(projectName)}/export_zip`
-                : `/api/projects/${encodeURIComponent(projectName)}/export_pdf?variant=${variant}`;
+                ? `/api/projects/${projectId}/export_zip`
+                : `/api/projects/${projectId}/export_pdf?variant=${variant}`;
             
             const filename = `${projectName}_${variantNames[variant]}.${variant === 'zip' ? 'zip' : 'pdf'}`;
             
-            // Create invisible link and trigger download
             const link = document.createElement('a');
             link.href = url;
             link.download = filename;
@@ -1056,8 +1052,10 @@
                 console.log('  ', key, ':', value);
             }
 
-            // Добавляем имя текущего проекта, чтобы импортировать в существующий проект
+            // Add project info to import into existing project
+            const currentProjectId = {{ project.id }};
             const currentProjectName = "{{ project.name }}";
+            formData.append('project_id', currentProjectId);
             formData.append('project_name', currentProjectName);
 
             try {
@@ -1155,10 +1153,9 @@
         async function saveStatus() {
             if (!currentFilename) return;
             
-            const projectName = "{{ project.name }}";
+            const projectId = {{ project.id }};
             const popover = document.getElementById('status-popover');
             
-            // Get selected status
             const selectedStatus = popover.querySelector('input[name="status"]:checked')?.value;
             const comment = document.getElementById('status-comment').value;
             
@@ -1168,7 +1165,7 @@
             }
             
             try {
-                const url = `/api/projects/${encodeURIComponent(projectName)}/images/${encodeURIComponent(currentFilename)}/status`;
+                const url = `/api/projects/${projectId}/images/${encodeURIComponent(currentFilename)}/status`;
 
                 const response = await fetch(url, {
                     method: 'PUT',
