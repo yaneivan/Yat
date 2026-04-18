@@ -1910,7 +1910,7 @@ class TextEditor {
                 body: JSON.stringify({
                     image_name: this.filename,
                     regions: originalRegions,
-                    project: this.project
+                    project_id: this.project
                 })
             });
 
