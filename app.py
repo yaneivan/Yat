@@ -379,23 +379,17 @@ def stats_page():
 @app.route("/editor")
 def editor():
     filename = request.args.get("image")
-    project_name = request.args.get("project")
+    project_id = request.args.get("project_id", type=int)
     if not filename:
         return redirect(url_for("index"))
 
-    project_id = None
-    if project_name:
-        project_data = project_service.get_project_by_name(project_name)
-        if project_data:
-            project_id = project_data["id"]
-        if project_id and not check_project_access(project_id):
-            abort(403)
+    if project_id and not check_project_access(project_id):
+        abort(403)
 
     project_role = _get_project_role_for_template(project_id)
     return render_template(
         "editor.html",
         filename=filename,
-        project=project_name,
         project_id=project_id,
         project_role=project_role,
     )
@@ -404,23 +398,17 @@ def editor():
 @app.route("/text_editor")
 def text_editor():
     filename = request.args.get("image")
-    project_name = request.args.get("project")
+    project_id = request.args.get("project_id", type=int)
     if not filename:
         return redirect(url_for("index"))
 
-    project_id = None
-    if project_name:
-        project_data = project_service.get_project_by_name(project_name)
-        if project_data:
-            project_id = project_data["id"]
-        if project_id and not check_project_access(project_id):
-            abort(403)
+    if project_id and not check_project_access(project_id):
+        abort(403)
 
     project_role = _get_project_role_for_template(project_id)
     return render_template(
         "text_editor.html",
         filename=filename,
-        project=project_name,
         project_id=project_id,
         project_role=project_role,
     )
@@ -429,17 +417,12 @@ def text_editor():
 @app.route("/cropper")
 def cropper():
     filename = request.args.get("image")
-    project_name = request.args.get("project")
+    project_id = request.args.get("project_id", type=int)
     if not filename:
         return redirect(url_for("index"))
 
-    project_id = None
-    if project_name:
-        project_data = project_service.get_project_by_name(project_name)
-        if project_data:
-            project_id = project_data["id"]
-        if project_id and not check_project_access(project_id):
-            abort(403)
+    if project_id and not check_project_access(project_id):
+        abort(403)
 
     if not image_service.get_original_path(filename, project_id):
         abort(404)
@@ -447,7 +430,6 @@ def cropper():
     return render_template(
         "cropper.html",
         filename=filename,
-        project=project_name,
         project_id=project_id,
         project_role=project_role,
     )
@@ -456,13 +438,7 @@ def cropper():
 # --- API: Images ---
 @app.route("/api/images_list")
 def list_images():
-    project_name = request.args.get("project")
     project_id = request.args.get("project_id", type=int)
-
-    if project_name:
-        project_data = project_service.get_project_by_name(project_name)
-        if project_data:
-            project_id = project_data["id"]
 
     if project_id and not check_project_access(project_id):
         return jsonify({"error": "No access to project"}), 403
@@ -563,13 +539,7 @@ def serve_thumbnail(filename):
 def load_data(filename):
     try:
         validated = image_service._validate_filename(filename)
-        project_name = request.args.get("project")
         project_id = request.args.get("project_id", type=int)
-
-        if project_name:
-            project_data = project_service.get_project_by_name(project_name)
-            if project_data:
-                project_id = project_data["id"]
 
         if project_id and not check_project_access(project_id):
             return jsonify({"status": "error", "msg": "No access to project"}), 403
@@ -593,13 +563,7 @@ def save_data():
     try:
         validated = image_service._validate_filename(filename)
 
-        project_name = request.args.get("project")
         project_id = request.args.get("project_id", type=int)
-
-        if project_name:
-            project_data = project_service.get_project_by_name(project_name)
-            if project_data:
-                project_id = project_data["id"]
 
         if project_id and not check_project_access(project_id):
             return jsonify({"status": "error", "msg": "No access to project"}), 403
@@ -664,13 +628,7 @@ def crop():
     try:
         validated = image_service._validate_filename(filename)
 
-        project_name = data.get("project")
         project_id = data.get("project_id")
-
-        if project_name:
-            project_data = project_service.get_project_by_name(project_name)
-            if project_data:
-                project_id = project_data["id"]
 
         if project_id and not check_project_access(project_id):
             return jsonify({"status": "error", "msg": "No access to project"}), 403
@@ -685,7 +643,7 @@ def crop():
         return jsonify({"status": "error", "msg": "Invalid filename"}), 400
 
     def task():
-        image_service.crop_image(validated, box, project_name)
+        image_service.crop_image(validated, box, project_id)
 
     thread = threading.Thread(target=task)
     thread.start()
@@ -755,23 +713,17 @@ def detect_lines():
     data = request.json
     filename = data.get("image_name")
     settings = data.get("settings", {})
-    project_name = request.args.get("project")
     project_id = request.args.get("project_id", type=int)
 
     if not filename:
         return jsonify({"status": "error", "msg": "No image name provided"}), 400
-
-    if project_name:
-        project_data = project_service.get_project_by_name(project_name)
-        if project_data:
-            project_id = project_data["id"]
 
     if project_id and not check_project_access(project_id):
         return jsonify({"status": "error", "msg": "No access to project"}), 403
 
     try:
         validated = image_service._validate_filename(filename)
-        regions = ai_service.detect_lines(validated, settings, project_name)
+        regions = ai_service.detect_lines(validated, settings, project_id)
         return jsonify({"status": "success", "regions": regions})
     except ValueError:
         logger.error(f"detect_lines: Invalid filename - {filename}")
@@ -797,13 +749,7 @@ def recognize_text():
     try:
         validated = image_service._validate_filename(filename)
 
-        project_name = data.get("project")
         project_id = data.get("project_id")
-
-        if project_name:
-            project_data = project_service.get_project_by_name(project_name)
-            if project_data:
-                project_id = project_data["id"]
 
         if project_id and not check_project_access(project_id):
             return jsonify({"status": "error", "msg": "No access to project"}), 403
@@ -811,7 +757,7 @@ def recognize_text():
         return jsonify({"status": "error", "msg": "Invalid filename"}), 400
 
     if regions is None:
-        annotation_data = annotation_service.get_annotation(validated, project_name)
+        annotation_data = annotation_service.get_annotation(validated, project_id)
         regions = annotation_data.get("regions", [])
 
     total_regions = len(regions)
@@ -821,10 +767,8 @@ def recognize_text():
         "status": "processing",
     }
 
-    # Сохраняем user_id ДО запуска thread (session недоступна в фоне)
     current_user_id = session.get("user_id")
 
-    # Async background processing
     def task():
         def update_progress(processed, total):
             recognition_progress[validated] = {
@@ -834,14 +778,14 @@ def recognize_text():
             }
 
         logger.info(
-            f"[recognize_text thread] START: {validated}, regions={len(regions) if regions else 0}, project={project_name}"
+            f"[recognize_text thread] START: {validated}, regions={len(regions) if regions else 0}, project_id={project_id}"
         )
         try:
             texts = ai_service.recognize_text(
                 validated,
                 regions,
                 progress_callback=update_progress,
-                project_name=project_name,
+                project_id=project_id,
                 user_id=current_user_id,
             )
             recognition_progress[validated] = {
@@ -1146,7 +1090,7 @@ def upload_project_images(project_id):
             if not image_service.is_allowed_extension(file.filename):
                 continue
 
-            filename = image_service.upload_image(file, project_name=project_name)
+            filename = image_service.upload_image(file, project_id=project_id)
             if filename:
                 uploaded_count += 1
             else:

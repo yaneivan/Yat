@@ -114,9 +114,9 @@
                     </div>
                 </div>
                 <div class="image-actions">
-                    <a href="/cropper?project={{ project.name }}&image={{ image.filename }}" class="btn image-action-btn">Обрезка</a>
-                    <a href="/editor?project={{ project.name }}&image={{ image.filename }}" class="btn image-action-btn">Сегменты</a>
-                    <a href="/text_editor?project={{ project.name }}&image={{ image.filename }}" class="btn image-action-btn">Распознать</a>
+                    <a href="/cropper?project_id={{ project.id }}&image={{ image.filename }}" class="btn image-action-btn">Обрезка</a>
+                    <a href="/editor?project_id={{ project.id }}&image={{ image.filename }}" class="btn image-action-btn">Сегменты</a>
+                    <a href="/text_editor?project_id={{ project.id }}&image={{ image.filename }}" class="btn image-action-btn">Распознать</a>
                 </div>
             </div>
             {% endfor %}
