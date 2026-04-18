@@ -1166,7 +1166,7 @@ def export_project_pdf(project_id):
 
     from services.pdf_export_service import pdf_export_service
 
-    pdf_data = pdf_export_service.export_project(project_name, variant=variant)
+    pdf_data = pdf_export_service.export_project(project_id, variant=variant)
 
     if pdf_data is None:
         return jsonify(
