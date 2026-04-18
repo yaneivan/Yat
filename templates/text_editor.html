@@ -135,19 +135,12 @@
     <script src="/static/js/status_widget.js"></script>
     <script src="/static/js/text_editor.js"></script>
     <script>
-        // Передаем также имя проекта, если оно есть, чтобы JS мог формировать ссылки
-        // Используем '{{ project }}' или null/пустую строку
-        const currentProject = "{{ project if project else '' }}";
-
-        // Инициализируем виджет статусов
-        initStatusWidget(currentProject, "{{ filename }}");
-
-        // Инициализация с безопасной передачей имени файла
+        initStatusWidget({{ project_id if project_id else 'null' }}, "{{ filename }}");
         const editor = new TextEditor(
             'left-canvas',
             'right-canvas',
             "{{ filename }}",
-            currentProject
+            {{ project_id if project_id else 'null' }}
         );
     </script>
     <script src="/static/js/zoom-controller.js"></script>

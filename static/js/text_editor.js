@@ -86,7 +86,7 @@ class TextEditor {
     navigateTo(toolName) {
         let url = `/${toolName}?image=${this.filename}`;
         if (this.project) {
-            url += `&project=${this.project}`;
+            url += `&project_id=${this.project}`;
         }
         window.location.href = url;
     }
@@ -391,7 +391,7 @@ class TextEditor {
 
         // Load image on both canvases
         const timestamp = new Date().getTime();
-        const projectParam = this.project ? `&project=${this.project}` : '';
+        const projectParam = this.project ? `&project_id=${this.project}` : '';
         const imgUrl = `/data/images/${this.filename}?t=${timestamp}${projectParam}`;
 
         // Сохраняем версию загрузки для обнаружения race condition
@@ -1386,7 +1386,7 @@ class TextEditor {
         // Get the region polygon
         const region = this.regions[regionIndex];
         if (!region || !region.points || region.points.length < 3) {
-            const projectParam = this.project ? `?project=${this.project}` : '';
+            const projectParam = this.project ? `?project_id=${this.project}` : '';
             imgElement.src = `/data/images/${this.filename}?t=${new Date().getTime()}${projectParam}`;
             return;
         }
@@ -1400,7 +1400,7 @@ class TextEditor {
                 // Re-call after image is loaded (will use cached image this time)
                 this.extractRegionImage(regionIndex, imgElement);
             };
-            const projectParam = this.project ? `?project=${this.project}` : '';
+            const projectParam = this.project ? `?project_id=${this.project}` : '';
             this.cachedPreviewImage.src = `/data/images/${this.filename}?t=${new Date().getTime()}${projectParam}`;
 
             // Show placeholder while loading
@@ -1776,10 +1776,10 @@ class TextEditor {
             const display = document.getElementById('filename-display');
             if (display) display.textContent = newFilename;
 
-            // 3. Формируем URL, сохраняя параметр project, если он есть
+            // 3. Формируем URL, сохраняя параметр project_id, если он есть
             let newUrl = `${window.location.pathname}?image=${newFilename}`;
             if (this.project) {
-                newUrl += `&project=${this.project}`;
+                newUrl += `&project_id=${this.project}`;
             }
 
             // 4. Обновляем адресную строку без перезагрузки

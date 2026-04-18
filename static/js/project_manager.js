@@ -390,14 +390,14 @@ class ProjectManager {
 
         // Support both string (filename) and object (from updated API)
         const filename = typeof image === 'string' ? image : image.name;
-        const projectName = typeof image === 'object' ? image.project_name : null;
+        const projectId = typeof image === 'object' ? image.project_id : null;
 
         // Create elements safely to prevent XSS
         const imageContainer = document.createElement('div');
         imageContainer.style.position = 'relative';
 
         const img = document.createElement('img');
-        const projectParam = projectName ? `?project=${encodeURIComponent(projectName)}` : '';
+        const projectParam = projectId ? `?project_id=${projectId}` : '';
         img.src = `/data/images/${encodeURIComponent(filename)}${projectParam}`;
         img.className = 'thumb';
         img.loading = 'lazy';

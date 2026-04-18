@@ -84,12 +84,8 @@
 <script src="/static/js/zoom-controller.js"></script>
 <script src="/static/js/editor.js"></script>
 <script>
-    // Передаем проект в редактор
-    const currentProject = "{{ project if project else '' }}";
-    const editor = new HTREditor('c', "{{ filename }}", currentProject);
-
-    // Инициализируем виджет статусов
-    initStatusWidget(currentProject, "{{ filename }}");
+    const editor = new HTREditor('c', "{{ filename }}", {{ project_id if project_id else 'null' }});
+    initStatusWidget({{ project_id if project_id else 'null' }}, "{{ filename }}");
 
     // Инициализируем контроллер зума (overlay поверх workspace)
     const zoomCtrl = new ZoomController(editor.canvas, {

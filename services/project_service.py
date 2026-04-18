@@ -265,7 +265,7 @@ class ProjectService:
             for img in images:
                 data = img.to_dict()
                 data["thumbnail_url"] = image_storage_service.get_thumbnail_url(
-                    img.filename, project.name
+                    img.filename, project.id
                 )
                 result.append(data)
             return result

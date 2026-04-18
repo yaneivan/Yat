@@ -441,7 +441,7 @@ def cropper():
         if project_id and not check_project_access(project_id):
             abort(403)
 
-    if not image_service.get_original_path(filename, project_name):
+    if not image_service.get_original_path(filename, project_id):
         abort(404)
     project_role = _get_project_role_for_template(project_id)
     return render_template(
@@ -467,8 +467,8 @@ def list_images():
     if project_id and not check_project_access(project_id):
         return jsonify({"error": "No access to project"}), 403
 
-    if project_name:
-        images = image_service.get_all_images(project_name=project_name)
+    if project_id:
+        images = image_service.get_all_images(project_id=project_id)
     else:
         images = image_service.get_all_images()
     return jsonify(images)
@@ -478,8 +478,8 @@ def list_images():
 def image_url():
     """Get URL for an image, optionally scoped to a project."""
     filename = request.args.get("filename")
-    project = request.args.get("project")
-    image_type = request.args.get("type", "image")  # 'image' or 'original'
+    project_id = request.args.get("project_id", type=int)
+    image_type = request.args.get("type", "image")
     cache_bust = request.args.get("t")
 
     if not filename:
@@ -487,9 +487,11 @@ def image_url():
 
     try:
         if image_type == "original":
-            url = image_storage_service.get_original_url(filename, project, cache_bust)
+            url = image_storage_service.get_original_url(
+                filename, project_id, cache_bust
+            )
         else:
-            url = image_storage_service.get_image_url(filename, project, cache_bust)
+            url = image_storage_service.get_image_url(filename, project_id, cache_bust)
         return jsonify({"url": url})
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -499,8 +501,8 @@ def image_url():
 def serve_image(filename):
     try:
         validated = image_storage_service._validate_filename(filename)
-        project_name = request.args.get("project")
-        file_path = image_storage_service.get_image_path(validated, project_name)
+        project_id = request.args.get("project_id", type=int)
+        file_path = image_storage_service.get_image_path(validated, project_id)
         if not os.path.exists(file_path):
             return jsonify({"error": "Image not found"}), 404
         return send_from_directory(
@@ -514,8 +516,8 @@ def serve_image(filename):
 def serve_original(filename):
     try:
         validated = image_storage_service._validate_filename(filename)
-        project_name = request.args.get("project")
-        file_path = image_storage_service.get_original_path(validated, project_name)
+        project_id = request.args.get("project_id", type=int)
+        file_path = image_storage_service.get_original_path(validated, project_id)
         if not os.path.exists(file_path):
             return jsonify({"error": "Original not found"}), 404
         return send_from_directory(
@@ -529,29 +531,21 @@ def serve_original(filename):
 def serve_thumbnail(filename):
     try:
         validated = image_storage_service._validate_filename(filename)
-        project_name = request.args.get("project")
+        project_id = request.args.get("project_id", type=int)
 
-        # filename приходит как "ProjectName/name_thumb.jpg" или "name_thumb.jpg"
-        # Нужно извлечь оригинальное имя файла
         thumb_basename = os.path.basename(validated)
-        # Убрать "_thumb.jpg" чтобы получить оригинальное имя
         if thumb_basename.endswith("_thumb.jpg"):
-            original_name = thumb_basename[:-10]  # убрать "_thumb.jpg"
+            original_name = thumb_basename[:-10]
         else:
             original_name = thumb_basename
 
-        file_path = image_storage_service.get_thumbnail_path(
-            original_name, project_name
-        )
+        file_path = image_storage_service.get_thumbnail_path(original_name, project_id)
 
         if not os.path.exists(file_path):
-            # Fallback: сгенерировать на лету
             for ext in [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"]:
-                if image_storage_service.image_exists(
-                    original_name + ext, project_name
-                ):
+                if image_storage_service.image_exists(original_name + ext, project_id):
                     image_storage_service.generate_thumbnail(
-                        original_name + ext, project_name
+                        original_name + ext, project_id
                     )
                     break
 
@@ -580,7 +574,7 @@ def load_data(filename):
         if project_id and not check_project_access(project_id):
             return jsonify({"status": "error", "msg": "No access to project"}), 403
 
-        data = annotation_service.get_annotation(validated, project_name)
+        data = annotation_service.get_annotation(validated, project_id)
         return jsonify(data)
     except ValueError:
         return jsonify({"status": "error", "msg": "Invalid filename"}), 400
@@ -617,7 +611,7 @@ def save_data():
                 if role == "viewer":
                     return jsonify({"status": "error", "msg": "Только просмотр"}), 403
 
-        existing_data = annotation_service.get_annotation(validated, project_name)
+        existing_data = annotation_service.get_annotation(validated, project_id)
         old_regions = existing_data.get("regions", [])
         old_texts = existing_data.get("texts", {})
 
@@ -634,7 +628,7 @@ def save_data():
             f"Saving annotation for {validated}: {len(incoming_data.get('regions', []))} regions"
         )
 
-        if annotation_service.save_annotation(validated, existing_data, project_name):
+        if annotation_service.save_annotation(validated, existing_data, project_id):
             audit_service.log(
                 user_id=session.get("user_id"),
                 action="save_annotation",
@@ -642,7 +636,7 @@ def save_data():
                 entity_id=None,
                 old_value={"regions_count": len(old_regions), "texts": old_texts},
                 new_value={"regions_count": len(new_regions), "texts": new_texts},
-                details=f"{validated} in {project_name}: {len(new_regions)} regions",
+                details=f"{validated} in project {project_id}: {len(new_regions)} regions",
             )
             logger.info("Save successful")
             return jsonify({"status": "success"})
