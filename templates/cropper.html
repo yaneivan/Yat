@@ -119,8 +119,8 @@
             canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
 
             fitImageHeight(img);
-            if (zoomCtrl) {
-                zoomCtrl.setBaseZoom(canvas.getZoom());
+            if (window.zoomCtrl) {
+                window.zoomCtrl.setBaseZoom(canvas.getZoom());
             }
             loadExistingCropData();
         });
@@ -281,8 +281,8 @@
     }
 
     // ZoomController обрабатывает зум; после зума подстраиваем cropRect
-    if (zoomCtrl) {
-        zoomCtrl.afterZoom = () => {
+    if (window.zoomCtrl) {
+        window.zoomCtrl.afterZoom = () => {
             if (cropRect) {
                 const zoom = canvas.getZoom();
                 const strokeWidth = Math.max(1, Math.min(3, 2 / zoom));
@@ -372,7 +372,7 @@
     }
 </script>
 <script>
-    const zoomCtrl = new ZoomController(canvas, {
+    window.zoomCtrl = new ZoomController(canvas, {
         wrapper: document.getElementById('workspace')
     });
 </script>
