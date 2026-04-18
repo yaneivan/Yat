@@ -11,11 +11,11 @@
 
 <div id="toolbar">
     <button class="btn" onclick="window.location.href='/'" title="Home">🏠</button>
-    {% if project %}
-        <button class="btn" onclick="window.location.href='/project/{{ project }}'" title="Назад к проекту">📋 Проект</button>
+    {% if project_id %}
+        <button class="btn" onclick="window.location.href='/project/{{ project_id }}'" title="Назад к проекту">📋 Проект</button>
         <div class="sep"></div>
-        <button class="btn" onclick="window.location.href='/editor?image={{ filename }}&project={{ project }}'" title="Редактор сегментов">📋 Сегменты</button>
-        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}&project={{ project }}'" title="Редактор распознавания">🔤 Распознать</button>
+        <button class="btn" onclick="window.location.href='/editor?image={{ filename }}&project_id={{ project_id }}'" title="Редактор сегментов">📋 Сегменты</button>
+        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}&project_id={{ project_id }}'" title="Редактор распознавания">🔤 Распознать</button>
     {% else %}
         <button class="btn" onclick="window.location.href='/editor?image={{ filename }}'" title="Редактор сегментов">📋 Сегменты</button>
         <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}'" title="Редактор распознавания">🔤 Распознать</button>
@@ -72,12 +72,12 @@
 
 <script src="/static/js/api.js"></script>
 <script src="/static/js/status_widget.js"></script>
+<script src="/static/js/zoom-controller.js"></script>
 <script>
     const filename = "{{ filename }}";
-    const project = "{{ project if project else '' }}";
+    const projectId = {{ project_id if project_id else 'null' }};
     
-    // Инициализируем виджет статусов
-    initStatusWidget(project, filename);
+    initStatusWidget(projectId, filename);
     
     const canvas = new fabric.Canvas('c', {
         selection: false,
@@ -111,16 +111,16 @@
         resize();
         window.addEventListener('resize', resize);
 
-        imageList = await API.listImages(project || null);
+        imageList = await API.listImages(projectId);
 
-        const projectParam = project ? `?project=${encodeURIComponent(project)}` : '';
+        const projectParam = projectId ? `?project_id=${projectId}` : '';
         fabric.Image.fromURL(`/data/originals/${filename}${projectParam}`, img => {
             imgObj = img;
             canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
 
             fitImageHeight(img);
-            if (typeof zoomCtrl !== 'undefined') {
-                zoomCtrl.setBaseZoom(canvas.getZoom());
+            if (window.zoomCtrl) {
+                window.zoomCtrl.setBaseZoom(canvas.getZoom());
             }
             loadExistingCropData();
         });
@@ -144,7 +144,7 @@
     }
 
     async function loadExistingCropData() {
-        const data = await API.loadAnnotation(filename, project);
+        const data = await API.loadAnnotation(filename, projectId);
         let corners = [];
 
         if (data.crop_params && data.crop_params.corners && data.crop_params.corners.length > 0) {
@@ -281,8 +281,8 @@
     }
 
     // ZoomController обрабатывает зум; после зума подстраиваем cropRect
-    if (zoomCtrl) {
-        zoomCtrl.afterZoom = () => {
+    if (window.zoomCtrl) {
+        window.zoomCtrl.afterZoom = () => {
             if (cropRect) {
                 const zoom = canvas.getZoom();
                 const strokeWidth = Math.max(1, Math.min(3, 2 / zoom));
@@ -347,11 +347,11 @@
             ]
         };
 
-        const url = project ? `/api/crop?project=${encodeURIComponent(project)}` : '/api/crop';
+        const url = '/api/crop';
         const resp = await fetch(url, {
             method: 'POST',
             headers: API.getCsrfHeaders(),
-            body: JSON.stringify({ image_name: filename, box: cropData })
+            body: JSON.stringify({ image_name: filename, box: cropData, project_id: projectId })
         });
 
         if (resp.ok) {
@@ -365,15 +365,14 @@
         const idx = imageList.indexOf(filename);
         if (idx === -1) return;
         const newIdx = (idx + dir + imageList.length) % imageList.length;
-        const newUrl = project 
-            ? `?image=${imageList[newIdx]}&project=${encodeURIComponent(project)}`
+        const newUrl = projectId 
+            ? `?image=${imageList[newIdx]}&project_id=${projectId}`
             : `?image=${imageList[newIdx]}`;
         window.location.href = newUrl;
     }
 </script>
-<script src="/static/js/zoom-controller.js"></script>
 <script>
-    const zoomCtrl = new ZoomController(canvas, {
+    window.zoomCtrl = new ZoomController(canvas, {
         wrapper: document.getElementById('workspace')
     });
 </script>

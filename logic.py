@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 try:
     import torch  # noqa: F401
     from ultralytics import YOLO  # noqa: F401
+
     YOLO_AVAILABLE = True
 except ImportError:
     YOLO_AVAILABLE = False
@@ -39,6 +40,7 @@ try:
         TrOCRProcessor,
         VisionEncoderDecoderModel,
     )
+
     TROCR_AVAILABLE = True
 except ImportError:
     TROCR_AVAILABLE = False
@@ -47,6 +49,7 @@ except ImportError:
 # =============================================================================
 # Mathematical functions for coordinate transformations
 # =============================================================================
+
 
 def recalculate_regions(regions, old_crop, new_crop_params, new_w, new_h):
     """
@@ -57,45 +60,55 @@ def recalculate_regions(regions, old_crop, new_crop_params, new_w, new_h):
 
     def lerp_quad(u, v, c):
         # c: [TL, TR, BR, BL]
-        x = (1-u)*(1-v)*c[0]['x'] + u*(1-v)*c[1]['x'] + u*v*c[2]['x'] + (1-u)*v*c[3]['x']
-        y = (1-u)*(1-v)*c[0]['y'] + u*(1-v)*c[1]['y'] + u*v*c[2]['y'] + (1-u)*v*c[3]['y']
+        x = (
+            (1 - u) * (1 - v) * c[0]["x"]
+            + u * (1 - v) * c[1]["x"]
+            + u * v * c[2]["x"]
+            + (1 - u) * v * c[3]["x"]
+        )
+        y = (
+            (1 - u) * (1 - v) * c[0]["y"]
+            + u * (1 - v) * c[1]["y"]
+            + u * v * c[2]["y"]
+            + (1 - u) * v * c[3]["y"]
+        )
         return x, y
 
     def get_uv(px, py, c):
-        v_top = (c[1]['x'] - c[0]['x'], c[1]['y'] - c[0]['y'])
-        v_left = (c[3]['x'] - c[0]['x'], c[3]['y'] - c[0]['y'])
-        v_p = (px - c[0]['x'], py - c[0]['y'])
+        v_top = (c[1]["x"] - c[0]["x"], c[1]["y"] - c[0]["y"])
+        v_left = (c[3]["x"] - c[0]["x"], c[3]["y"] - c[0]["y"])
+        v_p = (px - c[0]["x"], py - c[0]["y"])
 
         def dot_ratio(v, p_v):
-            mag_sq = v[0]**2 + v[1]**2
+            mag_sq = v[0] ** 2 + v[1] ** 2
             if mag_sq == 0:
                 return 0
-            return (p_v[0]*v[0] + p_v[1]*v[1]) / mag_sq
+            return (p_v[0] * v[0] + p_v[1] * v[1]) / mag_sq
 
         return dot_ratio(v_top, v_p), dot_ratio(v_left, v_p)
 
-    has_old_crop = old_crop and 'corners' in old_crop
+    has_old_crop = old_crop and "corners" in old_crop
     if has_old_crop:
-        oc = old_crop['corners']
-        ow = math.sqrt((oc[1]['x']-oc[0]['x'])**2 + (oc[1]['y']-oc[0]['y'])**2)
-        oh = math.sqrt((oc[3]['x']-oc[0]['x'])**2 + (oc[3]['y']-oc[0]['y'])**2)
+        oc = old_crop["corners"]
+        ow = math.sqrt((oc[1]["x"] - oc[0]["x"]) ** 2 + (oc[1]["y"] - oc[0]["y"]) ** 2)
+        oh = math.sqrt((oc[3]["x"] - oc[0]["x"]) ** 2 + (oc[3]["y"] - oc[0]["y"]) ** 2)
 
     final_regions = []
     for reg in regions:
         new_points = []
-        for p in reg['points']:
+        for p in reg["points"]:
             if has_old_crop:
-                u_old, v_old = p['x'] / ow, p['y'] / oh
+                u_old, v_old = p["x"] / ow, p["y"] / oh
                 gx, gy = lerp_quad(u_old, v_old, oc)
             else:
-                gx, gy = p['x'], p['y']
+                gx, gy = p["x"], p["y"]
 
             u_new, v_new = get_uv(gx, gy, new_crop_params)
             final_x = u_new * new_w
             final_y = v_new * new_h
 
-            new_points.append({'x': int(round(final_x)), 'y': int(round(final_y))})
-        final_regions.append({'points': new_points})
+            new_points.append({"x": int(round(final_x)), "y": int(round(final_y))})
+        final_regions.append({"points": new_points})
 
     return final_regions
 
@@ -104,41 +117,44 @@ def recalculate_regions(regions, old_crop, new_crop_params, new_w, new_h):
 # Polygon helpers
 # =============================================================================
 
+
 def simplify_points(points, threshold):
     """
     Simplify polygon using Ramer-Douglas-Peucker algorithm via Shapely.
-    
+
     Args:
         points: List of dicts with 'x', 'y' coordinates
         threshold: Simplification threshold in pixels
-    
+
     Returns:
         Simplified list of points (at least 3 for valid polygon)
     """
     if not points or threshold <= 0 or len(points) < 3:
         return points
-    
+
     try:
         from shapely.geometry import LineString
-        
+
         # Convert to coordinate list
-        coords = [(p['x'], p['y']) for p in points]
-        
+        coords = [(p["x"], p["y"]) for p in points]
+
         # Create LineString and simplify
         line = LineString(coords)
         simplified = line.simplify(tolerance=threshold, preserve_topology=True)
-        
+
         # Convert back to list of dicts
-        result = [{'x': x, 'y': y} for x, y in simplified.coords]
-        
+        result = [{"x": x, "y": y} for x, y in simplified.coords]
+
         # Ensure at least 3 points for valid polygon
         if len(result) < 3:
             return points
-        
+
         return result
-    
+
     except Exception as e:
-        logger.warning(f"[simplify_points] Shapely error: {e}, falling back to original points")
+        logger.warning(
+            f"[simplify_points] Shapely error: {e}, falling back to original points"
+        )
         return points
 
 
@@ -152,8 +168,8 @@ def calculate_polygon_area(points):
 
     for i in range(n):
         j = (i + 1) % n
-        area += points[i]['x'] * points[j]['y']
-        area -= points[j]['x'] * points[i]['y']
+        area += points[i]["x"] * points[j]["y"]
+        area -= points[j]["x"] * points[i]["y"]
 
     return abs(area) / 2
 
@@ -161,32 +177,32 @@ def calculate_polygon_area(points):
 def calculate_overlap_ratio(points1, points2, use_min_area=False):
     """
     Calculate the overlap ratio between two polygons.
-    
+
     Args:
         points1, points2: Polygon points
         use_min_area: If True, use intersection/min_area instead of IoU.
-                      This is better for detecting when a small segment 
+                      This is better for detecting when a small segment
                       overlaps significantly with a larger one.
-    
+
     Returns:
         Overlap ratio as percentage (0-100)
     """
     try:
         from shapely.geometry import Polygon
-        
-        poly1 = Polygon([(p['x'], p['y']) for p in points1])
-        poly2 = Polygon([(p['x'], p['y']) for p in points2])
-        
+
+        poly1 = Polygon([(p["x"], p["y"]) for p in points1])
+        poly2 = Polygon([(p["x"], p["y"]) for p in points2])
+
         if not poly1.is_valid or not poly2.is_valid:
             pass  # Fallback to bounding box method below
         else:
             intersection = poly1.intersection(poly2).area
             area1 = poly1.area
             area2 = poly2.area
-            
+
             if area1 <= 0 or area2 <= 0:
                 return 0
-            
+
             if use_min_area:
                 # Use min area - better for small-inside-large detection
                 min_area = min(area1, area2)
@@ -201,17 +217,17 @@ def calculate_overlap_ratio(points1, points2, use_min_area=False):
         pass  # Fallback to bounding box method below
     except Exception:
         pass  # Fallback to bounding box method below
-    
-    # Fallback: bounding box approximation
-    min_x1 = min(p['x'] for p in points1)
-    max_x1 = max(p['x'] for p in points1)
-    min_y1 = min(p['y'] for p in points1)
-    max_y1 = max(p['y'] for p in points1)
 
-    min_x2 = min(p['x'] for p in points2)
-    max_x2 = max(p['x'] for p in points2)
-    min_y2 = min(p['y'] for p in points2)
-    max_y2 = max(p['y'] for p in points2)
+    # Fallback: bounding box approximation
+    min_x1 = min(p["x"] for p in points1)
+    max_x1 = max(p["x"] for p in points1)
+    min_y1 = min(p["y"] for p in points1)
+    max_y1 = max(p["y"] for p in points1)
+
+    min_x2 = min(p["x"] for p in points2)
+    max_x2 = max(p["x"] for p in points2)
+    min_y2 = min(p["y"] for p in points2)
+    max_y2 = max(p["y"] for p in points2)
 
     inter_x1 = max(min_x1, min_x2)
     inter_y1 = max(min_y1, min_y2)
@@ -222,7 +238,7 @@ def calculate_overlap_ratio(points1, points2, use_min_area=False):
         intersection_area = (inter_x2 - inter_x1) * (inter_y2 - inter_y1)
         area1 = calculate_polygon_area(points1)
         area2 = calculate_polygon_area(points2)
-        
+
         if use_min_area:
             min_area = min(area1, area2)
             if min_area > 0:
@@ -237,19 +253,21 @@ def calculate_overlap_ratio(points1, points2, use_min_area=False):
 
 def are_regions_spatially_close(points1, points2):
     """Check if two regions are spatially close to each other."""
-    centroid1_x = sum(p['x'] for p in points1) / len(points1)
-    centroid1_y = sum(p['y'] for p in points1) / len(points1)
-    centroid2_x = sum(p['x'] for p in points2) / len(points2)
-    centroid2_y = sum(p['y'] for p in points2) / len(points2)
+    centroid1_x = sum(p["x"] for p in points1) / len(points1)
+    centroid1_y = sum(p["y"] for p in points1) / len(points1)
+    centroid2_x = sum(p["x"] for p in points2) / len(points2)
+    centroid2_y = sum(p["y"] for p in points2) / len(points2)
 
-    distance = math.sqrt((centroid1_x - centroid2_x)**2 + (centroid1_y - centroid2_y)**2)
+    distance = math.sqrt(
+        (centroid1_x - centroid2_x) ** 2 + (centroid1_y - centroid2_y) ** 2
+    )
 
-    width1 = max(p['x'] for p in points1) - min(p['x'] for p in points1)
-    height1 = max(p['y'] for p in points1) - min(p['y'] for p in points1)
+    width1 = max(p["x"] for p in points1) - min(p["x"] for p in points1)
+    height1 = max(p["y"] for p in points1) - min(p["y"] for p in points1)
     size1 = math.sqrt(width1 * height1)
 
-    width2 = max(p['x'] for p in points2) - min(p['x'] for p in points2)
-    height2 = max(p['y'] for p in points2) - min(p['y'] for p in points2)
+    width2 = max(p["x"] for p in points2) - min(p["x"] for p in points2)
+    height2 = max(p["y"] for p in points2) - min(p["y"] for p in points2)
     size2 = math.sqrt(width2 * height2)
 
     avg_size = (size1 + size2) / 2
@@ -259,19 +277,24 @@ def are_regions_spatially_close(points1, points2):
 
 def convex_hull(points):
     """Find the convex hull of a set of points using Graham scan algorithm."""
+
     def polar_angle(p0, p1):
-        if p0['x'] == p1['x']:
-            return float('inf')
-        return math.atan2(p1['y'] - p0['y'], p1['x'] - p0['x'])
+        if p0["x"] == p1["x"]:
+            return float("inf")
+        return math.atan2(p1["y"] - p0["y"], p1["x"] - p0["x"])
 
     def distance_squared(p0, p1):
-        return (p1['x'] - p0['x']) ** 2 + (p1['y'] - p0['y']) ** 2
+        return (p1["x"] - p0["x"]) ** 2 + (p1["y"] - p0["y"]) ** 2
 
     def cross_product(o, a, b):
-        return (a['x'] - o['x']) * (b['y'] - o['y']) - (a['y'] - o['y']) * (b['x'] - o['x'])
+        return (a["x"] - o["x"]) * (b["y"] - o["y"]) - (a["y"] - o["y"]) * (
+            b["x"] - o["x"]
+        )
 
-    start = min(points, key=lambda p: (p['y'], p['x']))
-    sorted_points = sorted(points, key=lambda p: (polar_angle(start, p), distance_squared(start, p)))
+    start = min(points, key=lambda p: (p["y"], p["x"]))
+    sorted_points = sorted(
+        points, key=lambda p: (polar_angle(start, p), distance_squared(start, p))
+    )
 
     hull = []
     for point in sorted_points:
@@ -289,82 +312,96 @@ def merge_two_polygons(points1, points2):
     """
     try:
         from shapely.geometry import Polygon, MultiPolygon
-        
-        poly1 = Polygon([(p['x'], p['y']) for p in points1])
-        poly2 = Polygon([(p['x'], p['y']) for p in points2])
-        
+
+        poly1 = Polygon([(p["x"], p["y"]) for p in points1])
+        poly2 = Polygon([(p["x"], p["y"]) for p in points2])
+
         if not poly1.is_valid or not poly2.is_valid:
             return None
-        
+
         # Perform union
         result = poly1.union(poly2)
-        
+
         # Handle different result types
         if isinstance(result, Polygon):
             # Single polygon - extract points
             if result.is_empty:
                 return None
-            return {'points': [{'x': int(x), 'y': int(y)} for x, y in result.exterior.coords[:-1]]}
+            return {
+                "points": [
+                    {"x": int(x), "y": int(y)} for x, y in result.exterior.coords[:-1]
+                ]
+            }
         elif isinstance(result, MultiPolygon):
             # Multiple polygons - return the largest one (most likely the merged one)
             largest = max(result.geoms, key=lambda p: p.area)
-            return {'points': [{'x': int(x), 'y': int(y)} for x, y in largest.exterior.coords[:-1]]}
+            return {
+                "points": [
+                    {"x": int(x), "y": int(y)} for x, y in largest.exterior.coords[:-1]
+                ]
+            }
         else:
             return None
-            
+
     except ImportError:
         # Fallback to convex hull if shapely not available
         all_points = points1 + points2
         hull_points = convex_hull(all_points)
-        return {'points': hull_points}
+        return {"points": hull_points}
     except Exception:
         return None
 
 
 def _get_polygon_bounds(points):
     """Get bounding box and centroid of polygon."""
-    xs = [p['x'] for p in points]
-    ys = [p['y'] for p in points]
+    xs = [p["x"] for p in points]
+    ys = [p["y"] for p in points]
     return {
-        'min_x': min(xs),
-        'max_x': max(xs),
-        'min_y': min(ys),
-        'max_y': max(ys),
-        'centroid_x': sum(xs) / len(xs),
-        'centroid_y': sum(ys) / len(ys),
-        'width': max(xs) - min(xs),
-        'height': max(ys) - min(ys)
+        "min_x": min(xs),
+        "max_x": max(xs),
+        "min_y": min(ys),
+        "max_y": max(ys),
+        "centroid_x": sum(xs) / len(xs),
+        "centroid_y": sum(ys) / len(ys),
+        "width": max(xs) - min(xs),
+        "height": max(ys) - min(ys),
     }
 
 
 def _should_merge_horizontally(bounds1, bounds2, height_ratio_threshold=2.0):
     """
     Check if two polygons should be merged based on horizontal alignment.
-    
+
     Returns True if:
     - Polygons are horizontally aligned (similar Y positions)
     - Merging won't create an excessively tall polygon
-    
+
     Returns False if:
     - Polygons are vertically separated (different text lines)
     - Merging would create a polygon that's too tall
     """
     # Check vertical separation - if centroids are far apart in Y, don't merge
-    y_centroid_diff = abs(bounds1['centroid_y'] - bounds2['centroid_y'])
-    avg_height = (bounds1['height'] + bounds2['height']) / 2
-    
+    y_centroid_diff = abs(bounds1["centroid_y"] - bounds2["centroid_y"])
+    avg_height = (bounds1["height"] + bounds2["height"]) / 2
+
     # If vertical distance between centroids is more than average height,
     # they're likely on different lines
     if y_centroid_diff > avg_height * 0.7:
         return False
-    
+
     # Check if bounding boxes overlap significantly in Y dimension
-    y_overlap = max(0, min(bounds1['max_y'], bounds2['max_y']) - max(bounds1['min_y'], bounds2['min_y']))
-    min_y_overlap = min(bounds1['height'], bounds2['height']) * 0.3  # At least 30% height overlap
-    
+    y_overlap = max(
+        0,
+        min(bounds1["max_y"], bounds2["max_y"])
+        - max(bounds1["min_y"], bounds2["min_y"]),
+    )
+    min_y_overlap = (
+        min(bounds1["height"], bounds2["height"]) * 0.3
+    )  # At least 30% height overlap
+
     if y_overlap < min_y_overlap:
         return False
-    
+
     return True
 
 
@@ -372,7 +409,7 @@ def calculate_containment(inner, outer):
     """
     Calculate how much of the 'inner' polygon is contained within the 'outer' polygon.
     Uses shapely's covered_by for accurate geometric calculation.
-    
+
     Returns:
         float: Containment ratio (0.0 to 1.0)
         1.0 = inner is completely inside outer
@@ -380,26 +417,26 @@ def calculate_containment(inner, outer):
     """
     try:
         from shapely.geometry import Polygon
-        
-        poly_inner = Polygon([(p['x'], p['y']) for p in inner])
-        poly_outer = Polygon([(p['x'], p['y']) for p in outer])
-        
+
+        poly_inner = Polygon([(p["x"], p["y"]) for p in inner])
+        poly_outer = Polygon([(p["x"], p["y"]) for p in outer])
+
         if not poly_inner.is_valid or not poly_outer.is_valid:
             return 0.0
-        
+
         # Use shapely's built-in coverage check
         if poly_inner.covered_by(poly_outer):
             return 1.0
-        
+
         # Partial containment: intersection / inner area
         intersection = poly_inner.intersection(poly_outer).area
         inner_area = poly_inner.area
-        
+
         if inner_area <= 0:
             return 0.0
-        
+
         return intersection / inner_area
-        
+
     except ImportError:
         return 0.0
     except Exception:
@@ -409,46 +446,46 @@ def calculate_containment(inner, outer):
 def remove_duplicate_regions(regions, containment_threshold=0.9):
     """
     Remove segments that are almost completely contained within larger segments.
-    
+
     This handles the case where a small segment is inside a large one -
     instead of merging, we remove the small one as it's likely a detection duplicate.
-    
+
     Args:
         regions: List of region dicts with 'points'
         containment_threshold: If >90% of region A is inside region B, remove A
-    
+
     Returns:
         Filtered list of regions
     """
     if not regions:
         return regions
-    
+
     result = []
-    
+
     for i, region in enumerate(regions):
         is_contained = False
-        region_area = calculate_polygon_area(region['points'])
-        
+        region_area = calculate_polygon_area(region["points"])
+
         for j, other in enumerate(regions):
             if i == j:
                 continue
-            
-            other_area = calculate_polygon_area(other['points'])
-            
+
+            other_area = calculate_polygon_area(other["points"])
+
             # Only check if 'other' is significantly larger
             if other_area <= region_area:
                 continue
-            
+
             # Check how much 'region' is contained in 'other'
-            containment = calculate_containment(region['points'], other['points'])
-            
+            containment = calculate_containment(region["points"], other["points"])
+
             if containment > containment_threshold:
                 is_contained = True
                 break
-        
+
         if not is_contained:
             result.append(region)
-    
+
     return result
 
 
@@ -472,20 +509,20 @@ def merge_overlapping_regions(regions, overlap_threshold=50):
 
     while unprocessed_regions:
         current_region = unprocessed_regions.pop(0)
-        current_bounds = _get_polygon_bounds(current_region['points'])
+        current_bounds = _get_polygon_bounds(current_region["points"])
         regions_to_merge = []
 
         for other_region in unprocessed_regions[:]:
             # Use min_area=True to detect small-inside-large overlaps
             overlap_ratio = calculate_overlap_ratio(
-                current_region['points'], 
-                other_region['points'],
-                use_min_area=True
+                current_region["points"], other_region["points"], use_min_area=True
             )
-            other_bounds = _get_polygon_bounds(other_region['points'])
+            other_bounds = _get_polygon_bounds(other_region["points"])
 
             # Check if regions should be merged horizontally
-            can_merge_horizontally = _should_merge_horizontally(current_bounds, other_bounds)
+            can_merge_horizontally = _should_merge_horizontally(
+                current_bounds, other_bounds
+            )
 
             # Only merge if:
             # 1. Overlap ratio is above threshold
@@ -496,16 +533,20 @@ def merge_overlapping_regions(regions, overlap_threshold=50):
         final_region = current_region
         for region_to_merge in regions_to_merge:
             # Try to merge using shapely
-            merged = merge_two_polygons(final_region['points'], region_to_merge['points'])
+            merged = merge_two_polygons(
+                final_region["points"], region_to_merge["points"]
+            )
 
             if merged:
                 # Check if merged polygon is reasonable (not too tall)
-                merged_bounds = _get_polygon_bounds(merged['points'])
-                original_max_height = max(current_bounds['height'],
-                                         _get_polygon_bounds(region_to_merge['points'])['height'])
+                merged_bounds = _get_polygon_bounds(merged["points"])
+                original_max_height = max(
+                    current_bounds["height"],
+                    _get_polygon_bounds(region_to_merge["points"])["height"],
+                )
 
                 # If merged height is more than 2x the original, skip this merge
-                if merged_bounds['height'] <= original_max_height * 2.0:
+                if merged_bounds["height"] <= original_max_height * 2.0:
                     final_region = merged
                     unprocessed_regions.remove(region_to_merge)
                 # else: don't merge - it would create a "blob"
@@ -519,25 +560,26 @@ def merge_overlapping_regions(regions, overlap_threshold=50):
 # Import/Export helpers
 # =============================================================================
 
+
 def parse_page_xml(xml_path, simplify_val):
     """Parse PAGE XML file and extract regions and texts."""
     regions = []
     texts = {}
-    
+
     try:
         tree = ET.parse(xml_path)
         root = tree.getroot()
-        ns = {'p': root.tag.split('}')[0].strip('{')} if '}' in root.tag else {}
-        prefix = 'p:' if ns else ''
-        
-        for i, line in enumerate(root.findall(f'.//{prefix}TextLine', ns)):
-            coords = line.find(f'{prefix}Coords', ns)
-            if coords is not None and coords.get('points'):
+        ns = {"p": root.tag.split("}")[0].strip("{")} if "}" in root.tag else {}
+        prefix = "p:" if ns else ""
+
+        for i, line in enumerate(root.findall(f".//{prefix}TextLine", ns)):
+            coords = line.find(f"{prefix}Coords", ns)
+            if coords is not None and coords.get("points"):
                 pts = []
-                for pair in coords.get('points').strip().split():
+                for pair in coords.get("points").strip().split():
                     try:
-                        x, y = map(float, pair.split(','))
-                        pts.append({'x': int(x), 'y': int(y)})
+                        x, y = map(float, pair.split(","))
+                        pts.append({"x": int(x), "y": int(y)})
                     except (ValueError, TypeError, AttributeError):
                         # Skip malformed coordinate pairs
                         continue
@@ -545,51 +587,64 @@ def parse_page_xml(xml_path, simplify_val):
                 if pts:
                     if simplify_val > 0:
                         pts = simplify_points(pts, simplify_val)
-                    regions.append({'points': pts})
+                    regions.append({"points": pts})
 
-                    text_equiv = line.find(f'{prefix}TextEquiv', ns)
+                    text_equiv = line.find(f"{prefix}TextEquiv", ns)
                     if text_equiv is not None:
-                        unicode_elem = text_equiv.find(f'{prefix}Unicode', ns)
+                        unicode_elem = text_equiv.find(f"{prefix}Unicode", ns)
                         if unicode_elem is not None and unicode_elem.text:
                             texts[str(i)] = unicode_elem.text
                     else:
-                        texts[str(i)] = ''
-                        
+                        texts[str(i)] = ""
+
     except Exception as e:
         logger.error(f"XML Error: {e}")
 
     return regions, texts
 
 
-def process_zip_import(file, simplify_val=0, project_name=None):
+def process_zip_import(file, simplify_val=0, project_id=None):
     """
     Import ZIP archive into a project.
-    If project_name is not specified, creates a new project.
+    If project_id is not specified, creates a new project.
+    Returns: (count, project_id, project_name)
     """
     import uuid
     from services.project_service import project_service
     from services.annotation_service import annotation_service
 
-    logger.info(f"[ZIP Import] Started import: file={file.filename}, project={project_name}, simplify={simplify_val}")
+    logger.info(
+        f"[ZIP Import] Started import: file={file.filename}, project_id={project_id}, simplify={simplify_val}"
+    )
 
-    if project_name is None:
+    project_name = None
+
+    if project_id is None:
         original_filename = file.filename
-        project_name = os.path.splitext(original_filename)[0] + "_" + str(uuid.uuid4())[:8]
+        project_name = (
+            os.path.splitext(original_filename)[0] + "_" + str(uuid.uuid4())[:8]
+        )
         logger.info(f"[ZIP Import] Creating new project: {project_name}")
         result = project_service.create_project(project_name)
 
         if not result:
             logger.error(f"[ZIP Import] Failed to create project: {project_name}")
             raise Exception(f"Failed to create project: {project_name}")
-        logger.info(f"[ZIP Import] Project created: {project_name}")
+        project_id = result["id"]
+        logger.info(f"[ZIP Import] Project created: {project_name} (id={project_id})")
     else:
-        logger.info(f"[ZIP Import] Using existing project: {project_name}")
+        project_data = project_service.get_project(project_id)
+        if project_data:
+            project_name = project_data["name"]
+        logger.info(
+            f"[ZIP Import] Using existing project: {project_name} (id={project_id})"
+        )
 
-    zip_path = os.path.join(storage.TEMP_FOLDER, 'import.zip')
+    zip_path = os.path.join(storage.TEMP_FOLDER, "import.zip")
     logger.info(f"[ZIP Import] Saving ZIP to: {zip_path}")
     file.save(zip_path)
 
-    extract_path = os.path.join(storage.TEMP_FOLDER, 'ext')
+    extract_path = os.path.join(storage.TEMP_FOLDER, "ext")
     if os.path.exists(extract_path):
         shutil.rmtree(extract_path)
     os.makedirs(extract_path)
@@ -599,12 +654,12 @@ def process_zip_import(file, simplify_val=0, project_name=None):
 
     try:
         logger.info("[ZIP Import] Opening ZIP archive...")
-        with zipfile.ZipFile(zip_path, 'r') as z:
-            # Zip Slip vulnerability fix: validate all paths before extraction
+        with zipfile.ZipFile(zip_path, "r") as z:
             for member in z.namelist():
                 member_path = os.path.join(extract_path, member)
-                # Check that the extracted file will be within extract_path
-                if not os.path.abspath(member_path).startswith(os.path.abspath(extract_path)):
+                if not os.path.abspath(member_path).startswith(
+                    os.path.abspath(extract_path)
+                ):
                     logger.error(f"[ZIP Import] Zip Slip detected: {member}")
                     raise Exception(f"Zip Slip detected: {member}")
 
@@ -614,57 +669,66 @@ def process_zip_import(file, simplify_val=0, project_name=None):
 
         logger.info("[ZIP Import] Walking through extracted files...")
         for root, _, files in os.walk(extract_path):
+            logger.info(f"[ZIP Import] Directory: {root}, files: {files}")
             for f in files:
+                logger.info(
+                    f"[ZIP Import] Found file: {f}, ext check: {f.lower().endswith(tuple(storage.ALLOWED_EXTENSIONS))}"
+                )
                 if f.lower().endswith(tuple(storage.ALLOWED_EXTENSIONS)):
                     logger.info(f"[ZIP Import] Processing image: {f}")
                     src = os.path.join(root, f)
 
-                    # Use image_storage_service for project-specific paths
-                    from services.image_storage_service import image_storage_service
-                    dest_path = image_storage_service.get_image_path(f, project_name)
-                    shutil.move(src, dest_path)
-                    logger.info(f"[ZIP Import] Moved image to: {dest_path}")
-
-                    # Copy to originals folder
-                    original_dest = image_storage_service.get_original_path(f, project_name)
-                    shutil.copy(dest_path, original_dest)
-                    logger.info(f"[ZIP Import] Copied to originals: {original_dest}")
-
-                    xml_cands = [os.path.splitext(src)[0]+'.xml', src+'.xml']
+                    xml_cands = [os.path.splitext(src)[0] + ".xml", src + ".xml"]
                     xml_found = False
+                    regs, texts = [], {}
                     for xc in xml_cands:
                         if os.path.exists(xc):
                             xml_found = True
                             logger.info(f"[ZIP Import] Found XML: {xc}")
                             regs, texts = parse_page_xml(xc, simplify_val)
-                            logger.info(f"[ZIP Import] Parsed XML: {len(regs)} regions, {len(texts)} texts")
-
-                            # Сначала добавляем изображение в проект (создаётся в БД)
-                            logger.info(f"[ZIP Import] Adding image to project: {f}")
-                            project_service.add_image(
-                                project_name=project_name,
-                                filename=f,
-                                original_path=original_dest,
-                                cropped_path=dest_path,
-                                status=ImageStatus.SEGMENTED,
-                                crop_params=None
+                            logger.info(
+                                f"[ZIP Import] Parsed XML: {len(regs)} regions, {len(texts)} texts"
                             )
-
-                            # Потом сохраняем аннотацию (теперь image есть в БД)
-                            logger.info(f"[ZIP Import] Saving annotation for: {f}")
-                            annotation_data = {
-                                'image_name': f,
-                                'regions': regs,
-                                'texts': texts,
-                                'status': ImageStatus.SEGMENTED.value
-                            }
-                            annotation_service.save_annotation(f, annotation_data, project_name)
-                            logger.info(f"[ZIP Import] Annotation saved for: {f}")
                             break
-                    
+
+                    from services.image_storage_service import image_storage_service
+
+                    dest_path = image_storage_service.get_image_path(f, project_id)
+                    shutil.move(src, dest_path)
+                    logger.info(f"[ZIP Import] Moved image to: {dest_path}")
+
+                    original_dest = image_storage_service.get_original_path(
+                        f, project_id
+                    )
+                    shutil.copy(dest_path, original_dest)
+                    logger.info(f"[ZIP Import] Copied to originals: {original_dest}")
+
+                    logger.info(f"[ZIP Import] Adding image to project: {f}")
+                    project_service.add_image(
+                        project_id=project_id,
+                        filename=f,
+                        original_path=original_dest,
+                        cropped_path=dest_path,
+                        status=ImageStatus.SEGMENTED,
+                        crop_params=None,
+                    )
+
+                    if xml_found:
+                        logger.info(f"[ZIP Import] Saving annotation for: {f}")
+                        annotation_data = {
+                            "image_name": f,
+                            "regions": regs,
+                            "texts": texts,
+                            "status": ImageStatus.SEGMENTED.value,
+                        }
+                        annotation_service.save_annotation(
+                            f, annotation_data, project_id
+                        )
+                        logger.info(f"[ZIP Import] Annotation saved for: {f}")
+
                     if not xml_found:
                         logger.warning(f"[ZIP Import] No XML found for image: {f}")
-                    
+
                     count += 1
                     logger.info(f"[ZIP Import] Progress: {count} images processed")
     finally:
@@ -675,30 +739,31 @@ def process_zip_import(file, simplify_val=0, project_name=None):
             shutil.rmtree(extract_path)
             logger.info(f"[ZIP Import] Cleaned up extract path: {extract_path}")
 
-    logger.info(f"[ZIP Import] Complete: {count} images imported to project '{project_name}'")
-    return count, project_name
+    logger.info(
+        f"[ZIP Import] Complete: {count} images imported to project '{project_name}' (id={project_id})"
+    )
+    return count, project_id, project_name
 
 
 # =============================================================================
 # Batch processing functions
 # =============================================================================
 
-def run_batch_detection_for_project(project_name, settings=None, task_id=None):
+
+def run_batch_detection_for_project(project_id, settings=None, task_id=None):
     """
     Run batch detection for all images in a project.
 
     Args:
-        project_name: Project name
+        project_id: Project ID
         settings: YOLO detection settings
         task_id: Task ID from task_service (passed by app.py)
     """
     if settings is None:
         settings = {}
 
-    # Use project_service to get images from database
     from services import project_service, task_service, ai_service, annotation_service
 
-    # Get task to find which images to process
     if not task_id:
         logger.error("Error: task_id not provided for batch detection")
         return
@@ -708,9 +773,8 @@ def run_batch_detection_for_project(project_name, settings=None, task_id=None):
         logger.error(f"Error: task {task_id} not found")
         return
 
-    # Use images from task (may be a subset if user selected specific images)
     image_names = task.images or []
-    
+
     if not image_names:
         logger.warning(f"No images found in task {task_id}")
         return
@@ -720,41 +784,44 @@ def run_batch_detection_for_project(project_name, settings=None, task_id=None):
 
         for idx, image_name in enumerate(image_names):
             try:
-                regions = ai_service.detect_lines(image_name, settings, project_name)
+                regions = ai_service.detect_lines(image_name, settings, project_id)
 
-                # Use annotation_service instead of old storage layer
-                annotation_data = annotation_service.get_annotation(image_name, project_name)
-                annotation_data['regions'] = regions
-                if annotation_data.get('status') != ImageStatus.CROPPED.value:
-                    annotation_data['status'] = ImageStatus.SEGMENTED.value
+                annotation_data = annotation_service.get_annotation(
+                    image_name, project_id
+                )
+                annotation_data["regions"] = regions
+                if annotation_data.get("status") != ImageStatus.CROPPED.value:
+                    annotation_data["status"] = ImageStatus.SEGMENTED.value
 
-                annotation_service.save_annotation(image_name, annotation_data, project_name)
+                annotation_service.save_annotation(
+                    image_name, annotation_data, project_id
+                )
                 task_service.update_progress(task.id, idx + 1)
 
             except Exception as e:
                 logger.error(f"Error detecting lines in {image_name}: {e}")
                 task_service.update_progress(task.id, idx + 1)
 
-        task_service.update_progress(task.id, len(image_names), status=TaskStatus.COMPLETED)
-        logger.info(f"Batch detection completed for project {project_name}")
+        task_service.update_progress(
+            task.id, len(image_names), status=TaskStatus.COMPLETED
+        )
+        logger.info(f"Batch detection completed for project {project_id}")
 
     except Exception as e:
-        logger.error(f"Error in batch detection for project {project_name}: {e}")
+        logger.error(f"Error in batch detection for project {project_id}: {e}")
         task_service.fail_task(task.id, str(e))
 
 
-def run_batch_recognition_for_project(project_name, task_id=None):
+def run_batch_recognition_for_project(project_id, task_id=None):
     """
     Run batch recognition for all images in a project.
 
     Args:
-        project_name: Project name
+        project_id: Project ID
         task_id: Task ID from task_service (passed by app.py)
     """
-    # Import services
     from services import task_service, ai_service
 
-    # Get task by ID (passed from app.py)
     if not task_id:
         logger.error("Error: task_id not provided for batch recognition")
         return
@@ -764,7 +831,6 @@ def run_batch_recognition_for_project(project_name, task_id=None):
         logger.error(f"Error: task {task_id} not found")
         return
 
-    # Use images from task (may be a subset if user selected specific images)
     image_names = task.images or []
 
     if not image_names:
@@ -776,18 +842,20 @@ def run_batch_recognition_for_project(project_name, task_id=None):
 
         for idx, image_name in enumerate(image_names):
             try:
-                ai_service.recognize_text(image_name, None, project_name=project_name)
+                ai_service.recognize_text(image_name, None, project_id=project_id)
                 task_service.update_progress(task.id, idx + 1)
 
             except Exception as e:
                 logger.error(f"Error recognizing text in {image_name}: {e}")
                 task_service.update_progress(task.id, idx + 1)
 
-        task_service.update_progress(task.id, len(image_names), status=TaskStatus.COMPLETED)
-        logger.info(f"Batch recognition completed for project {project_name}")
+        task_service.update_progress(
+            task.id, len(image_names), status=TaskStatus.COMPLETED
+        )
+        logger.info(f"Batch recognition completed for project {project_id}")
 
     except Exception as e:
-        logger.error(f"Error in batch recognition for project {project_name}: {e}")
+        logger.error(f"Error in batch recognition for project {project_id}: {e}")
         task_service.fail_task(task.id, str(e))
 
 
