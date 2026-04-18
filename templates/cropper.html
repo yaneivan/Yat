@@ -144,7 +144,7 @@
     }
 
     async function loadExistingCropData() {
-        const data = await API.loadAnnotation(filename);
+        const data = await API.loadAnnotation(filename, project);
         let corners = [];
 
         if (data.crop_params && data.crop_params.corners && data.crop_params.corners.length > 0) {
