@@ -13,63 +13,8 @@ dependencies = [
     "reportlab>=4.0.0",
     "shapely>=2.0.0",
     "sqlalchemy>=2.0.48",
-    "transformers>=4.48.0,<5.0.0",
-    "ultralytics>=8.3.0",
     "rapidfuzz>=3.10.0",
     "numpy<2",
-
-    # =============================================================================
-    # PyTorch Configuration - ВЫБЕРИТЕ ОДИН ВАРИАНТ ПОД ВАШУ СИСТЕМУ
-    # =============================================================================
-    
-    # ВАРИАНТ 1: CPU (по умолчанию, работает везде без NVIDIA GPU)
-    # Раскомментируйте для CPU:
-    # "torch>=2.5.0",
-    # "torchvision>=0.20.0",
-    
-    # ВАРИАНТ 2: CUDA 12.1 (драйверы NVIDIA 470.x - 535.x)
-    # Для видеокарт: P102, GTX 10xx, RTX 20xx, RTX 30xx (старые драйверы)
-    # Раскомментируйте для CUDA 12.1:
-    # "torch==2.5.1+cu121",
-    # "torchvision==0.20.1+cu121",
-    
-    # ВАРИАНТ 3: CUDA 12.4 (драйверы NVIDIA 545.x+)
-    # Для видеокарт: GTX 16xx, RTX 30xx, RTX 40xx (новые драйверы)
-    # Активно для этой машины (GTX 1660 Super, драйвер 560.x):
-    "torch==2.6.0+cu124",
-    "torchvision==0.21.0+cu124",
-]
-
-# Индекс для PyTorch CUDA 12.4
-[[tool.uv.index]]
-name = "pytorch-cuda"
-url = "https://download.pytorch.org/whl/cu124"
-
-# =============================================================================
-# Альтернативные индексы для других версий CUDA
-# =============================================================================
-# Для CUDA 12.1 (раскомментируйте если используете Вариант 2):
-# [[tool.uv.index]]
-# name = "pytorch-cuda-121"
-# url = "https://download.pytorch.org/whl/cu121"
-
-# =============================================================================
-# PyTorch GPU Configuration
-# =============================================================================
-# По умолчанию: CPU версия (работает везде)
-#
-# Для GPU выбери нужную версию CUDA (устанавливается напрямую через pip):
-#   CUDA 12.1: uv pip install torch==2.5.1+cu121 torchvision==0.20.1+cu121 \
-#              --index-url https://download.pytorch.org/whl/cu121
-#   CUDA 12.4: uv pip install torch==2.6.0+cu124 torchvision==0.21.0+cu124 \
-#              --index-url https://download.pytorch.org/whl/cu124
-# =============================================================================
-
-[project.optional-dependencies]
-# CPU версия (берётся с PyPI)
-cpu = [
-    "torch>=2.5.0",
-    "torchvision>=0.20.0",
 ]
 
 [dependency-groups]
@@ -77,4 +22,16 @@ dev = [
     "pytest>=9.0.2",
     "ruff>=0.15.5",
     "vulture>=2.15",
+    "playwright>=1.40.0",
+    "pytest-playwright>=0.4.4",
+    "python-dotenv>=1.0.0",
+]
+
+[tool.pytest.ini_options]
+# Base URL для E2E тестов (Playwright)
+base_url = "http://127.0.0.1:5000"
+
+# Маркировки тестов
+markers = [
+    "e2e: End-to-End тесты с Playwright",
 ]
