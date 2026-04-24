@@ -6,103 +6,19 @@
     <title>Редактор сегментов</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
-    <style>
-        /* Status widget styles */
-        .status-badge { cursor: pointer; transition: opacity 0.2s; }
-        .status-badge:hover { opacity: 0.8; }
-        .status-crop { background: #ffc107; color: #212529; }
-        .status-cropped { background: #6c757d; color: white; }
-        .status-segment { background: #28a745; color: white; }
-        .status-texted { background: #17a2b8; color: white; }
-        .status-review_pending { background: #fd7e14; color: #212529; }
-        .status-reviewed { background: #6f42c1; color: white; }
-        
-        .status-popover {
-            display: none;
-            position: fixed;
-            background: #2a2a2a;
-            border: 1px solid #444;
-            border-radius: 8px;
-            padding: 15px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-            z-index: 100000;
-            width: 250px;
-            color: #ddd;
-        }
-        .status-popover.show { display: block; }
-        .status-popover h4 { margin: 0 0 10px 0; font-size: 0.9em; color: #fff; }
-        .status-option {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 5px;
-            cursor: pointer;
-            border-radius: 4px;
-            color: #ddd;
-        }
-        .status-option:hover { background: #3a3a3a; }
-        .status-option input[type="radio"] { margin: 0; }
-        .status-popover textarea {
-            width: 100%;
-            min-height: 60px;
-            margin-top: 10px;
-            padding: 8px;
-            border: 1px solid #444;
-            border-radius: 4px;
-            font-family: inherit;
-            font-size: 0.85em;
-            resize: vertical;
-            box-sizing: border-box;
-            background: #333;
-            color: #ddd;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-        .status-popover button {
-            width: 100%;
-            margin-top: 10px;
-            padding: 8px;
-            background: #007bff;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.9em;
-        }
-        .status-popover button:hover { background: #0056b3; }
-        
-        /* Notification styles */
-        .notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 12px 20px;
-            border-radius: 4px;
-            color: white;
-            z-index: 100001;
-            animation: slideIn 0.3s ease;
-        }
-        .notification.success { background: #28a745; }
-        .notification.error { background: #dc3545; }
-        
-        @keyframes slideIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
-    </style>
 </head>
-<body>
+<body class="editor">
 
 <div id="toolbar">
     <button class="btn" onclick="window.location.href='/'" title="Home">🏠</button>
-    {% if project %}
-        <button class="btn" onclick="window.location.href='/project/{{ project }}'" title="Назад к проекту">📋 Проект</button>
+    {% if project_id %}
+        <button class="btn" onclick="window.location.href='/project/{{ project_id }}'" title="Назад к проекту">📋 Проект</button>
         <div class="sep"></div>
         <button class="btn" onclick="editor.navigateTo('cropper')" title="Редактор обрезки">✂️ Обрезка</button>
-        <button class="btn" onclick="editor.navigateTo('text_editor')" title="Редактор распознавания">🔤 Распознавать</button>
+        <button class="btn" onclick="editor.navigateTo('text_editor')" title="Редактор распознавания">🔤 Распознать</button>
     {% else %}
         <button class="btn" onclick="editor.navigateTo('cropper')" title="Редактор обрезки">✂️ Обрезка</button>
-        <button class="btn" onclick="editor.navigateTo('text_editor')" title="Редактор распознавания">🔤 Распознавать</button>
+        <button class="btn" onclick="editor.navigateTo('text_editor')" title="Редактор распознавания">🔤 Распознать</button>
     {% endif %}
     <div class="sep"></div>
     <button class="btn" onclick="editor.goImage(-1)">&lt;</button>
@@ -122,35 +38,38 @@
     <button class="btn danger disabled" id="btn-delete" onclick="editor.deleteSelected()">Удалить (Del)</button>
     <div class="sep"></div>
     <span id="status-badge" class="status-badge" onclick="statusWidget.openPopover()" style="cursor:pointer; padding:4px 8px; border-radius:4px; font-size:0.85em; font-weight:600;">Загрузка...</span>
+    <span id="save-indicator" class="save-indicator" title="Сохранено"></span>
 </div>
+
+{% if project_role == 'viewer' %}
+<div class="read-only-banner" style="margin:0; border-radius:0;">
+    ⚠️ Режим только чтения — изменения сохранять нельзя
+</div>
+{% endif %}
 
 <div id="workspace" oncontextmenu="return false;">
     <canvas id="c"></canvas>
-    <div class="help-overlay">ПКМ: Пан | Колесо: Зум | ESC: Отмена | Клик в начало: Замкнуть | Ctrl+A: Всё</div>
+    <div class="help-overlay">Space: Пан | ПКМ: Пан | Колесо: Зум | ESC: Отмена | Клик в начало: Замкнуть | Ctrl+A: Всё</div>
 </div>
 
 <!-- Status popover -->
-<div id="status-popover" class="status-popover">
+<div id="status-popover" class="status-popover dark">
     <h4>Статус:</h4>
     <label class="status-option">
-        <input type="radio" name="status" value="crop">
+        <input type="radio" name="status" value="uploaded">
         Загружено
     </label>
     <label class="status-option">
         <input type="radio" name="status" value="cropped">
-        Кадрировано
+        Обрезано
     </label>
     <label class="status-option">
-        <input type="radio" name="status" value="segment">
-        Размечено
+        <input type="radio" name="status" value="segmented">
+        Полигоны готовы
     </label>
     <label class="status-option">
-        <input type="radio" name="status" value="texted">
-        Текст добавлен
-    </label>
-    <label class="status-option">
-        <input type="radio" name="status" value="review_pending">
-        Требует ревью
+        <input type="radio" name="status" value="recognized">
+        Текст распознан
     </label>
     <label class="status-option">
         <input type="radio" name="status" value="reviewed">
@@ -162,14 +81,16 @@
 
 <script src="/static/js/api.js"></script>
 <script src="/static/js/status_widget.js"></script>
+<script src="/static/js/zoom-controller.js"></script>
 <script src="/static/js/editor.js"></script>
 <script>
-    // Передаем проект в редактор
-    const currentProject = "{{ project if project else '' }}";
-    const editor = new HTREditor('c', "{{ filename }}", currentProject);
-    
-    // Инициализируем виджет статусов
-    initStatusWidget(currentProject, "{{ filename }}");
+    const editor = new HTREditor('c', "{{ filename }}", {{ project_id if project_id else 'null' }});
+    initStatusWidget({{ project_id if project_id else 'null' }}, "{{ filename }}");
+
+    // Инициализируем контроллер зума (overlay поверх workspace)
+    const zoomCtrl = new ZoomController(editor.canvas, {
+        wrapper: document.getElementById('workspace')
+    });
 </script>
 </body>
 </html>

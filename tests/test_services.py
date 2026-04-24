@@ -4,6 +4,7 @@
 Эти тесты проверяют критичные места которые не покрываются test_api.py:
 1. TaskService - работа с базой данных
 2. recognition_progress утечка — память не очищается
+3. AnnotationService - автосмена статуса при заполнении полигонов
 
 AI тесты перенесены в test_ai.py
 """
@@ -206,6 +207,265 @@ class TestTaskServiceUsage:
         )
 
 
+class TestAnnotationServiceAutoRecognize:
+    """
+    Тесты для автоматической смены статуса на recognized
+    при заполнении всех полигонов текстом.
+    """
+
+    def test_all_polygons_filled_returns_true_when_all_have_text(self):
+        """Тест: _all_polygons_filled возвращает True когда все полигоны с текстом."""
+        from services.annotation_service import annotation_service
+
+        polygons = [
+            {'points': [[0, 0], [100, 0], [100, 50], [0, 50]], 'text': 'строка 1'},
+            {'points': [[0, 60], [100, 60], [100, 110], [0, 110]], 'text': 'строка 2'},
+        ]
+
+        assert annotation_service._all_polygons_filled(polygons) is True
+
+    def test_all_polygons_filled_returns_false_when_one_empty(self):
+        """Тест: _all_polygons_filled возвращает False если хоть один полигон без текста."""
+        from services.annotation_service import annotation_service
+
+        polygons = [
+            {'points': [[0, 0], [100, 0], [100, 50], [0, 50]], 'text': 'строка 1'},
+            {'points': [[0, 60], [100, 60], [100, 110], [0, 110]], 'text': ''},
+        ]
+
+        assert annotation_service._all_polygons_filled(polygons) is False
+
+    def test_all_polygons_filled_returns_false_when_whitespace_only(self):
+        """Тест: полигон с пробелами считается пустым."""
+        from services.annotation_service import annotation_service
+
+        polygons = [
+            {'points': [[0, 0], [100, 0], [100, 50], [0, 50]], 'text': '   '},
+        ]
+
+        assert annotation_service._all_polygons_filled(polygons) is False
+
+    def test_all_polygons_filled_returns_false_for_empty_list(self):
+        """Тест: пустой список полигонов не считается заполненным."""
+        from services.annotation_service import annotation_service
+
+        assert annotation_service._all_polygons_filled([]) is False
+
+    def test_all_polygons_filled_returns_false_for_missing_text_field(self):
+        """Тест: полигон без поля text считается пустым."""
+        from services.annotation_service import annotation_service
+
+        polygons = [
+            {'points': [[0, 0], [100, 0], [100, 50], [0, 50]]},
+        ]
+
+        assert annotation_service._all_polygons_filled(polygons) is False
+
+    def test_save_annotation_auto_sets_status_to_recognized(self):
+        """
+        Тест: при сохранении аннотации с заполненными полигонами
+        статус изображения автоматически меняется на recognized.
+        """
+        from services.annotation_service import annotation_service
+        from database.session import SessionLocal
+        from database.models import Image, Project
+        from database.enums import ImageStatus
+
+        # Создать тестовые данные в БД
+        session = SessionLocal()
+
+        # Создать проект
+        project = Project(name='AutoRecognizeTest', description='Test')
+        session.add(project)
+        session.commit()
+
+        # Создать изображение со статусом segmented
+        image = Image(
+            project_id=project.id,
+            filename='test_img.png',
+            original_path='/tmp/test.png',
+            cropped_path='/tmp/test_cropped.png',
+            status=ImageStatus.SEGMENTED.value
+        )
+        session.add(image)
+        session.commit()
+
+        # Сохранить аннотацию с заполненными полигонами
+        data = {
+            'regions': [
+                {'points': [[0, 0], [100, 0], [100, 50], [0, 50]]},
+                {'points': [[0, 60], [100, 60], [100, 110], [0, 110]]},
+            ],
+            'texts': {
+                '0': 'распознанный текст 1',
+                '1': 'распознанный текст 2',
+            }
+        }
+
+        result = annotation_service.save_annotation('test_img.png', data, project_name='AutoRecognizeTest')
+        assert result is True
+
+        # Проверить что статус изменился на recognized
+        session.refresh(image)
+        assert image.status == ImageStatus.RECOGNIZED.value
+
+        # Cleanup
+        session.delete(image)
+        session.delete(project)
+        session.commit()
+        session.close()
+
+    def test_save_annotation_ignores_explicit_status_and_auto_promotes(self):
+        """
+        Тест: бэкенд сам решает статус по факту заполнения полигонов,
+        игнорируя явно переданный status в data.
+        Если все полигоны заполнены — автоматически повышает до recognized.
+        """
+        from services.annotation_service import annotation_service
+        from database.session import SessionLocal
+        from database.models import Image, Project
+        from database.enums import ImageStatus
+
+        session = SessionLocal()
+
+        project = Project(name='NoAutoChangeTest', description='Test')
+        session.add(project)
+        session.commit()
+
+        image = Image(
+            project_id=project.id,
+            filename='test_img2.png',
+            original_path='/tmp/test2.png',
+            cropped_path='/tmp/test2_cropped.png',
+            status=ImageStatus.SEGMENTED.value
+        )
+        session.add(image)
+        session.commit()
+
+        # Сохранить аннотацию с явно указанным статусом cropped
+        # но все полигоны заполнены текстом
+        data = {
+            'regions': [
+                {'points': [[0, 0], [100, 0], [100, 50], [0, 50]]},
+            ],
+            'texts': {
+                '0': 'распознанный текст',
+            },
+            'status': ImageStatus.CROPPED.value  # Явно указанный статус (игнорируется)
+        }
+
+        result = annotation_service.save_annotation('test_img2.png', data, project_name='NoAutoChangeTest')
+        assert result is True
+
+        # Статус должен быть автоматически повышен до recognized
+        # потому что все полигоны заполнены
+        session.refresh(image)
+        assert image.status == ImageStatus.RECOGNIZED.value
+
+        # Cleanup
+        session.delete(image)
+        session.delete(project)
+        session.commit()
+        session.close()
+
+    def test_save_annotation_does_not_change_status_when_already_recognized(self):
+        """
+        Тест: если статус уже recognized, он не меняется.
+        """
+        from services.annotation_service import annotation_service
+        from database.session import SessionLocal
+        from database.models import Image, Project
+        from database.enums import ImageStatus
+
+        session = SessionLocal()
+
+        project = Project(name='AlreadyRecognizedTest', description='Test')
+        session.add(project)
+        session.commit()
+
+        image = Image(
+            project_id=project.id,
+            filename='test_img3.png',
+            original_path='/tmp/test3.png',
+            cropped_path='/tmp/test3_cropped.png',
+            status=ImageStatus.RECOGNIZED.value
+        )
+        session.add(image)
+        session.commit()
+
+        # Сохранить аннотацию с пустым текстом (но статус уже recognized)
+        data = {
+            'regions': [
+                {'points': [[0, 0], [100, 0], [100, 50], [0, 50]]},
+            ],
+            'texts': {
+                '0': '',
+            }
+        }
+
+        result = annotation_service.save_annotation('test_img3.png', data, project_name='AlreadyRecognizedTest')
+        assert result is True
+
+        # Статус должен остаться recognized
+        session.refresh(image)
+        assert image.status == ImageStatus.RECOGNIZED.value
+
+        # Cleanup
+        session.delete(image)
+        session.delete(project)
+        session.commit()
+        session.close()
+
+    def test_save_annotation_does_not_downgrade_from_reviewed(self):
+        """
+        Тест: если статус reviewed, он НЕ понижается до recognized
+        даже если все полигоны заполнены.
+        """
+        from services.annotation_service import annotation_service
+        from database.session import SessionLocal
+        from database.models import Image, Project
+        from database.enums import ImageStatus
+
+        session = SessionLocal()
+
+        project = Project(name='NoDowngradeTest', description='Test')
+        session.add(project)
+        session.commit()
+
+        image = Image(
+            project_id=project.id,
+            filename='test_img4.png',
+            original_path='/tmp/test4.png',
+            cropped_path='/tmp/test4_cropped.png',
+            status=ImageStatus.REVIEWED.value
+        )
+        session.add(image)
+        session.commit()
+
+        # Сохранить аннотацию с заполненными полигонами
+        data = {
+            'regions': [
+                {'points': [[0, 0], [100, 0], [100, 50], [0, 50]]},
+            ],
+            'texts': {
+                '0': 'распознанный текст',
+            }
+        }
+
+        result = annotation_service.save_annotation('test_img4.png', data, project_name='NoDowngradeTest')
+        assert result is True
+
+        # Статус должен остаться reviewed
+        session.refresh(image)
+        assert image.status == ImageStatus.REVIEWED.value
+
+        # Cleanup
+        session.delete(image)
+        session.delete(project)
+        session.commit()
+        session.close()
+
+
 # =============================================================================
 # Тесты на утечку recognition_progress
 # =============================================================================
@@ -289,3 +549,96 @@ class TestRecognitionProgressLeak:
         # Этот тест подтверждает что данные корректно записываются
         # а очистка реализована в app.py (finally блок)
         assert recognition_progress["test.png"]["status"] == "completed"
+
+
+# =============================================================================
+# Тесты на миниатюры (ImageStorageService)
+# =============================================================================
+
+class TestImageStorageServiceThumbnails:
+    """Тесты генерации и отдачи миниатюр."""
+
+    def test_generate_thumbnail_creates_file(self, tmp_path):
+        """Тест: generate_thumbnail создаёт файл."""
+        from services.image_storage_service import ImageStorageService, THUMBNAILS_FOLDER
+        from PIL import Image
+        import os
+
+        # Создать временную структуру
+        img_folder = tmp_path / "images"
+        thumb_folder = tmp_path / "thumbnails"
+        img_folder.mkdir()
+        thumb_folder.mkdir()
+
+        # Создать тестовое изображение
+        test_img = Image.new('RGB', (1000, 800), color='red')
+        img_path = img_folder / "test.jpg"
+        test_img.save(img_path)
+
+        # Патчим THUMBNAILS_FOLDER
+        with patch('services.image_storage_service.THUMBNAILS_FOLDER', str(thumb_folder)):
+            with patch('services.image_storage_service.IMAGE_FOLDER', str(img_folder)):
+                svc = ImageStorageService()
+
+                result = svc.generate_thumbnail("test.jpg")
+                assert result is True
+
+                thumb_path = svc.get_thumbnail_path("test.jpg")
+                assert os.path.exists(thumb_path)
+
+                # Проверить размер — миниатюра должна быть <= 300px
+                thumb = Image.open(thumb_path)
+                assert max(thumb.size) <= 300
+
+    def test_get_thumbnail_url(self):
+        """Тест: get_thumbnail_url возвращает правильный URL."""
+        from services.image_storage_service import image_storage_service
+
+        url = image_storage_service.get_thumbnail_url("scan.jpg", "ProjectA")
+        assert "/data/thumbnails/" in url
+        assert "_thumb.jpg" in url
+        assert "project=ProjectA" in url
+
+    def test_thumbnail_does_not_exist_initially(self):
+        """Тест: thumbnail_exists возвращает False для несуществующего файла."""
+        from services.image_storage_service import image_storage_service
+
+        result = image_storage_service.thumbnail_exists("nonexistent.jpg", "NonexistentProject")
+        assert result is False
+
+    def test_delete_thumbnail_nonexistent(self):
+        """Тест: delete_thumbnail возвращает False если файла нет."""
+        from services.image_storage_service import image_storage_service
+
+        result = image_storage_service.delete_thumbnail("nonexistent.jpg", "NonexistentProject")
+        assert result is False
+
+    def test_generate_thumbnail_from_rgba(self, tmp_path):
+        """Тест: конвертация RGBA в RGB при генерации миниатюры."""
+        from services.image_storage_service import ImageStorageService
+        from PIL import Image
+        import os
+
+        img_folder = tmp_path / "images"
+        thumb_folder = tmp_path / "thumbnails"
+        img_folder.mkdir()
+        thumb_folder.mkdir()
+
+        # RGBA изображение
+        test_img = Image.new('RGBA', (500, 500), color=(255, 0, 0, 128))
+        img_path = img_folder / "rgba_test.png"
+        test_img.save(img_path)
+
+        with patch('services.image_storage_service.THUMBNAILS_FOLDER', str(thumb_folder)):
+            with patch('services.image_storage_service.IMAGE_FOLDER', str(img_folder)):
+                svc = ImageStorageService()
+
+                result = svc.generate_thumbnail("rgba_test.png")
+                assert result is True
+
+                thumb_path = svc.get_thumbnail_path("rgba_test.png")
+                assert os.path.exists(thumb_path)
+
+                # JPEG не поддерживает альфа — проверить что сохранилось
+                thumb = Image.open(thumb_path)
+                assert thumb.mode == 'RGB'

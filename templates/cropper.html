@@ -6,107 +6,19 @@
     <title>Редактор обрезки</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
-    <style>
-        body { margin: 0; background: #222; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-        #toolbar { background: #333; height: 50px; display: flex; align-items: center; padding: 0 15px; border-bottom: 1px solid #444; color: #ccc; gap: 10px; }
-        #workspace { flex: 1; position: relative; background: #111; }
-        
-        /* Status widget styles */
-        .status-badge { cursor: pointer; transition: opacity 0.2s; }
-        .status-badge:hover { opacity: 0.8; }
-        .status-crop { background: #ffc107; color: #212529; }
-        .status-cropped { background: #6c757d; color: white; }
-        .status-segment { background: #28a745; color: white; }
-        .status-texted { background: #17a2b8; color: white; }
-        .status-review_pending { background: #fd7e14; color: #212529; }
-        .status-reviewed { background: #6f42c1; color: white; }
-        
-        .status-popover {
-            display: none;
-            position: fixed;
-            background: #2a2a2a;
-            border: 1px solid #444;
-            border-radius: 8px;
-            padding: 15px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-            z-index: 100000;
-            width: 250px;
-            color: #ddd;
-        }
-        .status-popover.show { display: block; }
-        .status-popover h4 { margin: 0 0 10px 0; font-size: 0.9em; color: #fff; }
-        .status-option {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 5px;
-            cursor: pointer;
-            border-radius: 4px;
-            color: #ddd;
-        }
-        .status-option:hover { background: #3a3a3a; }
-        .status-option input[type="radio"] { margin: 0; }
-        .status-popover textarea {
-            width: 100%;
-            min-height: 60px;
-            margin-top: 10px;
-            padding: 8px;
-            border: 1px solid #444;
-            border-radius: 4px;
-            font-family: inherit;
-            font-size: 0.85em;
-            resize: vertical;
-            box-sizing: border-box;
-            background: #333;
-            color: #ddd;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-        .status-popover button {
-            width: 100%;
-            margin-top: 10px;
-            padding: 8px;
-            background: #007bff;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.9em;
-        }
-        .status-popover button:hover { background: #0056b3; }
-        
-        /* Notification styles */
-        .notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 12px 20px;
-            border-radius: 4px;
-            color: white;
-            z-index: 100001;
-            animation: slideIn 0.3s ease;
-        }
-        .notification.success { background: #28a745; }
-        .notification.error { background: #dc3545; }
-        
-        @keyframes slideIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
-    </style>
 </head>
-<body>
+<body class="editor">
 
 <div id="toolbar">
     <button class="btn" onclick="window.location.href='/'" title="Home">🏠</button>
-    {% if project %}
-        <button class="btn" onclick="window.location.href='/project/{{ project }}'" title="Назад к проекту">📋 Проект</button>
+    {% if project_id %}
+        <button class="btn" onclick="window.location.href='/project/{{ project_id }}'" title="Назад к проекту">📋 Проект</button>
         <div class="sep"></div>
-        <button class="btn" onclick="window.location.href='/editor?image={{ filename }}&project={{ project }}'" title="Редактор сегментов">📋 Сегменты</button>
-        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}&project={{ project }}'" title="Редактор распознавания">🔤 Распознавать</button>
+        <button class="btn" onclick="window.location.href='/editor?image={{ filename }}&project_id={{ project_id }}'" title="Редактор сегментов">📋 Сегменты</button>
+        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}&project_id={{ project_id }}'" title="Редактор распознавания">🔤 Распознать</button>
     {% else %}
         <button class="btn" onclick="window.location.href='/editor?image={{ filename }}'" title="Редактор сегментов">📋 Сегменты</button>
-        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}'" title="Редактор распознавания">🔤 Распознавать</button>
+        <button class="btn" onclick="window.location.href='/text_editor?image={{ filename }}'" title="Редактор распознавания">🔤 Распознать</button>
     {% endif %}
     <div class="sep"></div>
     <button class="btn" onclick="goImage(-1)">&lt;</button>
@@ -115,38 +27,40 @@
 
     <div style="flex:1"></div>
     <div style="font-size:0.8em; color:#888; margin-right:15px;">
-        Shift: Пропорции | ПКМ: Обзор
+        Space: Пан | Shift: Пропорции | ПКМ: Обзор
     </div>
     <button class="btn btn-primary" onclick="applyCrop()">✂️ Сохранить</button>
     <span id="status-badge" class="status-badge" onclick="statusWidget.openPopover()" style="cursor:pointer; padding:4px 8px; border-radius:4px; font-size:0.85em; font-weight:600; margin-left:10px;">Загрузка...</span>
 </div>
+
+{% if project_role == 'viewer' %}
+<div class="read-only-banner" style="margin:0; border-radius:0;">
+    ⚠️ Режим только чтения — изменения сохранять нельзя
+</div>
+{% endif %}
 
 <div id="workspace">
     <canvas id="c"></canvas>
 </div>
 
 <!-- Status popover -->
-<div id="status-popover" class="status-popover">
+<div id="status-popover" class="status-popover dark">
     <h4>Статус:</h4>
     <label class="status-option">
-        <input type="radio" name="status" value="crop">
+        <input type="radio" name="status" value="uploaded">
         Загружено
     </label>
     <label class="status-option">
         <input type="radio" name="status" value="cropped">
-        Кадрировано
+        Обрезано
     </label>
     <label class="status-option">
-        <input type="radio" name="status" value="segment">
-        Размечено
+        <input type="radio" name="status" value="segmented">
+        Полигоны готовы
     </label>
     <label class="status-option">
-        <input type="radio" name="status" value="texted">
-        Текст добавлен
-    </label>
-    <label class="status-option">
-        <input type="radio" name="status" value="review_pending">
-        Требует ревью
+        <input type="radio" name="status" value="recognized">
+        Текст распознан
     </label>
     <label class="status-option">
         <input type="radio" name="status" value="reviewed">
@@ -158,12 +72,12 @@
 
 <script src="/static/js/api.js"></script>
 <script src="/static/js/status_widget.js"></script>
+<script src="/static/js/zoom-controller.js"></script>
 <script>
     const filename = "{{ filename }}";
-    const project = "{{ project if project else '' }}";
+    const projectId = {{ project_id if project_id else 'null' }};
     
-    // Инициализируем виджет статусов
-    initStatusWidget(project, filename);
+    initStatusWidget(projectId, filename);
     
     const canvas = new fabric.Canvas('c', {
         selection: false,
@@ -197,13 +111,17 @@
         resize();
         window.addEventListener('resize', resize);
 
-        imageList = await API.listImages();
+        imageList = await API.listImages(projectId);
 
-        fabric.Image.fromURL(`/data/originals/${filename}`, img => {
+        const projectParam = projectId ? `?project_id=${projectId}` : '';
+        fabric.Image.fromURL(`/data/originals/${filename}${projectParam}`, img => {
             imgObj = img;
             canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
 
             fitImageHeight(img);
+            if (window.zoomCtrl) {
+                window.zoomCtrl.setBaseZoom(canvas.getZoom());
+            }
             loadExistingCropData();
         });
     })();
@@ -226,7 +144,7 @@
     }
 
     async function loadExistingCropData() {
-        const data = await API.loadAnnotation(filename);
+        const data = await API.loadAnnotation(filename, projectId);
         let corners = [];
 
         if (data.crop_params && data.crop_params.corners && data.crop_params.corners.length > 0) {
@@ -361,28 +279,20 @@
         canvas.setActiveObject(cropRect);
         canvas.requestRenderAll();
     }
-    
 
-
-    canvas.on('mouse:wheel', (opt) => {
-        let zoom = canvas.getZoom();
-        zoom *= 0.999 ** opt.e.deltaY;
-        if (zoom > 20) zoom = 20;
-        if (zoom < 0.01) zoom = 0.01;
-        canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
-
-        if(cropRect) {
-            // Обновляем толщину обводки и размер углов так, чтобы они оставались 
-            // визуально одинакового размера при любом зуме (с ограничением 4-20px)
-            const strokeWidth = Math.max(1, Math.min(3, 2 / zoom));
-            const cornerSize = Math.max(4, Math.min(20, 10 / zoom));
-            cropRect.set('strokeWidth', strokeWidth);
-            cropRect.set('cornerSize', cornerSize);
-            canvas.requestRenderAll();
-        }
-        opt.e.preventDefault();
-        opt.e.stopPropagation();
-    });
+    // ZoomController обрабатывает зум; после зума подстраиваем cropRect
+    if (window.zoomCtrl) {
+        window.zoomCtrl.afterZoom = () => {
+            if (cropRect) {
+                const zoom = canvas.getZoom();
+                const strokeWidth = Math.max(1, Math.min(3, 2 / zoom));
+                const cornerSize = Math.max(4, Math.min(20, 10 / zoom));
+                cropRect.set('strokeWidth', strokeWidth);
+                cropRect.set('cornerSize', cornerSize);
+                canvas.requestRenderAll();
+            }
+        };
+    }
 
     let isPanning = false, lastMouse = {x:0, y:0};
     canvas.on('mouse:down', opt => {
@@ -437,15 +347,11 @@
             ]
         };
 
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
-        const url = project ? `/api/crop?project=${encodeURIComponent(project)}` : '/api/crop';
+        const url = '/api/crop';
         const resp = await fetch(url, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': csrfToken
-            },
-            body: JSON.stringify({ image_name: filename, box: cropData })
+            headers: API.getCsrfHeaders(),
+            body: JSON.stringify({ image_name: filename, box: cropData, project_id: projectId })
         });
 
         if (resp.ok) {
@@ -459,11 +365,16 @@
         const idx = imageList.indexOf(filename);
         if (idx === -1) return;
         const newIdx = (idx + dir + imageList.length) % imageList.length;
-        const newUrl = project 
-            ? `?image=${imageList[newIdx]}&project=${encodeURIComponent(project)}`
+        const newUrl = projectId 
+            ? `?image=${imageList[newIdx]}&project_id=${projectId}`
             : `?image=${imageList[newIdx]}`;
         window.location.href = newUrl;
     }
+</script>
+<script>
+    window.zoomCtrl = new ZoomController(canvas, {
+        wrapper: document.getElementById('workspace')
+    });
 </script>
 </body>
 </html>

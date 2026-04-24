@@ -2,19 +2,8 @@
  * Project Manager API Functions
  */
 
-// Get CSRF token from meta tag
-function getCsrfToken() {
-    const meta = document.querySelector('meta[name="csrf-token"]');
-    return meta ? meta.content : '';
-}
-
-// Headers with CSRF token for POST/PUT/DELETE requests
-function getCsrfHeaders() {
-    return {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': getCsrfToken()
-    };
-}
+// Use centralized CSRF functions from api.js
+// Import is handled by script tag order in HTML
 
 const ProjectAPI = {
     // Projects
@@ -30,7 +19,7 @@ const ProjectAPI = {
     async createProject(name, description = "") {
         const response = await fetch('/api/projects', {
             method: 'POST',
-            headers: getCsrfHeaders(),
+            headers: API.getCsrfHeaders(),
             body: JSON.stringify({name, description})
         });
 
@@ -41,8 +30,8 @@ const ProjectAPI = {
         return await response.json();
     },
 
-    async getProject(projectName) {
-        const response = await fetch(`/api/projects/${projectName}`);
+    async getProject(projectId) {
+        const response = await fetch(`/api/projects/${projectId}`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -50,10 +39,10 @@ const ProjectAPI = {
         return data.project;
     },
 
-    async updateProject(projectName, name, description = "") {
-        const response = await fetch(`/api/projects/${projectName}`, {
+    async updateProject(projectId, name, description = "") {
+        const response = await fetch(`/api/projects/${projectId}`, {
             method: 'PUT',
-            headers: getCsrfHeaders(),
+            headers: API.getCsrfHeaders(),
             body: JSON.stringify({name, description})
         });
 
@@ -64,10 +53,10 @@ const ProjectAPI = {
         return await response.json();
     },
 
-    async deleteProject(projectName) {
-        const response = await fetch(`/api/projects/${projectName}`, {
+    async deleteProject(projectId) {
+        const response = await fetch(`/api/projects/${projectId}`, {
             method: 'DELETE',
-            headers: getCsrfHeaders()
+            headers: API.getCsrfHeaders()
         });
 
         if (!response.ok) {
@@ -78,8 +67,8 @@ const ProjectAPI = {
     },
 
     // Project Images
-    async getProjectImages(projectName) {
-        const response = await fetch(`/api/projects/${projectName}/images`);
+    async getProjectImages(projectId) {
+        const response = await fetch(`/api/projects/${projectId}/images`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -87,10 +76,10 @@ const ProjectAPI = {
         return data.images;
     },
 
-    async addImageToProject(projectName, imageName) {
-        const response = await fetch(`/api/projects/${projectName}/images`, {
+    async addImageToProject(projectId, imageName) {
+        const response = await fetch(`/api/projects/${projectId}/images`, {
             method: 'POST',
-            headers: getCsrfHeaders(),
+            headers: API.getCsrfHeaders(),
             body: JSON.stringify({image_name: imageName})
         });
 
@@ -101,10 +90,10 @@ const ProjectAPI = {
         return await response.json();
     },
 
-    async removeImageFromProject(projectName, imageName) {
-        const response = await fetch(`/api/projects/${projectName}/images`, {
+    async removeImageFromProject(projectId, imageName) {
+        const response = await fetch(`/api/projects/${projectId}/images`, {
             method: 'DELETE',
-            headers: getCsrfHeaders(),
+            headers: API.getCsrfHeaders(),
             body: JSON.stringify({image_name: imageName})
         });
 
@@ -116,10 +105,10 @@ const ProjectAPI = {
     },
 
     // Batch Processing
-    async startBatchDetection(projectName, settings = {}) {
-        const response = await fetch(`/api/projects/${projectName}/batch_detect`, {
+    async startBatchDetection(projectId, settings = {}) {
+        const response = await fetch(`/api/projects/${projectId}/batch_detect`, {
             method: 'POST',
-            headers: getCsrfHeaders(),
+            headers: API.getCsrfHeaders(),
             body: JSON.stringify({settings})
         });
 
@@ -130,10 +119,10 @@ const ProjectAPI = {
         return await response.json();
     },
 
-    async startBatchRecognition(projectName) {
-        const response = await fetch(`/api/projects/${projectName}/batch_recognize`, {
+    async startBatchRecognition(projectId) {
+        const response = await fetch(`/api/projects/${projectId}/batch_recognize`, {
             method: 'POST',
-            headers: getCsrfHeaders()
+            headers: API.getCsrfHeaders()
         });
 
         if (!response.ok) {
@@ -183,27 +172,26 @@ class ProjectManager {
         // Get user role first
         this.userRole = await AuthAPI.getUserRole();
         console.log('User role:', this.userRole);
-        
+
         await this.loadProjects();
         await this.loadTasks();
         await this.loadImages();
         this.updateStats();
         this.setupEventListeners();
 
-        // Restore view preference from localStorage only on the main projects page
-        if (window.location.pathname === '/') {
-            this.restoreViewPreference();
-        }
+        // Render projects in the preferred view
+        this.restoreViewPreference();
     }
 
     restoreViewPreference() {
         const container = document.getElementById('projects-container');
+        if (!container) return;
 
         // Always use list view
         container.classList.remove('projects-grid');
         container.classList.add('projects-container-list');
 
-        // Re-render projects in list view
+        // Render projects in list view
         this.renderProjectsAsList();
     }
 
@@ -216,20 +204,20 @@ class ProjectManager {
             const projectPromises = basicProjects.map(async (basicProject) => {
                 try {
                     const [detailedProject, imagesResponse] = await Promise.all([
-                        ProjectAPI.getProject(basicProject.name),
-                        ProjectAPI.getProjectImages(basicProject.name)
+                        ProjectAPI.getProject(basicProject.id),
+                        ProjectAPI.getProjectImages(basicProject.id)
                     ]);
                     detailedProject.images = imagesResponse; // imagesResponse is already an array of image objects
                     return detailedProject;
                 } catch (error) {
-                    console.error(`Error loading details for project ${basicProject.name}:`, error);
+                    console.error(`Error loading details for project ${basicProject.id}:`, error);
                     // Add the basic project info if detailed load fails
                     return basicProject;
                 }
             });
 
             this.projects = await Promise.all(projectPromises);
-            this.renderProjects();
+            // Don't render here - restoreViewPreference() will render after checking view preference
         } catch (error) {
             console.error('Error loading projects:', error);
             this.showError('Ошибка при загрузке проектов');
@@ -276,10 +264,10 @@ class ProjectManager {
         // Calculate stats for the project
         const totalImages = project.images ? project.images.length : 0;
 
-        // Count annotated images by checking their status ('segment', 'cropped', or 'texted')
+        // Count annotated images by checking their status ('segmented', 'cropped', or 'recognized')
         let annotatedImages = 0;
         if (project.images && Array.isArray(project.images)) {
-            annotatedImages = project.images.filter(img => ['segment', 'cropped', 'texted'].includes(img.status)).length;
+            annotatedImages = project.images.filter(img => ['segmented', 'cropped', 'recognized'].includes(img.status)).length;
         }
 
         // Create elements safely to prevent XSS
@@ -308,7 +296,7 @@ class ProjectManager {
         projectActions.className = 'project-actions';
 
         const openLink = document.createElement('a');
-        openLink.href = `/project/${encodeURIComponent(project.name)}`;
+        openLink.href = `/project/${project.id}`;
         openLink.className = 'action-btn';
         openLink.textContent = 'Открыть';
 
@@ -319,7 +307,7 @@ class ProjectManager {
             const deleteButton = document.createElement('button');
             deleteButton.className = 'action-btn';
             deleteButton.textContent = 'Удалить';
-            deleteButton.onclick = () => projectManager.deleteProject(project.name);
+            deleteButton.onclick = () => projectManager.deleteProject(project.id);
             projectActions.appendChild(deleteButton);
         }
 
@@ -400,12 +388,17 @@ class ProjectManager {
         const imageCard = document.createElement('div');
         imageCard.className = 'file-card';
 
+        // Support both string (filename) and object (from updated API)
+        const filename = typeof image === 'string' ? image : image.name;
+        const projectId = typeof image === 'object' ? image.project_id : null;
+
         // Create elements safely to prevent XSS
         const imageContainer = document.createElement('div');
         imageContainer.style.position = 'relative';
 
         const img = document.createElement('img');
-        img.src = `/data/images/${encodeURIComponent(image)}`;  // Safe: URL encoded
+        const projectParam = projectId ? `?project_id=${projectId}` : '';
+        img.src = `/data/images/${encodeURIComponent(filename)}${projectParam}`;
         img.className = 'thumb';
         img.loading = 'lazy';
         img.style.cursor = 'pointer';
@@ -416,12 +409,12 @@ class ProjectManager {
         metaDiv.className = 'meta';
 
         const nameSpan = document.createElement('span');
-        nameSpan.title = image;  // Safe: attribute
+        nameSpan.title = filename;  // Safe: attribute
         nameSpan.style.whiteSpace = 'nowrap';
         nameSpan.style.overflow = 'hidden';
         nameSpan.style.textOverflow = 'ellipsis';
         nameSpan.style.maxWidth = '80px';
-        nameSpan.textContent = image;  // Safe: textContent
+        nameSpan.textContent = filename;  // Safe: textContent
 
         metaDiv.appendChild(nameSpan);
 
@@ -429,19 +422,19 @@ class ProjectManager {
         cardActions.className = 'card-actions';
 
         const cropLink = document.createElement('a');
-        cropLink.href = `/cropper?image=${encodeURIComponent(image)}`;
+        cropLink.href = `/cropper?project_id=${projectId}&image=${encodeURIComponent(filename)}`;
         cropLink.className = 'action-btn action-crop';
         cropLink.title = 'Кадрировать';
         cropLink.textContent = '✂️ Crop';
 
         const segmentLink = document.createElement('a');
-        segmentLink.href = `/editor?image=${encodeURIComponent(image)}`;
+        segmentLink.href = `/editor?project_id=${projectId}&image=${encodeURIComponent(filename)}`;
         segmentLink.className = 'action-btn action-segment';
         segmentLink.title = 'Размечать';
         segmentLink.textContent = '✏️ Seg';
 
         const textLink = document.createElement('a');
-        textLink.href = `/text_editor?image=${encodeURIComponent(image)}`;
+        textLink.href = `/text_editor?project_id=${projectId}&image=${encodeURIComponent(filename)}`;
         textLink.className = 'action-btn';
         textLink.title = 'Распознавание текста';
         textLink.textContent = '📝 Расп';
@@ -494,13 +487,15 @@ class ProjectManager {
         }
     }
 
-    async deleteProject(projectName) {
+    async deleteProject(projectId) {
+        const project = this.projects.find(p => p.id === projectId);
+        const projectName = project ? project.name : projectId;
         if (!confirm(`Удалить проект "${projectName}"?`)) {
             return false;
         }
 
         try {
-            const result = await ProjectAPI.deleteProject(projectName);
+            const result = await ProjectAPI.deleteProject(projectId);
             if (result.status === 'success') {
                 this.showSuccess('Проект удален успешно');
                 // Reload the page to maintain view state
@@ -617,13 +612,13 @@ class ProjectManager {
         }
     }
 
-    openAddImagesModal(projectName) {
-        this.currentProjectName = projectName;
+    openAddImagesModal(projectId) {
+        this.currentProjectId = projectId;
         const modal = document.getElementById('addImagesModal');
         if (modal) {
             modal.style.display = 'block';
             // Load available images to add to the project
-            this.loadAvailableImagesForProject(projectName);
+            this.loadAvailableImagesForProject(projectId);
         }
     }
 
@@ -634,14 +629,14 @@ class ProjectManager {
         }
     }
 
-    async loadAvailableImagesForProject(projectName) {
+    async loadAvailableImagesForProject(projectId) {
         try {
             // Get all images
             const allImagesResponse = await fetch('/api/images_list');
             const allImages = await allImagesResponse.json();
 
             // Get project images
-            const projectImagesResponse = await fetch(`/api/projects/${encodeURIComponent(projectName)}/images`);
+            const projectImagesResponse = await fetch(`/api/projects/${projectId}/images`);
             const projectImagesData = await projectImagesResponse.json();
             const projectImages = projectImagesData.images.map(img => img.name);
 
@@ -649,14 +644,14 @@ class ProjectManager {
             const availableImages = allImages.filter(img => !projectImages.includes(img));
 
             // Render available images
-            this.renderAvailableImages(availableImages, projectName);
+            this.renderAvailableImages(availableImages, projectId);
         } catch (error) {
             console.error('Error loading available images:', error);
             this.showError('Ошибка при загрузке изображений');
         }
     }
 
-    renderAvailableImages(images, projectName) {
+    renderAvailableImages(images, projectId) {
         const container = document.getElementById('available-images-container');
         if (!container) return;
 
@@ -702,7 +697,7 @@ class ProjectManager {
             const addButton = document.createElement('button');
             addButton.className = 'action-btn';
             addButton.textContent = 'Добавить';
-            addButton.onclick = () => this.addImageToProject(projectName, image);  // Safe: closure
+            addButton.onclick = () => this.addImageToProject(projectId, image);  // Safe: closure
 
             cardActions.appendChild(addButton);
 
@@ -714,11 +709,11 @@ class ProjectManager {
         });
     }
 
-    async addImageToProject(projectName, image) {
+    async addImageToProject(projectId, image) {
         try {
-            const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/images`, {
+            const response = await fetch(`/api/projects/${projectId}/images`, {
                 method: 'POST',
-                headers: getCsrfHeaders(),
+                headers: API.getCsrfHeaders(),
                 body: JSON.stringify({image_name: image})
             });
 
@@ -727,7 +722,7 @@ class ProjectManager {
             if (result.status === 'success') {
                 this.showSuccess(`Изображение ${image} добавлено в проект`);
                 // Reload the available images to update the list
-                this.loadAvailableImagesForProject(projectName);
+                this.loadAvailableImagesForProject(projectId);
                 // Also reload projects to update stats
                 await this.loadProjects();
                 this.updateStats();
@@ -760,10 +755,10 @@ class ProjectManager {
         // Calculate stats for the project
         const totalImages = project.images ? project.images.length : 0;
 
-        // Count annotated images by checking their status ('segment', 'cropped', or 'texted')
+        // Count annotated images by checking their status ('segmented', 'cropped', or 'recognized')
         let annotatedImages = 0;
         if (project.images && Array.isArray(project.images)) {
-            annotatedImages = project.images.filter(img => ['segment', 'cropped', 'texted'].includes(img.status)).length;
+            annotatedImages = project.images.filter(img => ['segmented', 'cropped', 'recognized'].includes(img.status)).length;
         }
 
         // Create elements safely to prevent XSS
@@ -794,7 +789,7 @@ class ProjectManager {
         projectActions.className = 'project-actions';
 
         const openLink = document.createElement('a');
-        openLink.href = `/project/${encodeURIComponent(project.name)}`;
+        openLink.href = `/project/${project.id}`;
         openLink.className = 'btn';
         openLink.textContent = 'Открыть';
 
@@ -807,7 +802,7 @@ class ProjectManager {
             deleteBtn.textContent = 'Удалить';
             deleteBtn.onclick = (event) => {
                 event.stopPropagation();
-                this.deleteProject(project.name);
+                this.deleteProject(project.id);
             };
             projectActions.appendChild(deleteBtn);
         }
@@ -817,47 +812,55 @@ class ProjectManager {
 
         // Make the entire card clickable
         projectItem.addEventListener('click', function() {
-            window.location.href = `/project/${encodeURIComponent(project.name)}`;
+            window.location.href = `/project/${project.id}`;
         });
 
         return projectItem;
     }
 
     openCreateProjectModal() {
-        document.getElementById('createProjectModal').style.display = 'flex';
+        document.getElementById('createProjectModal').classList.add('active');
         document.getElementById('project-name').focus();
     }
 
     closeCreateProjectModal() {
-        document.getElementById('createProjectModal').style.display = 'none';
+        document.getElementById('createProjectModal').classList.remove('active');
         document.getElementById('project-name').value = '';
         document.getElementById('project-description').value = '';
     }
 
     openImportModal() {
-        document.getElementById('importModal').style.display = 'flex';
+        document.getElementById('importModal').classList.add('active');
     }
 
     closeImportModal() {
-        document.getElementById('importModal').style.display = 'none';
+        document.getElementById('importModal').classList.remove('active');
     }
 
     async submitZipImport() {
+        console.log('[ZIP Import] Starting import from project_manager.js...');
+        
         // Попробуем найти элементы с разными возможными ID
         let fileInput = document.getElementById('zipInput');
         if (!fileInput) {
             fileInput = document.getElementById('zipFile');
         }
-        
+
         let simplifyInput = document.getElementById('simplifyInput');
         if (!simplifyInput) {
             // Если не найден, пробуем другой возможный ID
             simplifyInput = document.getElementById('simplify');
         }
-        
-        const submitButton = document.querySelector('#importModal .btn-primary'); // Кнопка "Импортировать" в модальном окне
+
+        const submitButton = document.querySelector('#importModal .btn-primary');
+
+        console.log('[ZIP Import] fileInput:', fileInput);
+        console.log('[ZIP Import] fileInput.id:', fileInput?.id);
+        console.log('[ZIP Import] fileInput.files:', fileInput?.files);
+        console.log('[ZIP Import] fileInput.files[0]:', fileInput?.files?.[0]);
 
         if (!fileInput || !fileInput.files[0]) {
+            console.error('[ZIP Import] No file selected');
             this.showError('Пожалуйста, выберите ZIP файл');
             return;
         }
@@ -869,26 +872,35 @@ class ProjectManager {
 
         const formData = new FormData();
         formData.append('file', fileInput.files[0]);
-        formData.append('simplify', simplifyInput ? simplifyInput.value : 5); // Используем 5 как значение по умолчанию
+        formData.append('simplify', simplifyInput ? simplifyInput.value : 5);
+
+        console.log('[ZIP Import] FormData entries:');
+        for (let [key, value] of formData.entries()) {
+            console.log('  ', key, ':', value);
+        }
 
         // Проверяем, находимся ли мы на странице проекта
         const pathParts = window.location.pathname.split('/');
         const isProjectPage = pathParts.length >= 3 && pathParts[1] === 'project';
         if (isProjectPage) {
-            const projectName = decodeURIComponent(pathParts[2]);
-            formData.append('project_name', projectName);
+            const projectId = parseInt(pathParts[2], 10);
+            formData.append('project_id', projectId);
+            console.log('[ZIP Import] Project page, project_id:', projectId);
+        } else {
+            console.log('[ZIP Import] Main page, no project_id');
         }
 
         try {
+            console.log('[ZIP Import] Sending request...');
             const response = await fetch('/api/import_zip', {
                 method: 'POST',
-                headers: {
-                    'X-CSRFToken': getCsrfToken()
-                },
+                headers: API.getCsrfHeaders(null),  // null = браузер сам поставит multipart/form-data
                 body: formData
             });
 
+            console.log('[ZIP Import] Response status:', response.status);
             const result = await response.json();
+            console.log('[ZIP Import] Response data:', result);
 
             if (result.status === 'success') {
                 if (isProjectPage) {
@@ -897,16 +909,14 @@ class ProjectManager {
                     this.showSuccess(`Проект успешно импортирован (${result.count} файлов)`);
                 }
                 this.closeImportModal();
-                // Reload the page to show new projects or images
                 location.reload();
             } else {
                 this.showError('Ошибка: ' + result.msg);
             }
         } catch (error) {
-            console.error('Error importing project:', error);
+            console.error('[ZIP Import] Error:', error);
             this.showError('Ошибка при импорте проекта');
         } finally {
-            // Восстановить первоначальное состояние кнопки
             submitButton.disabled = false;
             submitButton.textContent = originalButtonText;
         }
@@ -1056,18 +1066,14 @@ class ProjectManager {
     }
 
     async saveProjectInfo(newName, newDescription) {
-        // Get the current project name from the URL
+        // Get the current project id from the URL
         const pathParts = window.location.pathname.split('/');
-        const currentProjectName = pathParts[pathParts.length - 1];
+        const currentProjectId = parseInt(pathParts[2], 10);
 
         try {
-            const result = await ProjectAPI.updateProject(currentProjectName, newName, newDescription);
+            const result = await ProjectAPI.updateProject(currentProjectId, newName, newDescription);
             if (result.status === 'success') {
-                // Update the URL to reflect the new project name
-                const newUrl = `/project/${encodeURIComponent(newName)}`;
-                window.history.pushState({}, '', newUrl);
-                
-                // Reload the page to reflect changes with the new URL
+                // Reload the page to reflect changes
                 location.reload();
             } else {
                 // В случае ошибки восстанавливаем исходное состояние
@@ -1132,3 +1138,324 @@ async function submitZipImport() {
         await window.projectManager.submitZipImport();
     }
 }
+
+/* ═══════════════════════════════════════════════
+   User Management (Admin)
+   ═══════════════════════════════════════════════ */
+
+let _currentPermUserId = null;
+
+async function openUserManagement() {
+    document.getElementById('userManagementModal').classList.add('active');
+    await loadUsersList();
+}
+
+function closeUserManagement() {
+    document.getElementById('userManagementModal').classList.remove('active');
+}
+
+async function loadUsersList() {
+    try {
+        const resp = await fetch('/api/users');
+        const data = await resp.json();
+        const tbody = document.getElementById('users-tbody');
+        tbody.innerHTML = '';
+
+        for (const user of (data.users || [])) {
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid #ddd';
+            tr.innerHTML = `
+                <td style="padding:8px;">${user.id}</td>
+                <td style="padding:8px;">${user.username}</td>
+                <td style="padding:8px;">${user.is_admin ? 'Админ' : 'Пользователь'}</td>
+                <td style="padding:8px;"><button class="btn" style="padding:2px 8px;" onclick="openUserPermissions(${user.id}, '${user.username}')">Настроить</button></td>
+                <td style="padding:8px; text-align:center;">
+                    <button class="btn" style="padding:2px 8px; color:#ffc107;" onclick="openAdminResetPassword(${user.id}, '${user.username}')">🔑</button>
+                    <button class="btn" style="padding:2px 8px; color:#dc3545;" onclick="deleteUser(${user.id}, '${user.username}')">Удалить</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        }
+    } catch (e) {
+        console.error('Load users error:', e);
+    }
+}
+
+async function createUser() {
+    const username = document.getElementById('new-username').value.trim();
+    const password = document.getElementById('new-password').value;
+    const isAdmin = document.getElementById('new-is-admin').checked;
+
+    if (!username || !password) {
+        alert('Заполни имя и пароль');
+        return;
+    }
+
+    try {
+        const resp = await fetch('/api/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password, is_admin: isAdmin })
+        });
+        const data = await resp.json();
+
+        if (resp.ok) {
+            document.getElementById('new-username').value = '';
+            document.getElementById('new-password').value = '';
+            document.getElementById('new-is-admin').checked = false;
+            await loadUsersList();
+        } else {
+            alert(data.error || 'Ошибка создания пользователя');
+        }
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+async function deleteUser(userId, username) {
+    if (!confirm(`Удалить пользователя ${username}?`)) return;
+
+    try {
+        const resp = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+        const data = await resp.json();
+        if (resp.ok) {
+            await loadUsersList();
+        } else {
+            alert(data.error || 'Ошибка удаления');
+        }
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+/* ── User Permissions ── */
+
+async function openUserPermissions(userId, username) {
+    _currentPermUserId = userId;
+    document.getElementById('userPermissionsModal').classList.add('active');
+    document.getElementById('perms-title').textContent = `Права: ${username}`;
+
+    // Load projects dropdown
+    try {
+        const projectsResp = await fetch('/api/projects');
+        const projectsData = await projectsResp.json();
+        const select = document.getElementById('perm-project');
+        select.innerHTML = '';
+        for (const proj of (projectsData.projects || [])) {
+            const opt = document.createElement('option');
+            opt.value = proj.id;
+            opt.textContent = proj.name;
+            select.appendChild(opt);
+        }
+    } catch (e) {
+        console.error('Load projects:', e);
+    }
+
+    await loadUserPermissions();
+}
+
+function closeUserPermissions() {
+    document.getElementById('userPermissionsModal').classList.remove('active');
+}
+
+async function loadUserPermissions() {
+    try {
+        const resp = await fetch(`/api/users/${_currentPermUserId}/permissions`);
+        const data = await resp.json();
+        const list = document.getElementById('perms-list');
+        list.innerHTML = '';
+
+        for (const perm of (data.permissions || [])) {
+            const li = document.createElement('li');
+            li.style.cssText = 'display:flex; justify-content:space-between; padding:8px; border-bottom:1px solid #eee;';
+            li.innerHTML = `
+                <span><b>${perm.project_name}</b> — ${perm.role}</span>
+                <button class="btn" style="padding:2px 8px; color:#dc3545;" onclick="revokePermission(${perm.project_id})">Отозвать</button>
+            `;
+            list.appendChild(li);
+        }
+
+        if (data.permissions.length === 0) {
+            list.innerHTML = '<li style="padding:10px; color:#666;">Нет назначенных проектов</li>';
+        }
+    } catch (e) {
+        console.error('Load perms:', e);
+    }
+}
+
+async function grantPermission() {
+    const projectId = parseInt(document.getElementById('perm-project').value, 10);
+    const role = document.getElementById('perm-role').value;
+
+    if (!projectId) { alert('Выбери проект'); return; }
+
+    try {
+        const resp = await fetch(`/api/projects/${projectId}/permissions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: _currentPermUserId, role })
+        });
+        if (resp.ok) {
+            await loadUserPermissions();
+        } else {
+            const data = await resp.json();
+            alert(data.error || 'Ошибка');
+        }
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+async function revokePermission(projectId) {
+    if (!confirm(`Отозвать доступ к проекту?`)) return;
+
+    try {
+        const resp = await fetch(`/api/projects/${projectId}/permissions/${_currentPermUserId}`, {
+            method: 'DELETE'
+        });
+        if (resp.ok) {
+            await loadUserPermissions();
+        } else {
+            const data = await resp.json();
+            alert(data.error || 'Ошибка');
+        }
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+/* ═══════════════════════════════════════════════
+   Statistics Dashboard
+   ═══════════════════════════════════════════════ */
+
+
+
+/* ═══════════════════════════════════════════════
+   Password Change (Self)
+   ═══════════════════════════════════════════════ */
+
+function openChangePasswordModal() {
+    document.getElementById('changePasswordModal').classList.add('active');
+    document.getElementById('cp-current').value = '';
+    document.getElementById('cp-new').value = '';
+    document.getElementById('cp-confirm').value = '';
+    document.getElementById('cp-error').style.display = 'none';
+}
+
+function closeChangePassword() {
+    document.getElementById('changePasswordModal').classList.remove('active');
+}
+
+async function changePassword() {
+    const current = document.getElementById('cp-current').value;
+    const newPass = document.getElementById('cp-new').value;
+    const confirm = document.getElementById('cp-confirm').value;
+    const errorEl = document.getElementById('cp-error');
+    errorEl.style.display = 'none';
+
+    if (!current || !newPass) {
+        errorEl.textContent = 'Заполни все поля';
+        errorEl.style.display = 'block';
+        return;
+    }
+    if (newPass !== confirm) {
+        errorEl.textContent = 'Пароли не совпадают';
+        errorEl.style.display = 'block';
+        return;
+    }
+
+    try {
+        const resp = await fetch('/api/users/me/password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ current_password: current, new_password: newPass })
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+            closeChangePassword();
+            alert('Пароль изменён!');
+        } else {
+            errorEl.textContent = data.error || 'Ошибка';
+            errorEl.style.display = 'block';
+        }
+    } catch (e) {
+        errorEl.textContent = 'Ошибка: ' + e.message;
+        errorEl.style.display = 'block';
+    }
+}
+
+/* ═══════════════════════════════════════════════
+   Admin Reset Password
+   ═══════════════════════════════════════════════ */
+
+let _resetUserId = null;
+let _resetUsername = null;
+
+function openAdminResetPassword(userId, username) {
+    _resetUserId = userId;
+    _resetUsername = username;
+    document.getElementById('adminResetPasswordModal').classList.add('active');
+    document.getElementById('rp-title').textContent = `Сбросить пароль: ${username}`;
+    document.getElementById('rp-new').value = '';
+    document.getElementById('rp-error').style.display = 'none';
+}
+
+function closeAdminResetPassword() {
+    document.getElementById('adminResetPasswordModal').classList.remove('active');
+}
+
+async function adminResetPassword() {
+    const newPass = document.getElementById('rp-new').value;
+    const errorEl = document.getElementById('rp-error');
+    errorEl.style.display = 'none';
+
+    if (!newPass) {
+        errorEl.textContent = 'Введи пароль';
+        errorEl.style.display = 'block';
+        return;
+    }
+
+    try {
+        const resp = await fetch(`/api/users/${_resetUserId}/reset-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: newPass })
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+            closeAdminResetPassword();
+            alert(`Пароль для ${_resetUsername} сброшен`);
+        } else {
+            errorEl.textContent = data.error || 'Ошибка';
+            errorEl.style.display = 'block';
+        }
+    } catch (e) {
+        errorEl.textContent = 'Ошибка: ' + e.message;
+        errorEl.style.display = 'block';
+    }
+}
+
+/* ═══════════════════════════════════════════════
+   Global: Close modals on Escape
+   ═══════════════════════════════════════════════ */
+document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+
+    const modals = [
+        'createProjectModal',
+        'importModal',
+        'userManagementModal',
+        'userPermissionsModal',
+        'changePasswordModal',
+        'adminResetPasswordModal',
+        'addImagesModal'
+    ];
+
+    for (const id of modals) {
+        const el = document.getElementById(id);
+        if (el && el.classList.contains('active')) {
+            el.classList.remove('active');
+            break;
+        }
+    }
+});

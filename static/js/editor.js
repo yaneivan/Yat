@@ -86,24 +86,26 @@ class HistoryManager {
 class HTREditor {
     constructor(canvasId, filename, project = null, snapDist = 15) {
         this.filename = filename;
-        this.project = project; 
+        this.project = project;
         this.snapDist = snapDist;
         this.canvas = new fabric.Canvas(canvasId, {
-            fireRightClick: true, 
-            stopContextMenu: true, 
+            fireRightClick: true,
+            stopContextMenu: true,
             preserveObjectStacking: true,
-            uniformScaling: false, 
-            selection: true, 
+            uniformScaling: false,
+            selection: true,
             backgroundColor: "#151515"
         });
-        
-        this.currentMode = null; 
+
+        this.currentMode = null;
         this.drawPoints = [];
         this.activeLine = null;
         this.editPointsMode = false;
         this.imageList = [];
         this.autoSaveTimer = null;
-        this.savedState = null; 
+        this.savedState = null;
+        this.isSaving = false;      // Флаг блокировки сохранения
+        this.isSwitching = false;   // Флаг блокировки переключения
 
         this.history = new HistoryManager(this.canvas, () => {
             this.restoreSelectionState();
@@ -115,7 +117,7 @@ class HTREditor {
     }
 
     async init() {
-        this.imageList = await API.listImages();
+        this.imageList = await API.listImages(this.project);
         this.resize();
         window.addEventListener('resize', () => this.resize());
         window.addEventListener('popstate', (e) => {
@@ -126,6 +128,10 @@ class HTREditor {
         });
         this.setupInputHandlers();
         this.setupCanvasEvents();
+        
+        // Initialize save indicator
+        this.setSaveIndicator('idle');
+        
         await this.loadImageAndData();
     }
 
@@ -160,22 +166,37 @@ class HTREditor {
 
         this.canvas.clear();
         this.canvas.setBackgroundColor("#151515", this.canvas.renderAll.bind(this.canvas));
-        
+
+        // Сохраняем версию загрузки для обнаружения race condition
+        const loadVersion = this._loadVersion = (this._loadVersion || 0) + 1;
+
         const timestamp = new Date().getTime();
-        const imgUrl = `/data/images/${this.filename}?t=${timestamp}`;
-        
+        const projectParam = this.project ? `&project_id=${this.project}` : '';
+        const imgUrl = `/data/images/${this.filename}?t=${timestamp}${projectParam}`;
+
         const imgEl = new Image();
         imgEl.onload = () => {
+            // Проверяем что версия всё ещё актуальна
+            if (loadVersion !== this._loadVersion) {
+                console.log(`Image load skipped: version ${loadVersion} != ${this._loadVersion}`);
+                return;
+            }
             const fabricImg = new fabric.Image(imgEl);
-            
+
             this.canvas.setBackgroundImage(fabricImg, () => {
+                if (loadVersion !== this._loadVersion) return;
                 const scale = (this.canvas.width / fabricImg.width) * 0.9;
                 this.canvas.setZoom(scale);
                 const newW = fabricImg.width * scale;
                 this.canvas.viewportTransform[4] = (this.canvas.width - newW) / 2;
                 this.canvas.viewportTransform[5] = 20;
-                
-                this.canvas.requestRenderAll(); 
+
+                // Обновляем baseZoom для zoom-контроллера
+                if (typeof zoomCtrl !== 'undefined') {
+                    zoomCtrl.setBaseZoom(scale);
+                }
+
+                this.canvas.requestRenderAll();
                 this.setMode('edit');
                 this.history.reset();
                 this.preloadNeighbors();
@@ -187,6 +208,13 @@ class HTREditor {
         imgEl.src = imgUrl;
 
         const data = await API.loadAnnotation(this.filename, this.project);
+        
+        // Проверяем что версия всё ещё актуальна перед добавлением полигонов
+        if (loadVersion !== this._loadVersion) {
+            console.log(`Annotation load skipped: version ${loadVersion} != ${this._loadVersion}`);
+            return;
+        }
+        
         if (data.regions) {
             data.regions.forEach(r => {
                 const p = new fabric.Polygon(r.points);
@@ -195,7 +223,7 @@ class HTREditor {
             });
             this.history.save();
         }
-        
+
         // Обновляем статус при переключении изображения
         if (window.statusWidget && typeof window.statusWidget.loadStatus === 'function') {
             window.statusWidget.filename = this.filename;
@@ -207,7 +235,7 @@ class HTREditor {
     navigateTo(toolName) {
         let url = `/${toolName}?image=${this.filename}`;
         if (this.project) {
-            url += `&project=${this.project}`;
+            url += `&project_id=${this.project}`;
         }
         window.location.href = url;
     }
@@ -217,40 +245,52 @@ class HTREditor {
         if (idx === -1) return;
         [(idx + 1) % this.imageList.length, (idx - 1 + this.imageList.length) % this.imageList.length].forEach(i => {
             const fname = this.imageList[i];
-            new Image().src = `/data/images/${fname}`;
+            const projectParam = this.project ? `?project_id=${this.project}` : '';
+            new Image().src = `/data/images/${fname}${projectParam}`;
             API.loadAnnotation(fname, this.project);
         });
     }
 
-    goImage(dir) {
-        if (this.autoSaveTimer) {
-            clearTimeout(this.autoSaveTimer);
-            this.saveData(); // Сохраняем текущие правки немедленно
+    async goImage(dir) {
+        // Если уже идёт переключение - игнорируем
+        if (this.isSwitching) {
+            return;
         }
 
-        const idx = this.imageList.indexOf(this.filename);
-        if (idx === -1) return;
-        
-        const newFilename = this.imageList[(idx + dir + this.imageList.length) % this.imageList.length];
-        
-        // 1. Обновляем имя в классе
-        this.filename = newFilename;
-        
-        // 2. Обновляем визуальный заголовок по ID
-        const display = document.getElementById('filename-display');
-        if (display) display.textContent = newFilename;
+        this.isSwitching = true;
 
-        // 3. Формируем новый URL с учетом проекта
-        let newUrl = `${window.location.pathname}?image=${newFilename}`;
-        if (this.project) {
-            newUrl += `&project=${this.project}`;
+        try {
+            if (this.autoSaveTimer) {
+                clearTimeout(this.autoSaveTimer);
+                await this.saveData(); // Сохраняем и ЖДЁМ завершения
+            }
+
+            const idx = this.imageList.indexOf(this.filename);
+            if (idx === -1) return;
+
+            const newFilename = this.imageList[(idx + dir + this.imageList.length) % this.imageList.length];
+
+            // 1. Обновляем имя в классе
+            this.filename = newFilename;
+
+            // 2. Обновляем визуальный заголовок по ID
+            const display = document.getElementById('filename-display');
+            if (display) display.textContent = newFilename;
+
+            // 3. Формируем новый URL с учетом проекта
+            let newUrl = `${window.location.pathname}?image=${newFilename}`;
+            if (this.project) {
+                newUrl += `&project_id=${this.project}`;
+            }
+
+            // 4. Пишем в историю браузера
+            history.pushState({ filename: newFilename }, '', newUrl);
+
+            // 5. Грузим данные
+            this.loadImageAndData();
+        } finally {
+            this.isSwitching = false;
         }
-        
-        // 4. Пишем в историю браузера
-        history.pushState({ filename: newFilename }, '', newUrl);
-        
-        // 5. Грузим данные
-        this.loadImageAndData();
     }
 
     captureSelectionState() {
@@ -492,16 +532,6 @@ class HTREditor {
             }
         });
 
-        this.canvas.on('mouse:wheel', (opt) => {
-            let zoom = this.canvas.getZoom();
-            zoom *= 0.999 ** opt.e.deltaY;
-            if (zoom > 20) zoom = 20;
-            if (zoom < 0.01) zoom = 0.01;
-            this.canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
-            opt.e.preventDefault();
-            opt.e.stopPropagation();
-        });
-
         const onSelectionChange = (e) => {
             if (e.deselected) {
                 e.deselected.forEach(obj => this.disablePolyEdit(obj));
@@ -521,7 +551,9 @@ class HTREditor {
         });
         
         const onObjectChanged = (e) => {
-            if(!e.target.class && e.target.type==='polygon') {
+            if (!e.target || e.target.class) return;
+            // Проверяем: это полигон или группа выделенных полигонов
+            if (e.target.type === 'polygon' || e.target.type === 'activeSelection') {
                 this.history.save();
                 this.triggerAutoSave();
             }
@@ -621,13 +653,43 @@ class HTREditor {
     }
 
     triggerAutoSave() {
-        const el = document.getElementById('status');
-        if(el) el.textContent = 'Сохранение...';
+        // Show saving indicator
+        this.setSaveIndicator('saving');
         clearTimeout(this.autoSaveTimer);
         this.autoSaveTimer = setTimeout(() => this.saveData(), 800);
     }
 
+    // Update save indicator status
+    setSaveIndicator(status) {
+        const indicator = document.getElementById('save-indicator');
+        if (!indicator) return;
+        
+        // Remove all status classes
+        indicator.classList.remove('saving', 'saved', 'error');
+        
+        // Add new status (idle is default - no class needed)
+        if (status && status !== 'idle') {
+            indicator.classList.add(status);
+        }
+        
+        // Update tooltip
+        const titles = {
+            'idle': 'Сохранено',
+            'saving': 'Сохранение...',
+            'saved': 'Сохранено',
+            'error': 'Ошибка сохранения'
+        };
+        indicator.title = titles[status] || titles['idle'];
+    }
+
     async saveData() {
+        // Если уже идёт сохранение или переключение - пропускаем
+        if (this.isSaving || this.isSwitching) {
+            return;
+        }
+
+        this.isSaving = true;
+
         const regions = [];
         this.canvas.getObjects().forEach(obj => {
             if (obj.type === 'polygon' && !obj.class) {
@@ -641,17 +703,36 @@ class HTREditor {
         });
 
         try {
-            await API.saveAnnotation(this.filename, regions, this.project);
-            const el = document.getElementById('status');
-            if(el) el.textContent = 'Сохранено';
+            const resp = await API.saveAnnotation(this.filename, regions, this.project);
+            if (!resp.ok) {
+                const data = await resp.json().catch(() => ({}));
+                throw new Error(data.msg || data.error || `HTTP ${resp.status}`);
+            }
+            this.setSaveIndicator('saved');
+
+            // Reset to idle after 2 seconds
+            setTimeout(() => this.setSaveIndicator('idle'), 2000);
         } catch(e) {
-            console.error(e);
+            console.error('Save error:', e);
+            this.setSaveIndicator('error');
+
+            // Reset to idle after 3 seconds
+            setTimeout(() => this.setSaveIndicator('idle'), 3000);
+        } finally {
+            this.isSaving = false;
         }
     }
 
 
     async detectTextLines() {
         const statusEl = document.getElementById('status');
+        const btnDetect = document.getElementById('btn-detect');
+        
+        // Блокируем кнопку на время выполнения
+        if (btnDetect) {
+            btnDetect.disabled = true;
+            btnDetect.textContent = '⏳ Обработка...';
+        }
         if (statusEl) statusEl.textContent = 'Обнаружение строк...';
 
         try {
@@ -660,15 +741,10 @@ class HTREditor {
 
             console.log('Sending settings to API:', settings); // Отладочный вывод
 
-            // Get CSRF token from meta tag
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
-
-            const response = await fetch('/api/detect_lines', {
+            const projectParam = this.project ? `?project_id=${this.project}` : '';
+            const response = await fetch(`/api/detect_lines${projectParam}`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': csrfToken
-                },
+                headers: API.getCsrfHeaders(),
                 body: JSON.stringify({
                     image_name: this.filename,
                     settings: settings
@@ -695,14 +771,20 @@ class HTREditor {
                 this.history.save();
                 this.triggerAutoSave();
 
-                if (statusEl) statusEl.textContent = `Найдено ${data.regions.length} строк`;
+                if (statusEl) statusEl.textContent = `✅ Найдено ${data.regions.length} строк`;
             } else {
-                if (statusEl) statusEl.textContent = 'Ошибка: ' + (data.msg || 'Неизвестная ошибка');
+                if (statusEl) statusEl.textContent = '❌ Ошибка: ' + (data.msg || 'Неизвестная ошибка');
                 console.error('Detection error:', data.msg);
             }
         } catch (error) {
             console.error('Detection API error:', error);
-            if (statusEl) statusEl.textContent = 'Ошибка при обнаружении строк';
+            if (statusEl) statusEl.textContent = '❌ Ошибка при обнаружении строк';
+        } finally {
+            // Разблокируем кнопку
+            if (btnDetect) {
+                btnDetect.disabled = false;
+                btnDetect.textContent = 'Авто-разметка';
+            }
         }
     }
 
@@ -741,12 +823,10 @@ class HTREditor {
                         </label>
                     </div>
 
-                    <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 20px;">
-                        <button id="detect-with-settings" class="btn">Сохранить и переразметить</button>
-                        <div>
-                            <button id="cancel-settings" class="btn">Отмена</button>
-                            <button id="save-settings" class="btn">Сохранить</button>
-                        </div>
+                    <div style="display: flex; gap: 10px; margin-top: 20px;">
+                        <button id="detect-with-settings" class="btn btn-primary">Сохранить и переразметить</button>
+                        <button id="save-settings" class="btn">Сохранить</button>
+                        <button id="cancel-settings" class="btn">Отмена</button>
                     </div>
                 </div>
             </div>

@@ -4,8 +4,8 @@
  */
 
 class StatusWidget {
-    constructor(projectName, filename) {
-        this.projectName = projectName;
+    constructor(projectId, filename) {
+        this.projectId = projectId;
         this.filename = filename;
         this.currentStatus = null;
         this.currentComment = '';
@@ -20,7 +20,7 @@ class StatusWidget {
 
     async loadStatus() {
         try {
-            const response = await API.getImageStatus(this.projectName, this.filename);
+            const response = await API.getImageStatus(this.projectId, this.filename);
             if (response.ok) {
                 const data = await response.json();
                 this.currentStatus = data.status;
@@ -33,7 +33,7 @@ class StatusWidget {
 
     async updateStatus(newStatus, newComment) {
         try {
-            const response = await API.updateImageStatus(this.projectName, this.filename, newStatus, newComment);
+            const response = await API.updateImageStatus(this.projectId, this.filename, newStatus, newComment);
             if (response.ok) {
                 const data = await response.json();
                 this.currentStatus = data.status;
@@ -58,11 +58,10 @@ class StatusWidget {
         if (!badge || !this.currentStatus) return;
 
         const statusTexts = {
-            'crop': 'Загружено',
-            'cropped': 'Кадрировано',
-            'segment': 'Размечено',
-            'texted': 'Текст добавлен',
-            'review_pending': 'Требует ревью',
+            'uploaded': 'Загружено',
+            'cropped': 'Обрезано',
+            'segmented': 'Полигоны готовы',
+            'recognized': 'Текст распознан',
             'reviewed': 'Проверено'
         };
 
@@ -216,10 +215,10 @@ class StatusWidget {
 }
 
 // Initialize status widget if element exists
-function initStatusWidget(projectName, filename) {
+function initStatusWidget(projectId, filename) {
     const badge = document.getElementById('status-badge');
     if (badge) {
-        window.statusWidget = new StatusWidget(projectName, filename);
+        window.statusWidget = new StatusWidget(projectId, filename);
         window.statusWidget.init();
     }
 }

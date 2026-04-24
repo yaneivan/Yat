@@ -9,18 +9,18 @@ from database.enums import ImageStatus
 
 class ImageRepository:
     """Repository for Image CRUD operations."""
-    
+
     def __init__(self, session: Session):
         self.session = session
-    
+
     def create(
         self,
         project_id: int,
         filename: str,
         original_path: str,
         cropped_path: Optional[str] = None,
-        status: ImageStatus = ImageStatus.CROP,
-        crop_params: Optional[dict] = None
+        status: ImageStatus = ImageStatus.UPLOADED,
+        crop_params: Optional[dict] = None,
     ) -> Image:
         """Create a new image."""
         image = Image(
@@ -29,25 +29,28 @@ class ImageRepository:
             original_path=original_path,
             cropped_path=cropped_path,
             status=status.value,
-            crop_params=crop_params or {}
+            crop_params=crop_params or {},
         )
         self.session.add(image)
         self.session.commit()
         self.session.refresh(image)
         return image
-    
+
     def get_by_id(self, image_id: int) -> Optional[Image]:
         """Get image by ID."""
         return self.session.get(Image, image_id)
-    
+
     def get_by_filename(self, filename: str) -> Optional[Image]:
         """Get image by filename. Returns first match if duplicates exist."""
         stmt = select(Image).where(Image.filename == filename)
         return self.session.execute(stmt).scalars().first()
 
-    def get_by_filename_and_project(self, filename: str, project_name: str) -> Optional[Image]:
+    def get_by_filename_and_project(
+        self, filename: str, project_name: str
+    ) -> Optional[Image]:
         """Get image by filename and project name."""
         from database.models import Project
+
         stmt = (
             select(Image)
             .join(Project)
@@ -56,19 +59,27 @@ class ImageRepository:
         )
         return self.session.execute(stmt).scalars().first()
 
+    def get_by_filename_and_project_id(
+        self, filename: str, project_id: int
+    ) -> Optional[Image]:
+        """Get image by filename and project ID."""
+        stmt = select(Image).where(
+            Image.filename == filename, Image.project_id == project_id
+        )
+        return self.session.execute(stmt).scalars().first()
+
     def get_by_project(self, project_id: int) -> List[Image]:
         """Get all images in a project."""
-        stmt = select(Image).where(Image.project_id == project_id).order_by(Image.created_at)
+        stmt = (
+            select(Image)
+            .where(Image.project_id == project_id)
+            .order_by(Image.created_at)
+        )
         return self.session.execute(stmt).scalars().all()
 
     def get_all(self, skip: int = 0, limit: int = 1000) -> List[Image]:
         """Get all images."""
         stmt = select(Image).offset(skip).limit(limit).order_by(Image.created_at)
-        return self.session.execute(stmt).scalars().all()
-
-    def get_by_status(self, status: ImageStatus) -> List[Image]:
-        """Get all images with a specific status."""
-        stmt = select(Image).where(Image.status == status.value)
         return self.session.execute(stmt).scalars().all()
 
     def update(
@@ -77,7 +88,7 @@ class ImageRepository:
         filename: Optional[str] = None,
         cropped_path: Optional[str] = None,
         status: Optional[ImageStatus] = None,
-        crop_params: Optional[dict] = None
+        crop_params: Optional[dict] = None,
     ) -> Image:
         """Update image fields."""
         if filename is not None:
@@ -91,19 +102,9 @@ class ImageRepository:
         self.session.commit()
         self.session.refresh(image)
         return image
-    
+
     def delete(self, image: Image) -> bool:
         """Delete image."""
         self.session.delete(image)
         self.session.commit()
         return True
-    
-    def count_by_project(self, project_id: int) -> int:
-        """Get number of images in a project."""
-        stmt = select(Image).where(Image.project_id == project_id)
-        return self.session.execute(stmt).scalars().count()
-    
-    def count_by_status(self, status: ImageStatus) -> int:
-        """Get number of images with a specific status."""
-        stmt = select(Image).where(Image.status == status.value)
-        return self.session.execute(stmt).scalars().count()

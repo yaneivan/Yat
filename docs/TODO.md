@@ -1,161 +1,13 @@
 # TODO: Критические проблемы и план исправлений
 
+> **ВАЖНО:** Этот файл — для задач которые **НУЖНО сделать**.
+> Выполненные задачи просто удаляются отсюда.
+
 **Приоритет:** Критические проблемы безопасности и стабильности
 
 ---
 
-## 🔧 ТЕКУЩИЙ ПРОГРЕСС (в работе)
-
-### Очистка кода от мёртвого кода
-
-**Статус:** ✅ ВЫПОЛНЕНО
-**Дата начала:** 2026-03-22
-**Дата завершения:** 2026-03-22
-
-**Что сделано:**
-- Удалены неиспользуемые импорты (argparse, traceback, inch, canvas, TA_LEFT, timedelta, TaskModel)
-- Исправлен ai_service.py для использования config.MODEL_PATHS
-- Разделены тесты на быстрые (test_api.py) и медленные (test_ai.py)
-- Создан conftest.py с фикстурами
-- Перенесены AI тесты из test_services.py в test_ai.py
-- Исправлены тесты — константы БД (DB_PATH) и моки AI
-- **Результат:** 54 теста пройдено, 1 пропущен (YOLO модель отсутствует)
-
----
-
 ## 🔴 КРИТИЧЕСКИЕ ПРОБЛЕМЫ (исправлять СРОЧНО)
-
-### Нет rate limiting
-
-**Статус:** ❌ Не исправлено
-**Приоритет:** 🔴 КРИТИЧНО
-**Время на фикс:** 30 минут
-**Риск:** DDoS атаки, перегрузка GPU
-
-**Проблема:**
-
-```python
-# Любой может делать 1000 запросов в секунду
-@app.route('/api/detect_lines', methods=['POST'])
-def detect_lines():
-    # GPU будет загружен на 100%
-```
-
-**Решение:**
-
-```python
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
-
-limiter = Limiter(app, key_func=get_remote_address)
-
-@app.route('/api/detect_lines', methods=['POST'])
-@limiter.limit("5 per minute")
-def detect_lines():
-    ...
-```
-
-**Файлы для изменения:**
-- `app.py` (добавить limiter)
-- `pyproject.toml` (добавить flask-limiter)
-
----
-
-### Нет валидации входных данных
-
-**Статус:** ❌ Не исправлено
-**Приоритет:** 🔴 КРИТИЧНО
-**Время на фикс:** 2 часа
-**Риск:** Безопасность — XSS, path traversal, SQL injection
-
-**Проблема:**
-
-```python
-@app.route('/api/save', methods=['POST'])
-def save_data():
-    incoming_data = request.json
-    filename = incoming_data.get('image_name')  # ← Нет проверки!
-    
-    # regions может быть любым
-    for key in ['regions', 'texts', 'status']:
-        if key in incoming_data:
-            existing_data[key] = incoming_data[key]  # ← Слепое копирование
-```
-
-**Атака:**
-```json
-{
-  "image_name": "../../../etc/passwd",
-  "regions": [{"points": "<script>alert('XSS')</script>"}],
-  "status": "'; DROP TABLE images; --"
-}
-```
-
-**Решение:**
-
-```python
-from marshmallow import Schema, fields, validate
-
-class AnnotationSchema(Schema):
-    image_name = fields.Str(required=True, validate=validate.Length(min=1, max=255))
-    regions = fields.List(fields.Dict(), validate=validate.Length(max=500))
-    status = fields.Str(validate=validate.OneOf(['crop', 'cropped', 'segment', 'texted']))
-
-schema = AnnotationSchema()
-
-@app.route('/api/save', methods=['POST'])
-def save_data():
-    try:
-        data = schema.load(request.json)  # ← Валидация
-    except ValidationError as e:
-        return jsonify({'error': str(e)}), 400
-```
-
-**Файлы для изменения:**
-- `app.py` (добавить валидацию)
-- `pyproject.toml` (добавить marshmallow)
-
----
-
-### SQLAlchemy сессии в цикле (нет транзакционности)
-
-**Статус:** ❌ Не исправлено
-**Приоритет:** 🔴 КРИТИЧНО
-**Время на фикс:** 2 часа
-**Риск:** Потеря данных при ошибке в batch операциях
-
-**Проблема в `annotation_service.py`:**
-```python
-def save_annotation(self, filename: str, data: Dict[str, Any]) -> bool:
-    session, annotation_repo, image_repo = self._get_session()
-    try:
-        # ... работа с БД
-    finally:
-        session.close()  # ← Закрывается после КАЖДОЙ операции
-```
-
-**В batch операции (50 изображений):**
-- 50 × открытие сессии
-- 50 × закрытие сессии
-- **Нет транзакционности** — если ошибка на 49-м, первые 48 уже закоммичены
-
-**Решение:**
-```python
-def save_batch_annotations(self, annotations: List[Dict]):
-    session = SessionLocal()
-    try:
-        for annotation in annotations:
-            # ... сохранить
-        session.commit()  # ← Один коммит на все
-    except:
-        session.rollback()  # ← Откат всех
-    finally:
-        session.close()
-```
-
-**Файлы для изменения:**
-- `services/annotation_service.py` (добавить batch метод)
-- `logic.py` (вызывать batch метод вместо одиночных)
 
 ---
 
@@ -230,62 +82,6 @@ recognition_progress = ProgressTracker()
 
 **Файлы для изменения:**
 - `app.py`
-
----
-
-### 3. Нет валидации входных данных
-
-**Статус:** ❌ Не исправлено  
-**Приоритет:** 🟡 СЕРЬЁЗНО  
-**Время на фикс:** 3 часа  
-**Риск:** Безопасность — инъекции, XSS, path traversal
-
-**Проблема:**
-```python
-@app.route('/api/save', methods=['POST'])
-def save_data():
-    incoming_data = request.json
-    filename = incoming_data.get('image_name')  # ← Нет проверки!
-    
-    # regions может быть любым
-    for key in ['regions', 'texts', 'status']:
-        if key in incoming_data:
-            existing_data[key] = incoming_data[key]  # ← Слепое копирование
-```
-
-**Атака:**
-```json
-{
-  "image_name": "../../../etc/passwd",
-  "regions": "<script>alert('XSS')</script>",
-  "status": "DROP TABLE images"
-}
-```
-
-**Решение:**
-```python
-from marshmallow import Schema, fields, validate
-
-class AnnotationSchema(Schema):
-    image_name = fields.Str(required=True, validate=validate.Length(min=1, max=255))
-    regions = fields.List(fields.Dict(), validate=validate.Length(max=500))
-    texts = fields.Dict()
-    status = fields.Str(validate=validate.OneOf(['crop', 'cropped', 'segment', 'texted']))
-
-schema = AnnotationSchema()
-
-@app.route('/api/save', methods=['POST'])
-def save_data():
-    try:
-        data = schema.load(request.json)  # ← Валидация
-    except ValidationError as e:
-        return jsonify({'error': str(e)}), 400
-```
-
-**Файлы для изменения:**
-- `app.py` (добавить валидацию)
-- `pyproject.toml` (добавить marshmallow)
-- `services/*.py` (валидация в сервисах)
 
 ---
 
@@ -393,40 +189,6 @@ def validate_filename(filename: str) -> str:
 
 ---
 
-### 7. Отсутствие индексов БД
-
-**Статус:** ❌ Не исправлено
-**Приоритет:** 🟠 СРЕДНЕ
-**Время на фикс:** 15 минут
-**Риск:** Медленные запросы к БД
-
-**Проблема:**
-
-```python
-# database/models.py
-class Image(Base):
-    filename = Column(String(255), nullable=False)  # ← НЕТ ИНДЕКСА
-```
-
-**Последствие:** `get_by_filename()` выполняет полный скан таблицы
-
-**Решение:**
-
-```python
-class Image(Base):
-    filename = Column(String(255), nullable=False, index=True)
-    
-class Task(Base):
-    __table_args__ = (
-        Index('ix_tasks_status_created', 'status', 'created_at'),
-    )
-```
-
-**Файлы для изменения:**
-- `database/models.py`
-
----
-
 ### 8. Текст в модалках не автосохраняется
 
 **Статус:** ❌ Не исправлено  
@@ -516,27 +278,6 @@ MODEL_PATHS = {
 
 **Файлы для изменения:**
 - `config.py`
-
----
-
-### 8. Нет тестов на AI сервис
-
-**Статус:** ❌ Не исправлено  
-**Приоритет:** 🟢 МЕЛКО  
-**Время на фикс:** 4 часа
-
-**Проблема:**
-```python
-# tests/ - нет тестов на ai_service.py
-```
-
-**Решение:** Добавить тесты на:
-- detect_lines()
-- recognize_text()
-- recognize_text_in_region()
-
-**Файлы для изменения:**
-- `tests/test_ai_service.py` (создать)
 
 ---
 
@@ -658,61 +399,42 @@ class ProjectService:
 
 ---
 
-## 📋 ПЛАН ДЕЙСТВИЙ
-
-### СРОЧНО (сегодня)
-
-- [ ] 1. Исправить сессии в batch операциях (транзакционность)
-
-### В ЭТОЙ НЕДЕЛЕ 📅
-
-- [ ] 2. Починить утечку памяти в `recognition_progress`
-- [ ] 3. Добавить валидацию входных данных
-
-### В СЛЕДУЮЩЕМ СПРИНТЕ 📆
-
-- [ ] 4. Rate limiting
-- [ ] 5. Автосохранение текста
-- [ ] 6. Индикатор загрузки моделей
-
-### ПО ЖЕЛАНИЮ 🕐
-
-- [ ] 7. Убрать хардкод путей
-- [ ] 8. Добавить тесты AI
-- [ ] 9. Убрать magic numbers
-- [ ] 10. Форматирование текста
-- [ ] 11. Копирование изображения
-- [ ] 12. Унификация фоновых задач
-- [ ] 13. Ленивая инициализация TROCR
-- [ ] 14. Исправление математики координат
-
----
-
-## 📊 ИТОГОВАЯ ТАБЛИЦА
-
-| # | Проблема | Приорит | Время | Статус |
-|---|----------|---------|-------|--------|
-| 1 | Сессии в цикле | 🔴 | 2 ч | ❌ |
-| 2 | Утечка памяти | 🟡 | 1 ч | ❌ |
-| 3 | Валидация input | 🟡 | 3 ч | ❌ |
-| 4 | Rate limiting | 🟠 | 30 мин | ❌ |
-| 5 | Автосохранение | 🟠 | 1 ч | ❌ |
-| 6 | Индикатор загрузки | 🟠 | 2 ч | ❌ |
-| 7 | Хардкод путей | 🟢 | 30 мин | ❌ |
-| 8 | Тесты AI | 🟢 | 4 ч | ❌ |
-| 9 | Magic numbers | 🟢 | 30 мин | ❌ |
-| 10 | Форматирование текста | 🟠 | 2 ч | ❌ |
-| 11 | Копирование изображения | 🟢 | 30 мин | ❌ |
-| 12 | Унификация фоновых задач | 🟠 | 3 ч | ❌ |
-| 13 | Ленивая инициализация TROCR | 🟡 | 1 ч | ❌ |
-| 14 | Исправление математики координат | 🔴 | 4 ч | ❌ |
-
-**Общее время на критические исправления:** ~6 часов
-**Общее время на все исправления:** ~21 час
-
 ---
 
 ## 📝 ЗАМЕЧАНИЯ
+
+### ImageStatus: enum vs строка
+
+**Статус:** ❌ Не исправлено
+**Приоритет:** 🟢 НИЗКОЕ
+**Время на фикс:** 2 часа
+
+**Проблема:**
+`Image.status` хранится как `String(50)` с `.value`, но в коде хаос:
+
+```python
+# models.py — строка
+status = Column(String(50), default=ImageStatus.UPLOADED.value)
+
+# logic.py:646 — передаётся enum объект ❌
+status=ImageStatus.SEGMENTED,
+
+# annotation_service.py — сравнение со строкой ✅
+if image.status == ImageStatus.RECOGNIZED.value:
+```
+
+**Что сделать:**
+1. Вариант А: `Column(ImageStatus)` — SQLAlchemy Enum
+2. Вариант Б: Оставить строку, убрать `.value` из сравнений, унифицировать логику
+3. Миграция БД если нужен вариант А
+
+**Файлы для изменения:**
+- `database/models.py`
+- `services/image_service.py`
+- `services/annotation_service.py`
+- `logic.py`
+
+---
 
 ### Зависимости для добавления
 
@@ -720,7 +442,6 @@ class ProjectService:
 # pyproject.toml
 [project]
 dependencies = [
-    "flask-limiter>=3.5.0",  # Rate limiting
     "marshmallow>=3.20.0",   # Валидация данных
     "flask-socketio>=5.3.0", # WebSocket для прогресса
 ]
@@ -734,42 +455,7 @@ dependencies = [
 
 ---
 
-## 🔗 ССЫЛКИ
-
-- [Flask-Limiter Documentation](https://flask-limiter.readthedocs.io/)
-- [Marshmallow Documentation](https://marshmallow.readthedocs.io/)
-- [SQLAlchemy Best Practices](https://docs.sqlalchemy.org/)
-- [SQLite WAL Mode](https://www.sqlite.org/wal.html)
-
----
-
-## 📋 НОВЫЕ ЗАДАЧИ (добавлено 2026-03-19)
-
-### 10. Форматирование текста
-
-**Статус:** ❌ Не исправлено
-**Приоритет:** 🟠 СРЕДНЕ
-**Время на фикс:** 2 часа
-
-**Описание:**
-Добавить возможность форматирования текста в редакторе:
-- **Сильное зачеркивание** — `[текст]` (квадратные скобки)
-- **Слабое зачеркивание** — `~текст~` (тильды)
-
-**Требования:**
-- Кнопки в модальном окне ввода текста
-- Обёртывание выделенного текста в формат
-- Отображение в полигоне:
-  - `[текст]` → жирный шрифт
-  - `~текст~` → `text-decoration: line-through`
-- Сохранение форматирования в БД (в поле `texts` как строки)
-
-**Файлы для изменения:**
-- `templates/text_editor.html` (toolbar с кнопками)
-- `static/js/text_editor.js` (applyFormat, parseFormats)
-- `static/css/style.css` (стили toolbar)
-
----
+## 📋 ЗАДАЧИ
 
 ### 11. Копирование изображения региона
 
@@ -792,8 +478,6 @@ dependencies = [
 - `static/js/text_editor.js` (copyRegionToClipboard)
 
 ---
-
-## 📋 НОВЫЕ ЗАДАЧИ (добавлено 2026-03-20)
 
 ### 12. Унификация фоновых задач на task_service
 
@@ -861,35 +545,529 @@ if ai_service.is_trocr_available():
 
 ---
 
-### 14. Исправление математики координат
+### 17. Вынос CSS из HTML в единый файл
 
 **Статус:** ❌ Не исправлено
-**Приоритет:** 🔴 КРИТИЧНО
-**Время на фикс:** 4 часа
+**Приоритет:** 🟠 СРЕДНЕ
+**Время на фикс:** 2 часа
 
 **Описание:**
-В `logic.py` есть проблемы с пересчётом координат полигонов.
+Сейчас CSS дублируется в 4 местах, что создаёт проблемы поддержки и вызывает FOUC (Flash of Unstyled Content).
 
-**Проблемы:**
+**Проблема:**
 
-1. **`recalculate_regions()` — DRIFT BUG**
-   - Неправильное обратное преобразование при поворотах
-   - Работает только для небольших углов
-   - При ре-кропе с поворотом полигоны "уплывают"
+| Файл | Inline CSS | Строк |
+|------|------------|-------|
+| `static/css/style.css` | ✅ Основной файл | 572 |
+| `templates/index.html` | ❌ `<style>` в head | ~200 |
+| `templates/text_editor.html` | ❌ `<style>` в head | ~250 |
+| `templates/cropper.html` | ❌ `<style>` в head | ~100 |
+| `templates/editor.html` | ❌ `<style>` в head | ~150 |
 
-2. **`calculate_overlap_ratio()` — приближение**
-   - Использует bounding box вместо пересечения полигонов
-   - Может давать ложные срабатывания для сложных форм
-
-3. **`merge_overlapping_regions()` — жадный алгоритм**
-   - Порядок влияет на результат
-   - Недетерминированное поведение
+**Последствия:**
+1. **Дублирование кода** — при изменении стиля нужно править 5 файлов
+2. **FOUC** — браузер показывает нестилизованную страницу до загрузки inline стилей
+3. **Кэш не работает** — CSS в HTML не кэшируется отдельно
+4. **Увеличенный размер** — одни и те же стили загружаются 5 раз
 
 **Решение:**
-- Переписать `recalculate_regions()` с правильной обратной билинейной интерполяцией
-- Заменить `calculate_overlap_ratio()` на точное пересечение (shapely или Sutherland-Hodgman)
-- Опционально: улучшить `merge_overlapping_regions()` на non-greedy алгоритм
+
+**Шаг 1: Создать структуру**
+```
+static/css/
+├── style.css           # Основные стили (уже есть)
+├── editors.css         # Стили редакторов (новый)
+└── dashboard.css       # Стили dashboard (новый)
+```
+
+**Шаг 2: Вынести стили из HTML**
+
+```html
+<!-- Было: templates/text_editor.html -->
+<head>
+    <style>
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; ... }
+        #toolbar { height: 50px; background: #333; ... }
+        /* 250 строк стилей */
+    </style>
+</head>
+
+<!-- Стало: templates/text_editor.html -->
+<head>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/editors.css">
+</head>
+```
+
+**Шаг 3: Обновить все шаблоны**
+
+| Шаблон | Куда вынести |
+|--------|--------------|
+| `index.html` | `dashboard.css` |
+| `editor.html` | `editors.css` |
+| `text_editor.html` | `editors.css` |
+| `cropper.html` | `editors.css` |
+| `project.html` | `dashboard.css` |
+| `login.html` | `auth.css` (опционально) |
+
+**Шаг 4: Удалить дубликаты**
+
+После выноса удалить повторяющиеся стили:
+- `body` — оставить только в `style.css`
+- `.btn` — оставить только в `style.css`
+- `#toolbar` — объединить из 3 файлов
 
 **Файлы для изменения:**
-- `logic.py` (recalculate_regions, calculate_overlap_ratio)
-- `pyproject.toml` (опционально: добавить shapely)
+- `static/css/editors.css` (создать)
+- `static/css/dashboard.css` (создать)
+- `templates/*.html` (удалить `<style>`, добавить `<link>`)
+
+**Критерии приёмки:**
+- [ ] Нет inline `<style>` в HTML (кроме критических)
+- [ ] Все стили в отдельных `.css` файлах
+- [ ] Нет дублирования стилей
+- [ ] FOUC исчез
+- [ ] Размер HTML уменьшился на ~700 строк
+
+**Ветка:** `feature/extract-css`
+
+---
+
+### 18. Фронтенд: рефакторинг и улучшение архитектуры
+
+**Статус:** ❌ Не исправлено
+**Приоритет:** 🟠 СРЕДНЕ
+**Время на фикс:** 8 часов
+
+**Описание:**
+Провести полный рефакторинг фронтенда для улучшения архитектуры, производительности и поддерживаемости.
+
+**Найденные проблемы (аудит от 2026-03-24):**
+
+#### 18.1. Console.log в production (13 штук)
+
+**Файлы:**
+- `static/js/text_editor.js` (6 штук)
+- `static/js/editor.js` (2 штуки)
+- `static/js/project_manager.js` (5 штук)
+
+**Решение:**
+```javascript
+// Заменить на debug-утилиту
+const DEBUG = false;
+const log = DEBUG ? console.log : () => {};
+log('Debug message');
+```
+
+#### 18.2. Отсутствие обработки ошибок в api.js
+
+**Проблема:**
+```javascript
+async listImages() {
+    const res = await fetch('/api/images_list');
+    return res.json();  // ❌ Нет проверки res.ok
+}
+```
+
+**Решение:**
+```javascript
+async listImages() {
+    const res = await fetch('/api/images_list');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+}
+```
+
+#### 18.3. Магические числа
+
+**Проблема:**
+```javascript
+this.snapDist = 15;           // Почему 15?
+this.maxHistory = 50;         // Почему 50?
+setTimeout(checkStatus, 1000); // Почему 1000ms?
+```
+
+**Решение:**
+```javascript
+const CONFIG = {
+    SNAP_DISTANCE: 15,
+    MAX_HISTORY: 50,
+    POLL_INTERVAL: 1000,
+    FONT_SIZE: { MIN: 12, MAX: 60 }
+};
+```
+
+#### 18.4. Нет debounce/throttle
+
+**Проблема:**
+```javascript
+searchInput.addEventListener('input', () => {
+    this.renderProjects();  // ← Перерисовка при каждом нажатии
+});
+```
+
+**Решение:**
+```javascript
+const debouncedRender = debounce(() => this.renderProjects(), 300);
+searchInput.addEventListener('input', debouncedRender);
+```
+
+#### 18.5. Нет индикаторов загрузки
+
+**Проблема:** Пользователь не видит что данные грузятся.
+
+**Решение:**
+```javascript
+async loadProjects() {
+    this.showLoading(true);
+    try {
+        this.projects = await ProjectAPI.getProjects();
+    } finally {
+        this.showLoading(false);
+    }
+}
+```
+
+#### 18.6. Дублирование: editor.js ↔ text_editor.js
+
+**Оба файла имеют:**
+- `HistoryManager` (одинаковый код)
+- `goImage()` (похожая логика)
+- `saveData()` (разная реализация)
+- Обработка canvas событий
+
+**Решение:** Создать базовый класс `BaseEditor`.
+
+**Файлы для изменения:**
+- `static/js/api.js` (обработка ошибок)
+- `static/js/core/` (создать: base_editor.js, config.js, utils.js)
+- `static/js/editor.js` (рефакторинг)
+- `static/js/text_editor.js` (рефакторинг)
+- `static/js/project_manager.js` (debounce, индикаторы)
+- Все JS файлы (удалить console.log)
+
+**Ветка:** `feature/frontend-refactor`
+
+---
+
+## 📝 ЗАМЕЧАНИЯ
+Сейчас AI Service (`services/ai_service.py`) имеет базовую реализацию с синглтоном и lazy initialization.
+Однако отсутствуют важные функции для production-нагрузки:
+
+**Текущее состояние:**
+- ✅ Синглтон (`ai_service = AIService()`)
+- ✅ Lazy initialization моделей
+- ✅ Thread-safe (double-checked locking)
+- ✅ Кэширование моделей (не выгружаются)
+
+**Проблемы:**
+1. **Нет реального батчинга** — пакетная обработка вызывает YOLO по одной картинке в цикле
+2. **Нет очереди задач** — `logic.py` напрямую вызывает `ai_service.detect_lines()`
+3. **Нет выгрузки моделей** — модели занимают RAM/GPU постоянно
+4. **Прогресс в `logic.py`** — AI service не управляет прогрессом выполнения
+
+**Сценарии использования:**
+
+| Сценарий | Где вызывается | Как сейчас | Проблема |
+|----------|----------------|------------|----------|
+| **Одиночный запрос** (из редактора) | `editor.js` → `/api/detect_lines` | Синхронно, браузер ждёт | ✅ Нормально для интерактива |
+| **Пакетный запрос** (из project.html) | `project_manager.js` → `/api/batch_detect` | Цикл по одной картинке | ❌ Нет GPU батчинга |
+
+**Производительность (оценка):**
+
+| Количество картинок | Сейчас (по одной) | С батчингом |
+|---------------------|-------------------|-------------|
+| 1 | ~2 сек | ~2 сек |
+| 10 | ~20 сек | ~5-7 сек |
+| 100 | ~200 сек | ~30-50 сек |
+
+---
+
+### Задачи для реализации
+
+#### 16.1. Добавить пакетную обработку для YOLO
+
+**Файл:** `services/ai_service.py`
+
+**Задача:** Создать метод `detect_lines_batch()` для реальной пакетной обработки на GPU.
+
+```python
+def detect_lines_batch(
+    self,
+    image_paths: List[str],
+    settings: Dict[str, Any],
+    progress_callback: Callable = None
+) -> Dict[str, List[Dict]]:
+    """
+    Пакетная детекция на нескольких изображениях.
+    
+    Args:
+        image_paths: Список путей к изображениям
+        settings: Настройки детекции (threshold, simplification, merge)
+        progress_callback: Callback(processed, total)
+    
+    Returns:
+        Dict: {filename: [regions]}
+    """
+    # Загрузить все изображения
+    images = [Image.open(path) for path in image_paths]
+    
+    # ОДИН вызов модели на все изображения (GPU батчинг!)
+    model = self._get_yolo_model()
+    results = model(images, conf=settings.get('threshold', 50)/100)
+    
+    # Обработать результаты
+    output = {}
+    for idx, result in enumerate(results):
+        filename = os.path.basename(image_paths[idx])
+        regions = self._process_result(result, settings)
+        output[filename] = regions
+        
+        if progress_callback:
+            progress_callback(idx + 1, len(images))
+    
+    return output
+```
+
+**Преимущества:**
+- 3-4x быстрее на GPU (параллелизм внутри YOLO)
+- Меньше накладных расходов на загрузку изображений
+
+**Где использовать:**
+- `logic.py:run_batch_detection_for_project()` — вместо цикла по одной
+
+---
+
+#### 16.2. Добавить выгрузку моделей
+
+**Файл:** `services/ai_service.py`
+
+**Задача:** Создать метод `unload_models()` для освобождения памяти.
+
+```python
+def unload_models(self):
+    """
+    Выгрузить модели из памяти (освободить GPU RAM).
+    
+    Вызывать:
+    - При длительном простое (>5 мин)
+    - Перед завершением приложения
+    - Для экономии памяти на серверах с несколькими сервисами
+    """
+    import gc
+    
+    if self._yolo_model:
+        del self._yolo_model
+        self._yolo_model = None
+    
+    if self._trocr_model:
+        del self._trocr_model
+        self._trocr_model = None
+        self._trocr_processor = None
+    
+    gc.collect()
+    torch.cuda.empty_cache()
+    self._models_initialized = False
+```
+
+**Дополнительно:** Добавить автоматическую выгрузку при простое.
+
+```python
+# В __init__
+self._last_activity = time.time()
+self._idle_timeout = 300  # 5 минут
+
+# В detect_lines() и recognize_text()
+self._last_activity = time.time()
+
+# В фоновом потоке
+def _check_idle():
+    if time.time() - self._last_activity > self._idle_timeout:
+        self.unload_models()
+```
+
+---
+
+#### 16.3. Перенести управление прогрессом в AI Service
+
+**Файл:** `services/ai_service.py`
+
+**Проблема:** Сейчас `logic.py` управляет прогрессом через `task_service.update_progress()`.
+
+**Решение:** AI service должен принимать callback для обновления прогресса.
+
+**Сейчас:**
+```python
+# logic.py:675-690
+for idx, image_name in enumerate(image_names):
+    regions = ai_service.detect_lines(image_name, settings)
+    annotation_service.save_annotation(...)
+    task_service.update_progress(task.id, idx + 1)  # ← logic.py знает о прогрессе
+```
+
+**Как должно быть:**
+```python
+# logic.py
+def run_batch_detection_for_project(project_name, settings, task_id):
+    images = project_service.get_images(project_name)
+    
+    def on_progress(processed, total):
+        task_service.update_progress(task.id, processed)
+    
+    ai_service.detect_lines_batch(
+        image_paths=[img.cropped_path for img in images],
+        settings=settings,
+        progress_callback=on_progress  # ← AI service управляет прогрессом
+    )
+```
+
+---
+
+#### 16.4. Добавить очередь задач (опционально)
+
+**Файл:** `services/ai_service.py` или новый `services/ai_queue.py`
+
+**Задача:** Создать очередь для управления приоритетами и предотвращения перегрузки.
+
+```python
+from queue import PriorityQueue
+from dataclasses import dataclass, field
+from enum import Enum
+
+class TaskPriority(Enum):
+    HIGH = 1      # Одиночные запросы из редактора
+    NORMAL = 5    # Пакетная обработка
+    LOW = 10      # Фоновые задачи
+
+@dataclass(order=True)
+class AITask:
+    priority: int
+    created_at: float = field(compare=False)
+    func: str = field(compare=False)  # 'detect' или 'recognize'
+    args: tuple = field(compare=False)
+    kwargs: dict = field(compare=False)
+    callback: callable = field(compare=False, default=None)
+
+class AIQueue:
+    def __init__(self, max_workers=2):
+        self._queue = PriorityQueue()
+        self._workers = []
+        self._shutdown = False
+        self._max_workers = max_workers
+    
+    def submit(self, func, args, kwargs, callback, priority=TaskPriority.NORMAL):
+        self._queue.put(AITask(
+            priority=priority.value,
+            created_at=time.time(),
+            func=func,
+            args=args,
+            kwargs=kwargs,
+            callback=callback
+        ))
+    
+    def start(self):
+        for _ in range(self._max_workers):
+            worker = threading.Thread(target=self._worker_loop, daemon=True)
+            worker.start()
+            self._workers.append(worker)
+    
+    def _worker_loop(self):
+        while not self._shutdown:
+            try:
+                task = self._queue.get(timeout=1)
+                result = getattr(ai_service, task.func)(*task.args, **task.kwargs)
+                if task.callback:
+                    task.callback(result)
+            except queue.Empty:
+                continue
+```
+
+**Где использовать:**
+- `app.py:detect_lines()` — `priority=HIGH` (интерактивный запрос)
+- `app.py:batch_detect()` — `priority=NORMAL` (фоновая задача)
+
+---
+
+#### 16.5. Обновить `logic.py` для использования батчинга
+
+**Файл:** `logic.py`
+
+**Задача:** Заменить цикл на вызов `detect_lines_batch()`.
+
+**Сейчас:**
+```python
+def run_batch_detection_for_project(project_name, settings, task_id):
+    images = project_service.get_images(project_name)
+    
+    for idx, image_name in enumerate(image_names):
+        regions = ai_service.detect_lines(image_name, settings)  # ← По одной!
+        annotation_data = annotation_service.get_annotation(...)
+        annotation_data['regions'] = regions
+        annotation_service.save_annotation(...)
+        task_service.update_progress(task.id, idx + 1)
+```
+
+**Как должно быть:**
+```python
+def run_batch_detection_for_project(project_name, settings, task_id):
+    images = project_service.get_images(project_name)
+    image_paths = [img.cropped_path for img in images]
+    
+    def on_progress(processed, total):
+        task_service.update_progress(task.id, processed)
+    
+    # ← Пакетная обработка
+    results = ai_service.detect_lines_batch(
+        image_paths=image_paths,
+        settings=settings,
+        progress_callback=on_progress
+    )
+    
+    # Сохранить результаты
+    for image in images:
+        filename = image.filename
+        if filename in results:
+            annotation_data = annotation_service.get_annotation(filename, project_name)
+            annotation_data['regions'] = results[filename]
+            annotation_data['status'] = ImageStatus.SEGMENTED.value
+            annotation_service.save_annotation(filename, annotation_data, project_name)
+```
+
+---
+
+**Ожидаемые улучшения:**
+
+| Метрика | Сейчас | После |
+|---------|--------|-------|
+| 10 картинок (детекция) | ~20 сек | ~5-7 сек |
+| 100 картинок (детекция) | ~200 сек | ~30-50 сек |
+| RAM (после обработки) | Занята постоянно | Освобождается через 5 мин |
+| GPU RAM | Занята постоянно | Освобождается при простое |
+| Приоритеты | Нет | Есть (интерактив > фон) |
+
+---
+
+**Приоритет задач:**
+1. **Высокий:** Добавить `detect_lines_batch()` — 3-4x ускорение
+2. **Средний:** Добавить `unload_models()` — экономия памяти
+3. **Низкий:** Очередь задач — улучшение архитектуры
+4. **Низкий:** Перенос прогресса в AI service — рефакторинг
+
+---
+
+**Файлы для изменения:**
+- `services/ai_service.py` — основная реализация
+- `services/ai_queue.py` — новый файл (опционально)
+- `logic.py` — использование батчинга
+- `app.py` — endpoint'ы для одиночных и пакетных запросов
+- `config.py` — настройки (idle_timeout, max_workers)
+
+---
+
+**Критерии приёмки:**
+- [ ] `detect_lines_batch()` обрабатывает пакет изображений за один вызов YOLO
+- [ ] `unload_models()` освобождает GPU RAM
+- [ ] Прогресс обновляется через callback из AI service
+- [ ] Пакетная обработка 10 изображений работает в 3x быстрее
+- [ ] Модели выгружаются после 5 минут простоя
+

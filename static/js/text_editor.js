@@ -4,13 +4,21 @@
 class TextEditor {
     constructor(leftCanvasId, rightCanvasId, filename, project = null, snapDist = 15) {
         this.filename = filename;
-        this.project = project; 
+        this.project = project;
         this.snapDist = snapDist;
         this.currentRegionIndex = -1;
         this.regions = [];
         this.texts = {};
         this.imageList = [];
-        
+        this.notepadMode = false; // Notepad mode state
+        this.notepadFocusedIndex = -1; // Currently focused line in notepad mode
+        this.textsHistory = []; // History of text states for undo
+        this.historyIndex = -1; // Current position in history
+        this.maxHistoryLength = 50; // Maximum history entries
+        this.saveHistoryTimeout = null; // Timeout for debounced history saving
+        this.isSaving = false; // Флаг блокировки сохранения при переключении
+        this.isSwitching = false; // Флаг блокировки переключения при сохранении
+
         // Initialize both canvases
         this.leftCanvas = new fabric.Canvas(leftCanvasId, {
             fireRightClick: true,
@@ -34,10 +42,21 @@ class TextEditor {
     }
 
     async init() {
-        this.imageList = await API.listImages();
+        this.imageList = await API.listImages(this.project);
         this.resize();
         window.addEventListener('resize', () => this.resize());
         window.addEventListener('keydown', (e) => this.handleKeyDown(e));
+
+        // Initialize save indicator
+        this.setSaveIndicator('idle');
+
+        // Save on page unload/reload
+        window.addEventListener('beforeunload', () => {
+            if (this.autoSaveTimeout) {
+                clearTimeout(this.autoSaveTimeout);
+                this.saveData(); // Save immediately before unload
+            }
+        });
 
         // Setup canvas events
         this.setupCanvasEvents();
@@ -45,7 +64,7 @@ class TextEditor {
         // Initialize viewport synchronization
         this.initViewportSync();
 
-        // Load image and data
+        // Load image and data (also caches image for preview)
         await this.loadImageAndData();
     }
 
@@ -67,7 +86,7 @@ class TextEditor {
     navigateTo(toolName) {
         let url = `/${toolName}?image=${this.filename}`;
         if (this.project) {
-            url += `&project=${this.project}`;
+            url += `&project_id=${this.project}`;
         }
         window.location.href = url;
     }
@@ -218,86 +237,103 @@ class TextEditor {
         this.rightCanvas.requestRenderAll();
     }
 
-    // Parse text for formatting markers: [текст] and ~текст~
+    // Parse text for formatting markers (Markdown-like syntax)
+    // Supports: ~~strikethrough~~, _underline_, ==bold==, ^insertion^, [comment]
+    // Also supports legacy single-tilde ~text~ for backward compatibility
     parseFormats(text) {
-        const styles = {};
-        let processedText = text;
+        const styles = {}; // charIndex -> { remove, linethrough, underline, fill, fontWeight }
+        const markerPositions = []; // Track marker positions for removal
 
-        // First pass: find all formatting markers and their positions
-        // Strong strikethrough: [текст]
-        const strongRegex = /\[([^\]]+)\]/g;
-        let match;
+        // Define format patterns in priority order
+        const formats = [
+            { regex: /~~([^~]+)~~/g, type: 'strike', openLen: 2, closeLen: 2 },
+            { regex: /\[([^\]]+)\]/g, type: 'comment', openLen: 1, closeLen: 1 },
+            { regex: /==([^=]+)==/g, type: 'bold', openLen: 2, closeLen: 2 },
+            { regex: /\^([^^]+)\^/g, type: 'insertion', openLen: 1, closeLen: 1 },
+            { regex: /_([^_]+)_/g, type: 'underline', openLen: 1, closeLen: 1 },
+            // Legacy: single tilde for backward compatibility
+            { regex: /~([^~]+)~/g, type: 'strike-weak', openLen: 1, closeLen: 1 },
+        ];
 
-        while ((match = strongRegex.exec(text)) !== null) {
-            const startIndex = match.index;
-            const endIndex = startIndex + match[0].length;
-            const innerStart = startIndex + 1;
-            const innerEnd = endIndex - 1;
+        // First pass: find all formatting markers and mark positions for removal
+        for (const fmt of formats) {
+            const regex = new RegExp(fmt.regex.source, 'g');
+            let match;
+            while ((match = regex.exec(text)) !== null) {
+                const startIndex = match.index;
+                const endIndex = startIndex + match[0].length;
+                const innerStart = startIndex + fmt.openLen;
+                const innerEnd = endIndex - fmt.closeLen;
 
-            // Mark characters for removal (brackets)
-            for (let i = startIndex; i < endIndex; i++) {
-                if (!styles[i]) styles[i] = {};
-                styles[i].remove = true;
-            }
+                // Mark opening marker characters for removal
+                for (let i = startIndex; i < startIndex + fmt.openLen; i++) {
+                    if (!styles[i]) styles[i] = {};
+                    styles[i].remove = true;
+                }
 
-            // Apply strong strikethrough to inner text
-            for (let i = innerStart; i < innerEnd; i++) {
-                if (!styles[i]) styles[i] = {};
-                styles[i].stroke = 'black';
-                styles[i].strokeWidth = 2;
+                // Mark closing marker characters for removal
+                for (let i = endIndex - fmt.closeLen; i < endIndex; i++) {
+                    if (!styles[i]) styles[i] = {};
+                    styles[i].remove = true;
+                }
+
+                // Apply formatting to inner text
+                for (let i = innerStart; i < innerEnd; i++) {
+                    if (!styles[i]) styles[i] = {};
+                    switch (fmt.type) {
+                        case 'strike':
+                        case 'strike-weak':
+                            styles[i].linethrough = true;
+                            break;
+                        case 'underline':
+                            styles[i].underline = true;
+                            break;
+                        case 'bold':
+                            styles[i].fill = '#000000';
+                            styles[i].fontWeight = 'bold';
+                            break;
+                        case 'insertion':
+                            styles[i].fill = '#cc6600';
+                            styles[i].fontStyle = 'italic';
+                            break;
+                        case 'comment':
+                            styles[i].fill = '#888888';
+                            styles[i].fontStyle = 'italic';
+                            break;
+                    }
+                }
             }
         }
 
-        // Weak strikethrough: ~текст~
-        const weakRegex = /~([^~]+)~/g;
-        while ((match = weakRegex.exec(text)) !== null) {
-            const startIndex = match.index;
-            const endIndex = startIndex + match[0].length;
-            const innerStart = startIndex + 1;
-            const innerEnd = endIndex - 1;
-
-            // Mark characters for removal (tildes)
-            for (let i = startIndex; i < endIndex; i++) {
-                if (!styles[i]) styles[i] = {};
-                styles[i].remove = true;
-            }
-
-            // Apply weak strikethrough to inner text
-            for (let i = innerStart; i < innerEnd; i++) {
-                if (!styles[i]) styles[i] = {};
-                styles[i].stroke = 'black';
-                styles[i].strokeWidth = 1;
-            }
-        }
-
-        // Build the final text and adjust styles for removed characters
+        // Build the final text and adjust indices for removed characters
         let finalText = '';
         const finalStyles = {};
         let offset = 0;
 
-        for (let i = 0; i < processedText.length; i++) {
+        for (let i = 0; i < text.length; i++) {
             if (styles[i] && styles[i].remove) {
                 offset++;
                 continue;
             }
-            finalText += processedText[i];
-            if (styles[i]) {
+            finalText += text[i];
+            if (styles[i] && !styles[i].remove) {
                 finalStyles[i - offset] = { ...styles[i] };
-                delete finalStyles[i - offset].remove;
             }
         }
 
-        // Convert styles to fabric.js format
+        // Convert styles to fabric.js format: { lineIndex: { charIndex: { style } } }
         const fabricStyles = {};
+        const lineStyles = {};
         for (const [index, style] of Object.entries(finalStyles)) {
-            fabricStyles[index] = {};
-            if (style.stroke) {
-                fabricStyles[index].stroke = style.stroke;
-            }
-            if (style.strokeWidth) {
-                fabricStyles[index].strokeWidth = style.strokeWidth;
-            }
+            const charIdx = parseInt(index);
+            lineStyles[charIdx] = {};
+            if (style.linethrough) lineStyles[charIdx].linethrough = true;
+            if (style.underline) lineStyles[charIdx].underline = true;
+            if (style.fill) lineStyles[charIdx].fill = style.fill;
+            if (style.fontWeight) lineStyles[charIdx].fontWeight = style.fontWeight;
+            if (style.fontStyle) lineStyles[charIdx].fontStyle = style.fontStyle;
         }
+        fabricStyles[0] = lineStyles;
 
         return { text: finalText, styles: fabricStyles };
     }
@@ -328,50 +364,23 @@ class TextEditor {
 
     // Initialize viewport synchronization
     initViewportSync() {
-        // Add event listeners to synchronize viewport changes
-        this.leftCanvas.on('mouse:wheel', (opt) => {
-            // Synchronize zoom on mouse wheel
+        // Sync on zoom (wheel) — left to right
+        this.leftCanvas.on('mouse:wheel', () => {
             this.syncViewports(this.leftCanvas, this.rightCanvas);
         });
 
-        this.leftCanvas.on('mouse:up', (opt) => {
-            // Synchronize panning after mouse release
-            this.syncViewports(this.leftCanvas, this.rightCanvas);
-        });
-
-        this.leftCanvas.on('mouse:down', (opt) => {
-            // Set up continuous synchronization during dragging
-            this.leftCanvas.on('after:render', () => {
-                this.syncViewports(this.leftCanvas, this.rightCanvas);
-            });
-        });
-
-        this.leftCanvas.on('mouse:up', (opt) => {
-            // Stop continuous synchronization after dragging
-            this.leftCanvas.off('after:render');
-            this.syncViewports(this.leftCanvas, this.rightCanvas);
-        });
-
-        this.rightCanvas.on('mouse:wheel', (opt) => {
-            // Synchronize zoom on mouse wheel
+        // Sync on zoom (wheel) — right to left
+        this.rightCanvas.on('mouse:wheel', () => {
             this.syncViewports(this.rightCanvas, this.leftCanvas);
         });
 
-        this.rightCanvas.on('mouse:up', (opt) => {
-            // Synchronize panning after mouse release
-            this.syncViewports(this.rightCanvas, this.leftCanvas);
+        // Sync on mouse up (after panning) — left to right
+        this.leftCanvas.on('mouse:up', () => {
+            this.syncViewports(this.leftCanvas, this.rightCanvas);
         });
 
-        this.rightCanvas.on('mouse:down', (opt) => {
-            // Set up continuous synchronization during dragging
-            this.rightCanvas.on('after:render', () => {
-                this.syncViewports(this.rightCanvas, this.leftCanvas);
-            });
-        });
-
-        this.rightCanvas.on('mouse:up', (opt) => {
-            // Stop continuous synchronization after dragging
-            this.rightCanvas.off('after:render');
+        // Sync on mouse up (after panning) — right to left
+        this.rightCanvas.on('mouse:up', () => {
             this.syncViewports(this.rightCanvas, this.leftCanvas);
         });
     }
@@ -380,31 +389,43 @@ class TextEditor {
         const infoSpan = document.querySelector('.file-info');
         if (infoSpan) infoSpan.textContent = this.filename;
 
-        // Clear both canvases
-        this.leftCanvas.clear();
-        this.rightCanvas.clear();
-
         // Load image on both canvases
         const timestamp = new Date().getTime();
-        const imgUrl = `/data/images/${this.filename}?t=${timestamp}`;
+        const projectParam = this.project ? `&project_id=${this.project}` : '';
+        const imgUrl = `/data/images/${this.filename}?t=${timestamp}${projectParam}`;
+
+        // Сохраняем версию загрузки для обнаружения race condition
+        const loadVersion = this._loadVersion = (this._loadVersion || 0) + 1;
 
         const imgEl = new Image();
+        imgEl.crossOrigin = 'Anonymous';
         imgEl.onload = () => {
+            // Проверяем что версия всё ещё актуальна
+            if (loadVersion !== this._loadVersion) {
+                console.log(`Image load skipped: version ${loadVersion} != ${this._loadVersion}`);
+                return;
+            }
             const fabricImg = new fabric.Image(imgEl);
 
             // Load image on left canvas
             this.leftCanvas.setBackgroundImage(fabricImg, () => {
+                if (loadVersion !== this._loadVersion) return;
                 const scale = (this.leftCanvas.width / fabricImg.width) * 0.9;
                 this.leftCanvas.setZoom(scale);
                 const newW = fabricImg.width * scale;
                 this.leftCanvas.viewportTransform[4] = (this.leftCanvas.width - newW) / 2;
                 this.leftCanvas.viewportTransform[5] = 20;
 
+                if (typeof zoomCtrl !== 'undefined') {
+                    zoomCtrl.setBaseZoom(scale);
+                }
+
                 this.leftCanvas.requestRenderAll();
             });
 
             // Load image on right canvas with white background
             this.rightCanvas.setBackgroundImage(fabricImg, () => {
+                if (loadVersion !== this._loadVersion) return;
                 const scale = (this.rightCanvas.width / fabricImg.width) * 0.9;
                 this.rightCanvas.setZoom(scale);
                 const newW = fabricImg.width * scale;
@@ -415,8 +436,12 @@ class TextEditor {
                 this.rightCanvas.backgroundColor = "#ffffff";
                 this.rightCanvas.requestRenderAll();
 
+                // Cache the loaded image for region preview (avoid double loading)
+                this.cachedPreviewImage = imgEl;
+
                 // Load regions after both images are loaded
-                this.loadRegions();
+                // loadRegions() handles its own cleanup
+                this.loadRegions(loadVersion);
             });
         };
         imgEl.onerror = () => {
@@ -425,9 +450,34 @@ class TextEditor {
         imgEl.src = imgUrl;
     }
 
-    async loadRegions() {
+    async loadRegions(expectedVersion) {
+        // === ОЧИСТКА СТАРЫХ ДАННЫХ ===
+        this.regions = [];
+        this.texts = {};
+
+        // Очищаем левый канвас от полигонов
+        const leftObjects = this.leftCanvas.getObjects('polygon');
+        this.leftCanvas.remove(...leftObjects);
+
+        // Очищаем правый канвас от ВСЕХ объектов (полигоны, текст, прямоугольники)
+        const rightObjects = this.rightCanvas.getObjects();
+        this.rightCanvas.remove(...rightObjects);
+
+        // Сбрасываем notepad mode
+        if (this.notepadMode) {
+            this.toggleNotepadMode();
+        }
+        // ===============================
+
         try {
-            const data = await API.loadAnnotation(this.filename);
+            const data = await API.loadAnnotation(this.filename, this.project);
+            
+            // Проверяем что версия всё ещё актуальна
+            if (expectedVersion !== this._loadVersion) {
+                console.log(`Regions load skipped: version ${expectedVersion} != ${this._loadVersion}`);
+                return;
+            }
+            
             let originalRegions = data.regions || [];
 
             // Create a mapping from sorted indices back to original indices
@@ -465,13 +515,16 @@ class TextEditor {
         } catch (error) {
             console.error('Error loading regions:', error);
         }
-        
+
         // Обновляем статус при переключении изображения
         if (window.statusWidget && typeof window.statusWidget.loadStatus === 'function') {
             window.statusWidget.filename = this.filename;
             window.statusWidget.loadStatus();
             window.statusWidget.render();
         }
+
+        // Update notepad if in notepad mode (in case regions changed)
+        this.updateNotepadOnRegionsChange();
     }
 
     // Function to sort regions from top to bottom based on their vertical position
@@ -492,9 +545,85 @@ class TextEditor {
         });
     }
 
+    applyRecognizedTexts(recognizedTexts) {
+        /**
+         * Применит распознанные тексты к интерфейсу без сохранения в БД.
+         * recognizedTexts: { region_index: "text" } — оригинальные индексы.
+         */
+        console.log('[applyRecognizedTexts] Applying texts:', recognizedTexts);
+
+        // Загружаем annotation чтобы получить оригинальные регионы
+        API.loadAnnotation(this.filename, this.project).then(data => {
+            const originalRegions = data.regions || [];
+
+            // Сортируем регионы (как это делает loadRegions)
+            const sortedRegions = this.sortRegionsTopToBottom([...originalRegions]);
+
+            // Создаём маппинг: original index -> sorted index
+            const origToSorted = new Map();
+            for (let sortedIdx = 0; sortedIdx < sortedRegions.length; sortedIdx++) {
+                const sortedRegion = sortedRegions[sortedIdx];
+                for (let origIdx = 0; origIdx < originalRegions.length; origIdx++) {
+                    if (this.regionsAreEqual(sortedRegion, originalRegions[origIdx])) {
+                        origToSorted.set(origIdx, sortedIdx);
+                        break;
+                    }
+                }
+            }
+
+            // Применяем тексты к this.texts
+            this.texts = {};
+            for (const [origIdxStr, text] of Object.entries(recognizedTexts)) {
+                const origIdx = parseInt(origIdxStr, 10);
+                const sortedIdx = origToSorted.get(origIdx);
+                if (sortedIdx !== undefined) {
+                    this.texts[sortedIdx] = text;
+                }
+            }
+
+            // Применяем тексты к UI
+            this.regions.forEach((region, index) => {
+                const textContent = this.texts[index] || '';
+
+                // Левый канвас — обновим цвет полигона
+                const leftPoly = this.leftCanvas.getObjects().find(obj => obj.index === index);
+                if (leftPoly) {
+                    leftPoly.set({ hasText: textContent !== '', textContent: textContent });
+                    if (textContent) {
+                        leftPoly.set({ fill: 'rgba(0, 128, 0, 0.3)', stroke: '#00cc66' });
+                    } else {
+                        leftPoly.set({ fill: 'rgba(0, 255, 0, 0.2)', stroke: 'green' });
+                    }
+                }
+
+                // Правый канвас — белый фон + текст
+                const rightPoly = this.rightCanvas.getObjects().find(obj => obj.index === index);
+                if (rightPoly) {
+                    rightPoly.set({ hasText: textContent !== '', textContent: textContent });
+                    if (textContent) {
+                        rightPoly.set({ fill: 'rgba(255, 255, 255, 1.0)', stroke: '#0066ff' });
+                        this.updatePolygonText(rightPoly, textContent);
+                    } else {
+                        rightPoly.set({ fill: 'rgba(0, 0, 255, 0.2)', stroke: 'blue' });
+                        this.updatePolygonText(rightPoly, '');
+                    }
+                }
+            });
+
+            this.leftCanvas.requestRenderAll();
+            this.rightCanvas.requestRenderAll();
+
+            // Уведомление
+            const count = Object.keys(this.texts).length;
+            console.log(`[applyRecognizedTexts] Applied ${count} texts. Кликните на регион чтобы увидеть текст.`);
+        }).catch(err => {
+            console.error('[applyRecognizedTexts] Error:', err);
+        });
+    }
+
     async loadTextData(originalRegions = null) {
         try {
-            const data = await API.loadAnnotation(this.filename);
+            const data = await API.loadAnnotation(this.filename, this.project);
             if (data.texts) {
                 // If originalRegions is provided, we need to map the texts from original indices to sorted indices
                 if (originalRegions) {
@@ -565,6 +694,9 @@ class TextEditor {
 
                 this.leftCanvas.requestRenderAll();
                 this.rightCanvas.requestRenderAll();
+
+                // Update notepad if in notepad mode
+                this.updateNotepadOnRegionsChange();
             }
         } catch (error) {
             console.error('Error loading text data:', error);
@@ -586,14 +718,449 @@ class TextEditor {
         return true;
     }
 
+    // ==================== NOTEPAD MODE METHODS ====================
+
+    // Save current state to history
+    saveToHistory() {
+        // Debounce history saving - don't save too frequently
+        if (this.saveHistoryTimeout) {
+            clearTimeout(this.saveHistoryTimeout);
+        }
+        
+        this.saveHistoryTimeout = setTimeout(() => {
+            this._saveToHistoryInternal();
+        }, 300); // Save to history after 300ms of inactivity
+    }
+    
+    // Internal method to save to history (called after debounce)
+    _saveToHistoryInternal() {
+        // Clone current texts
+        const currentState = JSON.parse(JSON.stringify(this.texts));
+
+        // Remove any future states if we're in the middle of history
+        if (this.historyIndex < this.textsHistory.length - 1) {
+            this.textsHistory = this.textsHistory.slice(0, this.historyIndex + 1);
+        }
+
+        // Add current state to history
+        this.textsHistory.push(currentState);
+
+        // Limit history length
+        if (this.textsHistory.length > this.maxHistoryLength) {
+            this.textsHistory.shift();
+        } else {
+            this.historyIndex++;
+        }
+    }
+
+    // Undo last action
+    undo() {
+        if (this.historyIndex > 0) {
+            this.historyIndex--;
+            const previousState = this.textsHistory[this.historyIndex];
+            this.texts = JSON.parse(JSON.stringify(previousState));
+
+            // Update UI
+            this.renderNotepad();
+
+            // Update polygons
+            this.updatePolygonsWithTexts();
+
+            this.showNotification('Действие отменено', 'undo');
+        } else if (this.historyIndex === 0) {
+            // First state - restore to initial state (not clear all!)
+            this.historyIndex = 0;
+            const initialState = this.textsHistory[0];
+            this.texts = JSON.parse(JSON.stringify(initialState));
+            this.renderNotepad();
+            this.updatePolygonsWithTexts();
+            this.showNotification('Нет действий для отмены', 'info');
+        }
+    }
+
+    // Toggle notepad mode on/off
+    toggleNotepadMode() {
+        this.notepadMode = !this.notepadMode;
+
+        const notepadContainer = document.getElementById('notepad-container');
+        const rightCanvasContainer = document.getElementById('right-canvas-container');
+        const btn = document.getElementById('btn-notepad-mode');
+
+        if (this.notepadMode) {
+            notepadContainer.classList.add('active');
+            rightCanvasContainer.classList.add('hidden');
+            btn.classList.add('active');
+            // Save initial state when opening notepad
+            this.saveToHistory();
+            this.renderNotepad();
+        } else {
+            notepadContainer.classList.remove('active');
+            rightCanvasContainer.classList.remove('hidden');
+            btn.classList.remove('active');
+            // Update polygons with current text data
+            this.updatePolygonsWithTexts();
+            // Auto-save text changes when exiting notepad mode
+            this.autoSave();
+        }
+    }
+
+    // Render notepad lines from sorted regions
+    renderNotepad() {
+        const linesContainer = document.getElementById('notepad-lines');
+        if (!linesContainer) return;
+
+        linesContainer.innerHTML = '';
+
+        this.regions.forEach((region, index) => {
+            const lineDiv = document.createElement('div');
+            lineDiv.className = 'notepad-line';
+            lineDiv.dataset.index = index;
+
+            const textContent = this.texts[index] || '';
+            if (textContent) {
+                lineDiv.classList.add('has-text');
+            }
+
+            // Line number
+            const numberSpan = document.createElement('span');
+            numberSpan.className = 'notepad-line-number';
+            numberSpan.textContent = index + 1;
+
+            // Text input
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = textContent;
+            input.placeholder = `Сегмент ${index + 1}`;
+            input.dataset.index = index;
+
+            // Focus event - highlight polygon on canvas
+            input.addEventListener('focus', (e) => this.onNotepadLineFocus(e, index));
+            input.addEventListener('blur', () => this.onNotepadLineBlur(index));
+
+            // Key events for Enter and Backspace logic
+            input.addEventListener('keydown', (e) => this.onNotepadKeyDown(e, index));
+
+            // Input event to update text in memory
+            input.addEventListener('input', (e) => {
+                const oldValue = this.texts[index];
+                const newValue = e.target.value;
+
+                this.texts[index] = newValue;
+                if (newValue) {
+                    lineDiv.classList.add('has-text');
+                } else {
+                    lineDiv.classList.remove('has-text');
+                }
+
+                // Save to history if text actually changed (for undo support)
+                if (oldValue !== newValue) {
+                    this.saveToHistory();
+                }
+
+                // Auto-save after text change (with visual feedback)
+                this.autoSave();
+            });
+
+            lineDiv.appendChild(numberSpan);
+            lineDiv.appendChild(input);
+            linesContainer.appendChild(lineDiv);
+        });
+    }
+
+    // Update save indicator status
+    setSaveIndicator(status) {
+        const indicator = document.getElementById('save-indicator');
+        if (!indicator) return;
+        
+        // Remove all status classes
+        indicator.classList.remove('saving', 'saved', 'error');
+        
+        // Add new status (idle is default - no class needed)
+        if (status && status !== 'idle') {
+            indicator.classList.add(status);
+        }
+        
+        // Update tooltip
+        const titles = {
+            'idle': 'Сохранено',
+            'saving': 'Сохранение...',
+            'saved': 'Сохранено',
+            'error': 'Ошибка сохранения'
+        };
+        indicator.title = titles[status] || titles['idle'];
+    }
+
+    // Handle focus on notepad line - highlight corresponding polygon
+    onNotepadLineFocus(e, index) {
+        this.notepadFocusedIndex = index;
+
+        // Update visual focus
+        const lines = document.querySelectorAll('.notepad-line');
+        lines.forEach(line => line.classList.remove('focused'));
+        e.target.closest('.notepad-line').classList.add('focused');
+
+        // Highlight polygon on left canvas
+        this.highlightPolygonOnCanvas(index, true);
+
+        // Center polygon on canvas (scroll into view)
+        this.centerPolygonOnCanvas(index);
+    }
+
+    // Handle blur on notepad line
+    onNotepadLineBlur(index) {
+        this.notepadFocusedIndex = -1;
+        // Remove highlight from polygon
+        this.highlightPolygonOnCanvas(index, false);
+    }
+
+    // Highlight polygon on both canvases
+    highlightPolygonOnCanvas(index, highlight) {
+        const leftPoly = this.leftCanvas.getObjects().find(obj => obj.index === index);
+        const rightPoly = this.rightCanvas.getObjects().find(obj => obj.index === index);
+
+        if (leftPoly) {
+            if (highlight) {
+                leftPoly.set({
+                    fill: 'rgba(255, 165, 0, 0.5)',
+                    stroke: '#ff8800',
+                    strokeWidth: 3
+                });
+            } else {
+                // Restore original color based on whether it has text
+                const hasText = this.texts[index] && this.texts[index].trim() !== '';
+                leftPoly.set({
+                    fill: hasText ? 'rgba(0, 128, 0, 0.3)' : 'rgba(0, 255, 0, 0.2)',
+                    stroke: hasText ? '#00cc66' : 'green',
+                    strokeWidth: 2
+                });
+            }
+            this.leftCanvas.requestRenderAll();
+        }
+
+        if (rightPoly) {
+            if (highlight) {
+                rightPoly.set({
+                    fill: 'rgba(255, 165, 0, 0.5)',
+                    stroke: '#ff8800',
+                    strokeWidth: 3
+                });
+            } else {
+                const hasText = this.texts[index] && this.texts[index].trim() !== '';
+                rightPoly.set({
+                    fill: hasText ? 'rgba(255, 255, 255, 1.0)' : 'rgba(0, 0, 255, 0.2)',
+                    stroke: hasText ? '#0066ff' : 'blue',
+                    strokeWidth: 2
+                });
+            }
+            this.rightCanvas.requestRenderAll();
+        }
+    }
+
+    // Center polygon on canvas
+    centerPolygonOnCanvas(index) {
+        const region = this.regions[index];
+        if (!region || !region.points) return;
+
+        // Calculate center of polygon
+        const xs = region.points.map(p => p.x);
+        const ys = region.points.map(p => p.y);
+        const centerX = (Math.min(...xs) + Math.max(...xs)) / 2;
+        const centerY = (Math.min(...ys) + Math.max(...ys)) / 2;
+
+        // Center on left canvas
+        const leftVpt = this.leftCanvas.viewportTransform;
+        const leftCanvasWidth = this.leftCanvas.getWidth() / leftVpt[0];
+        const leftCanvasHeight = this.leftCanvas.getHeight() / leftVpt[3];
+
+        leftVpt[4] = (leftCanvasWidth / 2) * leftVpt[0] - centerX * leftVpt[0];
+        leftVpt[5] = (leftCanvasHeight / 2) * leftVpt[3] - centerY * leftVpt[3];
+        this.leftCanvas.setViewportTransform(leftVpt);
+
+        // Center on right canvas
+        const rightVpt = this.rightCanvas.viewportTransform;
+        const rightCanvasWidth = this.rightCanvas.getWidth() / rightVpt[0];
+        const rightCanvasHeight = this.rightCanvas.getHeight() / rightVpt[3];
+
+        rightVpt[4] = (rightCanvasWidth / 2) * rightVpt[0] - centerX * rightVpt[0];
+        rightVpt[5] = (rightCanvasHeight / 2) * rightVpt[3] - centerY * rightVpt[3];
+        this.rightCanvas.setViewportTransform(rightVpt);
+    }
+
+    // Handle keydown in notepad input
+    onNotepadKeyDown(e, index) {
+        if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) {
+            e.preventDefault();
+            this.handleNotepadEnter(index);
+        } else if (e.key === 'Backspace' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+            // Handle Backspace at beginning of input
+            const input = e.target;
+            if (input.selectionStart === 0 && input.selectionEnd === 0) {
+                e.preventDefault();
+                this.handleNotepadBackspace(index);
+            }
+        }
+    }
+
+    // Handle Enter key - move text after cursor to next line
+    handleNotepadEnter(index) {
+        // Save state before making changes
+        this.saveToHistory();
+
+        const input = document.querySelector(`.notepad-line input[data-index="${index}"]`);
+        if (!input) return;
+
+        const cursorPos = input.selectionStart;
+        const text = input.value;
+
+        // Text before cursor stays, text after cursor moves to next line
+        const textBeforeCursor = text.substring(0, cursorPos);
+        const textAfterCursor = text.substring(cursorPos);
+
+        // Check if there's a next line
+        if (index >= this.regions.length - 1) {
+            this.showNotification('Нет свободного сегмента для переноса текста', 'error');
+            return;
+        }
+
+        // Update current line
+        this.texts[index] = textBeforeCursor;
+
+        // Get next line input
+        const nextInput = document.querySelector(`.notepad-line input[data-index="${index + 1}"]`);
+        if (nextInput) {
+            // Prepend text to next line
+            const nextText = this.texts[index + 1] || '';
+            this.texts[index + 1] = textAfterCursor + nextText;
+
+            // Update UI
+            input.value = textBeforeCursor;
+            nextInput.value = this.texts[index + 1];
+
+            // Update line styles
+            const currentLine = input.closest('.notepad-line');
+            const nextLine = nextInput.closest('.notepad-line');
+            if (!textBeforeCursor) currentLine.classList.remove('has-text');
+            else currentLine.classList.add('has-text');
+            nextLine.classList.add('has-text');
+
+            // Move focus to next line with cursor at the beginning
+            nextInput.focus();
+            nextInput.setSelectionRange(0, 0);
+            
+            // Auto-save after text change
+            this.autoSave();
+        }
+    }
+
+    // Handle Backspace at beginning - merge with previous line
+    handleNotepadBackspace(index) {
+        // Save state before making changes
+        this.saveToHistory();
+
+        // Check if there's a previous line
+        if (index <= 0) return; // Nothing to merge with
+
+        const input = document.querySelector(`.notepad-line input[data-index="${index}"]`);
+        if (!input) return;
+
+        const currentText = input.value;
+
+        // Get previous line input
+        const prevInput = document.querySelector(`.notepad-line input[data-index="${index - 1}"]`);
+        if (prevInput) {
+            // Append current text to previous line
+            const prevText = this.texts[index - 1] || '';
+            this.texts[index - 1] = prevText + currentText;
+
+            // Clear current line
+            this.texts[index] = '';
+
+            // Update UI
+            prevInput.value = this.texts[index - 1];
+            input.value = '';
+
+            // Update line styles
+            const prevLine = prevInput.closest('.notepad-line');
+            const currentLine = input.closest('.notepad-line');
+            prevLine.classList.add('has-text');
+            currentLine.classList.remove('has-text');
+
+            // Move focus to previous line
+            prevInput.focus();
+            prevInput.setSelectionRange(prevText.length, prevText.length);
+            
+            // Auto-save after text change
+            this.autoSave();
+        }
+    }
+
+    // Show notification
+    showNotification(message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.className = `notification ${type}`;
+        notification.textContent = message;
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            notification.remove();
+        }, 3000);
+    }
+
+    // Update notepad UI when regions change
+    updateNotepadOnRegionsChange() {
+        if (this.notepadMode) {
+            this.renderNotepad();
+        }
+    }
+
+    // Update all polygons with current text data (used when switching from notepad mode)
+    updatePolygonsWithTexts() {
+        this.regions.forEach((region, index) => {
+            const textContent = this.texts[index] || '';
+
+            // Update left canvas polygon
+            const leftPoly = this.leftCanvas.getObjects().find(obj => obj.index === index);
+            if (leftPoly) {
+                leftPoly.set({ hasText: textContent !== '', textContent: textContent });
+                if (textContent) {
+                    leftPoly.set({ fill: 'rgba(0, 128, 0, 0.3)', stroke: '#00cc66' });
+                } else {
+                    leftPoly.set({ fill: 'rgba(0, 255, 0, 0.2)', stroke: 'green' });
+                }
+            }
+
+            // Update right canvas polygon
+            const rightPoly = this.rightCanvas.getObjects().find(obj => obj.index === index);
+            if (rightPoly) {
+                rightPoly.set({ hasText: textContent !== '', textContent: textContent });
+                if (textContent) {
+                    rightPoly.set({ fill: 'rgba(255, 255, 255, 1.0)', stroke: '#0066ff' });
+                    this.updatePolygonText(rightPoly, textContent);
+                } else {
+                    rightPoly.set({ fill: 'rgba(0, 0, 255, 0.2)', stroke: 'blue' });
+                    this.updatePolygonText(rightPoly, '');
+                }
+            }
+        });
+
+        this.leftCanvas.requestRenderAll();
+        this.rightCanvas.requestRenderAll();
+    }
+
+    // ==================== END NOTEPAD MODE METHODS ====================
+
     setupCanvasEvents() {
-        // Variables for panning
-        let isRightClickPanning = false;
-        let lastPosX, lastPosY;
+        // Variables for panning — separate for each canvas to avoid conflicts
+        let leftPanning = false;
+        let leftLastPosX, leftLastPosY;
+        let rightPanning = false;
+        let rightLastPosX, rightLastPosY;
 
         // Left canvas events
         this.leftCanvas.on('mouse:down', (opt) => {
             if (opt.e.button === 0) { // Left click
+                // Не обрабатываем клик при Space+drag (pan)
+                if (typeof zoomCtrl !== 'undefined' && zoomCtrl.spaceHeld) return;
                 // Check if we clicked on a polygon using a more robust method
                 const target = this.getPolygonAtCoords(opt.e.clientX, opt.e.clientY, this.leftCanvas);
                 console.log("Left canvas click - target:", target); // Debug print
@@ -604,19 +1171,19 @@ class TextEditor {
                     console.log("Clicked on canvas but not on a polygon"); // Debug print
                 }
             } else if (opt.e.button === 2) { // Right click
-                isRightClickPanning = true;
-                lastPosX = opt.e.clientX;
-                lastPosY = opt.e.clientY;
+                leftPanning = true;
+                leftLastPosX = opt.e.clientX;
+                leftLastPosY = opt.e.clientY;
                 this.leftCanvas.defaultCursor = 'grab';
                 opt.e.preventDefault();
             }
         });
 
         this.leftCanvas.on('mouse:move', (opt) => {
-            if (isRightClickPanning) {
+            if (leftPanning) {
                 const e = opt.e;
-                const deltaX = e.clientX - lastPosX;
-                const deltaY = e.clientY - lastPosY;
+                const deltaX = e.clientX - leftLastPosX;
+                const deltaY = e.clientY - leftLastPosY;
 
                 // Pan the canvas
                 const vpt = this.leftCanvas.viewportTransform;
@@ -624,13 +1191,16 @@ class TextEditor {
                 vpt[5] += deltaY; // ty
                 this.leftCanvas.requestRenderAll();
 
-                lastPosX = e.clientX;
-                lastPosY = e.clientY;
+                // Sync right canvas in real-time
+                this.syncViewports(this.leftCanvas, this.rightCanvas);
+
+                leftLastPosX = e.clientX;
+                leftLastPosY = e.clientY;
             }
         });
 
         this.leftCanvas.on('mouse:up', () => {
-            isRightClickPanning = false;
+            leftPanning = false;
             this.leftCanvas.defaultCursor = 'default';
         });
 
@@ -641,44 +1211,14 @@ class TextEditor {
             }
         });
 
-        // Add mouse wheel zoom to left canvas
-        this.leftCanvas.wrapperEl.addEventListener('wheel', (e) => {
-            e.preventDefault();
-
-            const delta = e.deltaY;
-            const zoom = this.leftCanvas.getZoom();
-            const zoomFactor = delta > 0 ? 0.9 : 1.1; // Zoom out or in
-            const newZoom = zoom * zoomFactor;
-
-            // Limit zoom range
-            if (newZoom < 0.1 || newZoom > 10) return;
-
-            // Calculate new viewport transform
-            const vpt = this.leftCanvas.viewportTransform;
-            const rect = this.leftCanvas.wrapperEl.getBoundingClientRect();
-            const offsetX = e.clientX - rect.left;
-            const offsetY = e.clientY - rect.top;
-
-            // Calculate the point over which we're zooming
-            const point = {
-                x: (offsetX - vpt[4]) / vpt[0],
-                y: (offsetY - vpt[5]) / vpt[3]
-            };
-
-            // Apply new zoom
-            vpt[0] = newZoom; // scaleX
-            vpt[3] = newZoom; // scaleY
-
-            // Adjust translation to zoom towards mouse position
-            vpt[4] = offsetX - point.x * newZoom; // tx
-            vpt[5] = offsetY - point.y * newZoom; // ty
-
-            this.leftCanvas.requestRenderAll();
-        });
+        // ZoomController обрабатывает зум колесиком на leftCanvas
+        // (ZoomController уже подключил обработчик через _enableWheelZoom())
 
         // Right canvas events
         this.rightCanvas.on('mouse:down', (opt) => {
             if (opt.e.button === 0) { // Left click
+                // Не обрабатываем клик при Space+drag (pan)
+                if (typeof zoomCtrl !== 'undefined' && zoomCtrl.spaceHeld) return;
                 // Check if we clicked on a polygon using a more robust method
                 const target = this.getPolygonAtCoords(opt.e.clientX, opt.e.clientY, this.rightCanvas);
                 console.log("Right canvas click - target:", target); // Debug print
@@ -689,19 +1229,19 @@ class TextEditor {
                     console.log("Clicked on right canvas but not on a polygon"); // Debug print
                 }
             } else if (opt.e.button === 2) { // Right click for panning
-                isRightClickPanning = true;
-                lastPosX = opt.e.clientX;
-                lastPosY = opt.e.clientY;
+                rightPanning = true;
+                rightLastPosX = opt.e.clientX;
+                rightLastPosY = opt.e.clientY;
                 this.rightCanvas.defaultCursor = 'grab';
                 opt.e.preventDefault();
             }
         });
 
         this.rightCanvas.on('mouse:move', (opt) => {
-            if (isRightClickPanning) {
+            if (rightPanning) {
                 const e = opt.e;
-                const deltaX = e.clientX - lastPosX;
-                const deltaY = e.clientY - lastPosY;
+                const deltaX = e.clientX - rightLastPosX;
+                const deltaY = e.clientY - rightLastPosY;
 
                 // Pan the canvas
                 const vpt = this.rightCanvas.viewportTransform;
@@ -709,13 +1249,16 @@ class TextEditor {
                 vpt[5] += deltaY; // ty
                 this.rightCanvas.requestRenderAll();
 
-                lastPosX = e.clientX;
-                lastPosY = e.clientY;
+                // Sync left canvas in real-time
+                this.syncViewports(this.rightCanvas, this.leftCanvas);
+
+                rightLastPosX = e.clientX;
+                rightLastPosY = e.clientY;
             }
         });
 
         this.rightCanvas.on('mouse:up', () => {
-            isRightClickPanning = false;
+            rightPanning = false;
             this.rightCanvas.defaultCursor = 'default';
         });
 
@@ -726,40 +1269,7 @@ class TextEditor {
             }
         });
 
-        // Add mouse wheel zoom to right canvas
-        this.rightCanvas.wrapperEl.addEventListener('wheel', (e) => {
-            e.preventDefault();
-
-            const delta = e.deltaY;
-            const zoom = this.rightCanvas.getZoom();
-            const zoomFactor = delta > 0 ? 0.9 : 1.1; // Zoom out or in
-            const newZoom = zoom * zoomFactor;
-
-            // Limit zoom range
-            if (newZoom < 0.1 || newZoom > 10) return;
-
-            // Calculate new viewport transform
-            const vpt = this.rightCanvas.viewportTransform;
-            const rect = this.rightCanvas.wrapperEl.getBoundingClientRect();
-            const offsetX = e.clientX - rect.left;
-            const offsetY = e.clientY - rect.top;
-
-            // Calculate the point over which we're zooming
-            const point = {
-                x: (offsetX - vpt[4]) / vpt[0],
-                y: (offsetY - vpt[5]) / vpt[3]
-            };
-
-            // Apply new zoom
-            vpt[0] = newZoom; // scaleX
-            vpt[3] = newZoom; // scaleY
-
-            // Adjust translation to zoom towards mouse position
-            vpt[4] = offsetX - point.x * newZoom; // tx
-            vpt[5] = offsetY - point.y * newZoom; // ty
-
-            this.rightCanvas.requestRenderAll();
-        });
+        // ZoomController обрабатывает зум колесиком на rightCanvas через enableSecondaryWheel
     }
 
     openTextModal(regionIndex) {
@@ -774,9 +1284,9 @@ class TextEditor {
         const totalRegionsSpan = document.getElementById('total-regions');
         const regionPreview = document.getElementById('region-preview-img');
 
-        // Set current text if exists
+        // Set current text in contenteditable (raw text, no HTML rendering)
         const currentText = this.texts[regionIndex] || '';
-        textInput.value = currentText;
+        this._setRawInput(currentText);
 
         // Update counters
         currentIndexSpan.textContent = regionIndex + 1;
@@ -789,6 +1299,26 @@ class TextEditor {
         modal.style.display = 'flex';
         textInput.focus();
 
+        // Remove any previous listeners to avoid duplicates
+        if (this._textInputHandlers) {
+            textInput.removeEventListener('focus', this._textInputHandlers.focus);
+            textInput.removeEventListener('blur', this._textInputHandlers.blur);
+            textInput.removeEventListener('paste', this._textInputHandlers.paste);
+        }
+
+        // Set up focus/blur handlers for raw ↔ rendered mode switching
+        this._textInputHandlers = {
+            focus: () => this._onTextInputFocus(),
+            blur: () => this._onTextInputBlur(),
+            paste: (e) => this._onTextInputPaste(e),
+        };
+        textInput.addEventListener('focus', this._textInputHandlers.focus);
+        textInput.addEventListener('blur', this._textInputHandlers.blur);
+        textInput.addEventListener('paste', this._textInputHandlers.paste);
+
+        // Start in raw (edit) mode
+        this._enterRawMode();
+
         // Store the event handler so we can remove it later
         this.modalClickHandler = (event) => {
             if (event.target === modal) {
@@ -800,71 +1330,155 @@ class TextEditor {
         document.addEventListener('click', this.modalClickHandler, true);
     }
 
+    // ==================== CONTENTEDITABLE INPUT HELPERS ====================
+
+    // Get raw text content from the contenteditable element
+    _getRawInput() {
+        const input = document.getElementById('text-input');
+        if (!input) return '';
+        // textContent gives us the raw text without HTML tags
+        return input.textContent || '';
+    }
+
+    // Set raw text content in the contenteditable element
+    _setRawInput(text) {
+        const input = document.getElementById('text-input');
+        if (!input) return;
+        input.textContent = text;
+    }
+
+    // Enter raw edit mode — show markdown markers visibly
+    _enterRawMode() {
+        const input = document.getElementById('text-input');
+        if (!input) return;
+        input.classList.add('raw-edit');
+    }
+
+    // Enter rendered mode — show formatting visually
+    _enterRenderedMode() {
+        const input = document.getElementById('text-input');
+        if (!input) return;
+        input.classList.remove('raw-edit');
+    }
+
+    // On focus: switch to raw edit mode so user sees and can edit markers
+    _onTextInputFocus() {
+        this._enterRawMode();
+    }
+
+    // On blur: save current text and switch to rendered mode
+    _onTextInputBlur() {
+        // Save text immediately on blur
+        this.saveCurrentText();
+        this._enterRenderedMode();
+    }
+
+    // Intercept paste to ensure only plain text is pasted
+    _onTextInputPaste(e) {
+        e.preventDefault();
+        const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+        document.execCommand('insertText', false, text);
+    }
+
+    // ==================== END CONTENTEDITABLE INPUT HELPERS ====================
+
     extractRegionImage(regionIndex, imgElement) {
         // Get the region polygon
         const region = this.regions[regionIndex];
         if (!region || !region.points || region.points.length < 3) {
-            imgElement.src = `/data/images/${this.filename}?t=${new Date().getTime()}`;
+            const projectParam = this.project ? `?project_id=${this.project}` : '';
+            imgElement.src = `/data/images/${this.filename}?t=${new Date().getTime()}${projectParam}`;
             return;
         }
 
-        // Load the main image
-        const img = new Image();
-        img.crossOrigin = 'Anonymous'; // Handle potential CORS issues
-        img.onload = () => {
-            // Create a temporary canvas to extract the region
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
+        // If cached image is not available or not loaded yet, load it first
+        if (!this.cachedPreviewImage || !this.cachedPreviewImage.complete) {
+            // Create and cache the image
+            this.cachedPreviewImage = new Image();
+            this.cachedPreviewImage.crossOrigin = 'Anonymous';
+            this.cachedPreviewImage.onload = () => {
+                // Re-call after image is loaded (will use cached image this time)
+                this.extractRegionImage(regionIndex, imgElement);
+            };
+            const projectParam = this.project ? `?project_id=${this.project}` : '';
+            this.cachedPreviewImage.src = `/data/images/${this.filename}?t=${new Date().getTime()}${projectParam}`;
 
-            // Calculate the bounding box of the region
-            const xs = region.points.map(p => p.x);
-            const ys = region.points.map(p => p.y);
-            const minX = Math.min(...xs);
-            const maxX = Math.max(...xs);
-            const minY = Math.min(...ys);
-            const maxY = Math.max(...ys);
+            // Show placeholder while loading
+            imgElement.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+            return;
+        }
 
-            // Add a larger padding to show context around the polygon
-            const padding = 50;
-            const width = maxX - minX + padding * 2;
-            const height = maxY - minY + padding * 2;
+        // Use cached image (guaranteed to be loaded)
+        const img = this.cachedPreviewImage;
 
-            canvas.width = width;
-            canvas.height = height;
+        // Create a temporary canvas to extract the region
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
 
-            // Draw the main image at the correct position to show context
-            ctx.drawImage(img, -minX + padding, -minY + padding);
+        // Calculate the bounding box of the region
+        const xs = region.points.map(p => p.x);
+        const ys = region.points.map(p => p.y);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
 
-            // Draw the polygon with a semi-transparent fill and border to highlight the region
-            ctx.beginPath();
-            ctx.moveTo(region.points[0].x - minX + padding, region.points[0].y - minY + padding);
-            for (let i = 1; i < region.points.length; i++) {
-                ctx.lineTo(region.points[i].x - minX + padding, region.points[i].y - minY + padding);
-            }
-            ctx.closePath();
+        // Add a larger padding to show context around the polygon
+        const padding = 50;
+        const width = maxX - minX + padding * 2;
+        const height = maxY - minY + padding * 2;
 
-            // Fill with semi-transparent color to highlight the polygon
-            ctx.fillStyle = 'rgba(0, 100, 255, 0.3)';
-            ctx.fill();
+        canvas.width = width;
+        canvas.height = height;
 
-            // Draw a border around the polygon
-            ctx.strokeStyle = 'rgba(0, 0, 255, 0.8)';
-            ctx.lineWidth = 2;
-            ctx.stroke();
+        // Draw the main image at the correct position to show context
+        ctx.drawImage(img, -minX + padding, -minY + padding);
 
-            // Set the src of the preview image to the data URL of the canvas
-            imgElement.src = canvas.toDataURL('image/png');
-        };
-        img.onerror = () => {
-            imgElement.src = `/data/images/${this.filename}?t=${new Date().getTime()}`;
-        };
-        img.src = `/data/images/${this.filename}?t=${new Date().getTime()}`;
+        // Draw the polygon with a semi-transparent fill and border to highlight the region
+        ctx.beginPath();
+        ctx.moveTo(region.points[0].x - minX + padding, region.points[0].y - minY + padding);
+        for (let i = 1; i < region.points.length; i++) {
+            ctx.lineTo(region.points[i].x - minX + padding, region.points[i].y - minY + padding);
+        }
+        ctx.closePath();
+
+        // Fill with semi-transparent color to highlight the polygon
+        ctx.fillStyle = 'rgba(0, 100, 255, 0.3)';
+        ctx.fill();
+
+        // Draw a border around the polygon
+        ctx.strokeStyle = 'rgba(0, 0, 255, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Set the src of the preview image to the data URL of the canvas
+        imgElement.src = canvas.toDataURL('image/png');
     }
 
     closeModal() {
+        // Сохраняем текст перед закрытием
+        this.saveCurrentText();
+
         const modal = document.getElementById('text-modal');
         modal.style.display = 'none';
         this.currentRegionIndex = -1;
+
+        // Clear history timeout to prevent saving after close
+        if (this.saveHistoryTimeout) {
+            clearTimeout(this.saveHistoryTimeout);
+            this.saveHistoryTimeout = null;
+        }
+
+        // Remove text-input event listeners
+        if (this._textInputHandlers) {
+            const input = document.getElementById('text-input');
+            if (input) {
+                input.removeEventListener('focus', this._textInputHandlers.focus);
+                input.removeEventListener('blur', this._textInputHandlers.blur);
+                input.removeEventListener('paste', this._textInputHandlers.paste);
+            }
+            this._textInputHandlers = null;
+        }
 
         // Remove the event listener that was added when opening the modal
         if (this.modalClickHandler) {
@@ -873,50 +1487,64 @@ class TextEditor {
         }
     }
 
+    // Apply formatting to selected text or insert template
+    // Works with contenteditable using window.getSelection()
     applyFormat(formatType) {
-        const textInput = document.getElementById('text-input');
-        const start = textInput.selectionStart;
-        const end = textInput.selectionEnd;
-        const text = textInput.value;
+        const input = document.getElementById('text-input');
+        input.focus();
 
-        if (formatType === 'strong') {
-            // Strong strikethrough: [текст]
-            if (start === end) {
-                // No selection - insert template with cursor inside
-                textInput.value = text.substring(0, start) + '[]' + text.substring(end);
-                textInput.setSelectionRange(start + 1, start + 1); // Cursor inside brackets
-            } else {
-                // Wrap selected text
-                const selectedText = text.substring(start, end);
-                textInput.value = text.substring(0, start) + `[${selectedText}]` + text.substring(end);
-                const newCursorPos = start + selectedText.length + 2;
-                textInput.setSelectionRange(newCursorPos, newCursorPos);
-            }
-        } else if (formatType === 'weak') {
-            // Weak strikethrough: ~текст~
-            if (start === end) {
-                // No selection - do nothing for weak format
-                return;
-            }
-            const selectedText = text.substring(start, end);
-            textInput.value = text.substring(0, start) + `~${selectedText}~` + text.substring(end);
-            const newCursorPos = start + selectedText.length + 2;
-            textInput.setSelectionRange(newCursorPos, newCursorPos);
+        const sel = window.getSelection();
+        if (!sel.rangeCount) return;
+
+        const range = sel.getRangeAt(0);
+        // Check if selection is within our text-input
+        if (!input.contains(range.commonAncestorContainer)) return;
+
+        const selectedText = range.toString();
+
+        const formats = {
+            strike:     { open: '~~', close: '~~' },
+            underline:  { open: '_',   close: '_' },
+            bold:       { open: '==',  close: '==' },
+            insertion:  { open: '^',   close: '^' },
+            comment:    { open: '[',   close: ']' },
+        };
+
+        const fmt = formats[formatType];
+        if (!fmt) return;
+
+        if (selectedText.length > 0) {
+            // Wrap selected text
+            range.deleteContents();
+            const textNode = document.createTextNode(fmt.open + selectedText + fmt.close);
+            range.insertNode(textNode);
+            // Place cursor after the closing marker
+            range.setStartAfter(textNode);
+            range.collapse(true);
+        } else {
+            // No selection — insert template with cursor inside
+            const beforeText = fmt.open;
+            const afterText = fmt.close;
+            const textNode = document.createTextNode(beforeText + afterText);
+            range.insertNode(textNode);
+            // Place cursor between markers
+            range.setStart(textNode, beforeText.length);
+            range.setEnd(textNode, beforeText.length);
         }
 
-        textInput.focus();
+        sel.removeAllRanges();
+        sel.addRange(range);
     }
 
     saveTextAndNext() {
-        this.saveCurrentText();
-
-        // Move to next region
+        // nextRegion() уже вызывает saveCurrentText()
         this.nextRegion();
     }
 
     nextRegion() {
         if (this.regions.length === 0) return;
-        
+
+        this.saveCurrentText();
         this.currentRegionIndex = (this.currentRegionIndex + 1) % this.regions.length;
         this.openTextModal(this.currentRegionIndex);
     }
@@ -924,6 +1552,7 @@ class TextEditor {
     previousRegion() {
         if (this.regions.length === 0) return;
 
+        this.saveCurrentText();
         this.currentRegionIndex = (this.currentRegionIndex - 1 + this.regions.length) % this.regions.length;
         this.openTextModal(this.currentRegionIndex);
     }
@@ -1014,6 +1643,13 @@ class TextEditor {
         const textInput = document.getElementById('text-input');
         const isTextInputFocused = textInput && document.activeElement === textInput;
 
+        // Notepad mode: Ctrl+Z for undo
+        if (this.notepadMode && (e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+            e.preventDefault();
+            this.undo();
+            return;
+        }
+
         // Handle Enter key to save and go to next region (only when modal is open)
         if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey && !e.altKey && isModalOpen) {
             e.preventDefault();
@@ -1056,8 +1692,9 @@ class TextEditor {
     saveCurrentText() {
         if (this.currentRegionIndex < 0) return;
 
-        const textInput = document.getElementById('text-input');
-        const text = textInput.value.trim();
+        const input = document.getElementById('text-input');
+        // Get raw text content (strips HTML formatting, keeps raw markdown markers)
+        const text = this._getRawInput().trim();
 
         // Save text for current region
         this.texts[this.currentRegionIndex] = text;
@@ -1103,46 +1740,87 @@ class TextEditor {
         this.autoSave();
     }
 
-    goImage(dir) {
-        if (this.autoSaveTimeout) {
-            clearTimeout(this.autoSaveTimeout);
-            this.saveData(); // Сохраняем введенный текст немедленно
+    async goImage(dir) {
+        // Если уже идёт переключение - игнорируем запрос
+        if (this.isSwitching) {
+            return;
         }
-        
-        const idx = this.imageList.indexOf(this.filename);
-        if (idx === -1) return;
-        
-        // Вычисляем новое имя файла
-        const newFilename = this.imageList[(idx + dir + this.imageList.length) % this.imageList.length];
-        
-        // 1. Обновляем переменную класса
-        this.filename = newFilename;
-        
-        // 2. Обновляем текст в тулбаре (визуально)
-        const display = document.getElementById('filename-display');
-        if (display) display.textContent = newFilename;
 
-        // 3. Формируем URL, сохраняя параметр project, если он есть
-        let newUrl = `${window.location.pathname}?image=${newFilename}`;
-        if (this.project) {
-            newUrl += `&project=${this.project}`;
+        // Проверяем, открыта ли модалка - если да, закрываем (saveCurrentText вызовется внутри closeModal)
+        const modal = document.getElementById('text-modal');
+        if (modal && modal.style.display === 'flex') {
+            this.closeModal();
         }
-        
-        // 4. Обновляем адресную строку без перезагрузки
-        history.pushState({ filename: newFilename }, '', newUrl);
-        
-        // 5. Загружаем новые данные
-        this.loadImageAndData();
+
+        this.isSwitching = true;
+
+        try {
+            if (this.autoSaveTimeout) {
+                clearTimeout(this.autoSaveTimeout);
+                await this.saveData(); // Сохраняем введенный текст немедленно и ЖДЁМ завершения
+            }
+
+            const idx = this.imageList.indexOf(this.filename);
+            if (idx === -1) return;
+
+            // Вычисляем новое имя файла
+            const newFilename = this.imageList[(idx + dir + this.imageList.length) % this.imageList.length];
+
+            // 1. Обновляем переменную класса
+            this.filename = newFilename;
+
+            // 1.5. Очищаем кэш превью (новое изображение загрузится в loadImageAndData)
+            this.cachedPreviewImage = null;
+
+            // 2. Обновляем текст в тулбаре (визуально)
+            const display = document.getElementById('filename-display');
+            if (display) display.textContent = newFilename;
+
+            // 3. Формируем URL, сохраняя параметр project_id, если он есть
+            let newUrl = `${window.location.pathname}?image=${newFilename}`;
+            if (this.project) {
+                newUrl += `&project_id=${this.project}`;
+            }
+
+            // 4. Обновляем адресную строку без перезагрузки
+            history.pushState({ filename: newFilename }, '', newUrl);
+
+            // 5. Очищаем старые данные перед загрузкой новых
+            this.regions = [];
+            this.texts = {};
+            this.textsHistory = [];
+            this.historyIndex = -1;
+            this.notepadFocusedIndex = -1;
+            
+            // Clear history timeout to prevent saving after switch
+            if (this.saveHistoryTimeout) {
+                clearTimeout(this.saveHistoryTimeout);
+                this.saveHistoryTimeout = null;
+            }
+
+            // 6. Загружаем новые данные
+            this.loadImageAndData();
+        } finally {
+            this.isSwitching = false;
+        }
     }
 
     async saveData() {
-        const saveStatusEl = document.getElementById('save-status');
-        if (saveStatusEl) saveStatusEl.textContent = 'Сохранение...';
+        // Если уже идёт сохранение или переключение - пропускаем
+        if (this.isSaving || this.isSwitching) {
+            console.log('[saveData] Skipped - isSaving:', this.isSaving, 'isSwitching:', this.isSwitching);
+            // Don't change indicator - keep showing 'saving'
+            return;
+        }
+
+        this.isSaving = true;
+        
+        console.log('[saveData] Saving...', this.filename, 'texts:', Object.keys(this.texts).length);
 
         try {
             // Prepare data to save - we need to map the texts back to the original region order
             // Get the original regions to create the mapping
-            const originalData = await API.loadAnnotation(this.filename);
+            const originalData = await API.loadAnnotation(this.filename, this.project);
             const originalRegions = originalData.regions || [];
 
             // Create a mapping of texts in the original region order
@@ -1170,16 +1848,28 @@ class TextEditor {
             const saveData = {
                 image_name: this.filename,
                 regions: originalRegions, // Use original regions order
-                texts: textsInOriginalOrder,
-                status: 'texted' // New status for text input completed
+                texts: textsInOriginalOrder
+                // Статус определяет бэкенд по факту заполнения полигонов
             };
 
-            await API.saveAnnotationWithTexts(this.filename, saveData.regions, saveData.texts, this.project);
+            const resp = await API.saveAnnotationWithTexts(this.filename, saveData.regions, saveData.texts, this.project);
+            // API.saveAnnotationWithTexts возвращает JSON объект, не Response
+            // Если ошибка — catch уже бросил Error внутри функции
 
-            if (saveStatusEl) saveStatusEl.textContent = 'Сохранено';
+            // Show saved indicator
+            this.setSaveIndicator('saved');
+            console.log('[saveData] Saved successfully');
+            
+            // Reset to idle after 2 seconds
+            setTimeout(() => this.setSaveIndicator('idle'), 2000);
         } catch (error) {
-            console.error('Save error:', error);
-            if (saveStatusEl) saveStatusEl.textContent = 'Ошибка сохранения';
+            console.error('[saveData] Error:', error);
+            this.setSaveIndicator('error');
+            
+            // Reset to idle after 3 seconds
+            setTimeout(() => this.setSaveIndicator('idle'), 3000);
+        } finally {
+            this.isSaving = false;
         }
     }
 
@@ -1190,32 +1880,37 @@ class TextEditor {
             clearTimeout(this.autoSaveTimeout);
         }
 
+        // Show saving indicator immediately
+        this.setSaveIndicator('saving');
+
         this.autoSaveTimeout = setTimeout(() => {
             this.saveData();
         }, 2000); // Auto-save after 2 seconds of inactivity
     }
 
     async recognizeText() {
-        const recognitionStatusEl = document.getElementById('recognition-status');
-        if (recognitionStatusEl) recognitionStatusEl.textContent = 'Распознавание... (0%)';
+        const btn = document.getElementById('btn-recognize');
+        if (!btn) return;
+
+        // Сохраняем оригинальный текст кнопки
+        const originalText = btn.textContent;
+        
+        // Блокируем кнопку и показываем прогресс
+        btn.disabled = true;
+        btn.textContent = 'Распознавание... (0%)';
 
         try {
             // Get the original unsorted regions to send to the backend
-            const originalData = await API.loadAnnotation(this.filename);
+            const originalData = await API.loadAnnotation(this.filename, this.project);
             const originalRegions = originalData.regions || [];
-
-            // Get CSRF token from meta tag
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
             const response = await fetch('/api/recognize_text', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': csrfToken
-                },
+                headers: API.getCsrfHeaders(),
                 body: JSON.stringify({
                     image_name: this.filename,
-                    regions: originalRegions  // Send original unsorted regions
+                    regions: originalRegions,
+                    project_id: this.project
                 })
             });
 
@@ -1223,18 +1918,20 @@ class TextEditor {
 
             if (data.status === 'success') {
                 // Poll for completion with progress updates
-                this.pollForRecognitionResults(recognitionStatusEl);
+                this.pollForRecognitionResults(btn, originalText);
             } else {
                 console.error('Recognition error:', data.msg);
-                if (recognitionStatusEl) recognitionStatusEl.textContent = 'Ошибка распознавания';
+                btn.disabled = false;
+                btn.textContent = originalText;
             }
         } catch (error) {
             console.error('Recognition API error:', error);
-            if (recognitionStatusEl) recognitionStatusEl.textContent = 'Ошибка распознавания';
+            btn.disabled = false;
+            btn.textContent = originalText;
         }
     }
 
-    pollForRecognitionResults(recognitionStatusEl) {
+    pollForRecognitionResults(btn, originalText) {
         // Check recognition progress using the new endpoint
         const checkStatus = async () => {
             try {
@@ -1243,20 +1940,32 @@ class TextEditor {
 
                 if (progress.status === 'completed') {
                     // Recognition complete, update UI
-                    if (recognitionStatusEl) recognitionStatusEl.textContent = 'Распознано (100%)';
+                    btn.textContent = '✓ Распознано';
 
-                    // Update the local texts data
-                    const data = await API.loadAnnotation(this.filename);
-                    // Load the text data with the original regions to map correctly to sorted order
-                    const originalData = await API.loadAnnotation(this.filename);
-                    const originalRegions = originalData.regions || [];
-                    this.loadTextData(originalRegions);
+                    // Если есть тексты из распознавания — покажем их
+                    if (progress.texts && Object.keys(progress.texts).length > 0) {
+                        console.log('[recognizeText] Got texts from server:', progress.texts);
+                        this.applyRecognizedTexts(progress.texts);
+                    } else {
+                        console.log('[recognizeText] No texts in response, loading from DB');
+                        // Fallback: загрузим из БД (для пользователей с write правами)
+                        const originalData = await API.loadAnnotation(this.filename, this.project);
+                        const originalRegions = originalData.regions || [];
+                        this.loadTextData(originalRegions);
+                    }
 
-                    // Auto-save after recognition is complete
-                    this.autoSave();
+                    // НЕ сохраняем автоматически — текст только отображается
+                    // Пользователь с правами write сохранит вручную
+                    this.setSaveIndicator('idle');
+
+                    // Разблокируем кнопку через 2 секунды
+                    setTimeout(() => {
+                        btn.disabled = false;
+                        btn.textContent = originalText;
+                    }, 2000);
                 } else {
                     // Update progress indicator
-                    if (recognitionStatusEl) recognitionStatusEl.textContent = `Распознавание... (${progress.percentage}%)`;
+                    btn.textContent = `Распознавание... (${progress.percentage}%)`;
 
                     // Continue polling
                     setTimeout(checkStatus, 1000); // Check every second

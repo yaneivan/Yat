@@ -86,7 +86,7 @@ def migrate_projects():
                     filename=filename,
                     original_path=os.path.join('data/originals', filename),
                     cropped_path=os.path.join('data/images', filename),
-                    status=ImageStatus.CROP.value
+                    status=ImageStatus.UPLOADED.value
                 )
                 session.add(image)
             
@@ -139,7 +139,7 @@ def migrate_annotations():
                     filename=image_name,
                     original_path=os.path.join('data/originals', image_name),
                     cropped_path=os.path.join('data/images', image_name),
-                    status=data.get('status', ImageStatus.CROP.value)
+                    status=data.get('status', ImageStatus.UPLOADED.value)
                 )
                 session.add(image)
                 session.flush()
@@ -174,7 +174,7 @@ def migrate_annotations():
 
             # Update image status
             if polygons:
-                image.status = ImageStatus.SEGMENT.value
+                image.status = ImageStatus.SEGMENTED.value
             elif data.get('status') == ImageStatus.CROPPED.value:
                 image.status = ImageStatus.CROPPED.value
 

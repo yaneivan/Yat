@@ -10,6 +10,9 @@ import uuid
 from datetime import datetime
 from typing import Callable, Optional, Dict, Any, List
 from sqlalchemy.orm import Session
+import logging
+
+logger = logging.getLogger(__name__)
 
 from database.session import SessionLocal
 from database.repository.task_repository import TaskRepository
@@ -41,6 +44,7 @@ class Task:
         self.error = None
         self.created_at = datetime.now()
         self.updated_at = datetime.now()
+        self.completed_at = None  # Set when task completes
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert task to dictionary for JSON serialization."""
@@ -57,7 +61,8 @@ class Task:
             'completed': self.completed,
             'error': self.error,
             'created_at': self.created_at.isoformat(),
-            'updated_at': self.updated_at.isoformat()
+            'updated_at': self.updated_at.isoformat(),
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None
         }
 
 
@@ -108,13 +113,16 @@ class TaskService:
         # Also create in database
         repo, session = self._get_repo()
         try:
+            logger.info(f"Creating task {task_id} for project {project_name} with {len(images)} images")
             repo.create(
                 task_id=task_id,
                 task_type=task_type,
                 project_id=project_id,
                 status=TaskStatus.PENDING,
-                progress=0
+                progress=0,
+                result={'images': images, 'description': description, 'project_name': project_name}
             )
+            logger.info(f"Task {task_id} created in database")
         finally:
             session.close()
 
@@ -127,21 +135,28 @@ class TaskService:
             task_model = repo.get_by_id(task_id)
             if not task_model:
                 return None
-            
+
+            # Load images and description from result
+            result = task_model.result or {}
+            images = result.get('images', [])
+            description = result.get('description', '')
+            project_name = result.get('project_name', '')
+
             # Convert DB model to Task object
             task = Task(
                 task_id=task_model.id,
                 task_type=task_model.type,
-                project_name="",  # Not stored in DB
+                project_name=project_name,
                 project_id=task_model.project_id,
-                images=[],  # Not stored in DB
-                description=""  # Not stored in DB
+                images=images,
+                description=description
             )
             task.status = task_model.status
             task.progress = task_model.progress
             task.completed = task_model.progress  # Approximation
-            task.total = 100  # Fixed for DB-backed tasks
-            task.error = task_model.result.get('error') if task_model.result else None
+            task.total = len(images)
+            task.error = result.get('error') if result else None
+            task.completed_at = task_model.completed_at
             return task
         finally:
             session.close()
@@ -151,22 +166,33 @@ class TaskService:
         repo, session = self._get_repo()
         try:
             task_models = repo.get_all(status=status)
+            logger.info(f"get_all_tasks: found {len(task_models)} tasks in DB")
             tasks = []
             for task_model in task_models:
+                # Load images and description from result
+                result = task_model.result or {}
+                logger.info(f"  Task {task_model.id}: result={result}")
+                images = result.get('images', [])
+                description = result.get('description', '')
+                project_name = result.get('project_name', '')
+                logger.info(f"    project_name from result: '{project_name}'")
+
                 task = Task(
                     task_id=task_model.id,
                     task_type=task_model.type,
-                    project_name="",
+                    project_name=project_name,
                     project_id=task_model.project_id,
-                    images=[],
-                    description=""
+                    images=images,
+                    description=description
                 )
                 task.status = task_model.status
                 task.progress = task_model.progress
                 task.completed = task_model.progress
-                task.total = 100
-                task.error = task_model.result.get('error') if task_model.result else None
+                task.total = len(images)
+                task.error = result.get('error') if result else None
+                task.completed_at = task_model.completed_at
                 tasks.append(task)
+            logger.info(f"get_all_tasks: returning {len(tasks)} tasks")
             return tasks
         finally:
             session.close()
@@ -185,8 +211,17 @@ class TaskService:
             if not task_model:
                 return None
 
-            progress = int((completed / max(completed, 1)) * 100) if completed > 0 else 0
+            # Load result first
             result = task_model.result.copy() if task_model.result else {}
+
+            # Calculate progress percentage using total from result
+            total = len(result.get('images', []))
+            progress = int((completed / total) * 100) if total > 0 and completed > 0 else 0
+            if completed >= total and total > 0:
+                progress = 100
+
+            logger.info(f"update_progress: task={task_id}, completed={completed}, total={total}, progress={progress}")
+
             if error:
                 result['error'] = error
 
@@ -197,16 +232,24 @@ class TaskService:
                 result=result
             )
 
+            # Load images from result
+            images = result.get('images', [])
+            description = result.get('description', '')
+            project_name = result.get('project_name', '')
+
             # Return Task object
             task = Task(
                 task_id=task_id,
                 task_type=task_model.type,
-                project_name="",
-                project_id=task_model.project_id
+                project_name=project_name,
+                project_id=task_model.project_id,
+                images=images,
+                description=description
             )
             task.status = status.value if status else task_model.status
             task.progress = progress
             task.completed = completed
+            task.total = len(images)
             task.error = error
             return task
         finally:
@@ -222,15 +265,25 @@ class TaskService:
 
             repo.complete(task_model)
 
+            # Load images from result
+            result = task_model.result or {}
+            images = result.get('images', [])
+            description = result.get('description', '')
+            project_name = result.get('project_name', '')
+
             task = Task(
                 task_id=task_id,
                 task_type=task_model.type,
-                project_name="",
-                project_id=task_model.project_id
+                project_name=project_name,
+                project_id=task_model.project_id,
+                images=images,
+                description=description
             )
             task.status = TaskStatus.COMPLETED.value
             task.progress = 100
             task.completed = task.total
+            task.total = len(images)
+            task.completed_at = datetime.now()
             return task
         finally:
             session.close()
@@ -245,15 +298,25 @@ class TaskService:
 
             repo.fail(task_model, error)
 
+            # Load images from result
+            result = task_model.result or {}
+            images = result.get('images', [])
+            description = result.get('description', '')
+            project_name = result.get('project_name', '')
+
             task = Task(
                 task_id=task_id,
                 task_type=task_model.type,
-                project_name="",
-                project_id=task_model.project_id
+                project_name=project_name,
+                project_id=task_model.project_id,
+                images=images,
+                description=description
             )
             task.status = TaskStatus.FAILED.value
             task.progress = 0
+            task.total = len(images)
             task.error = error
+            task.completed_at = datetime.now()
             return task
         finally:
             session.close()

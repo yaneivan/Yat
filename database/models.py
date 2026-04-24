@@ -1,10 +1,36 @@
 """SQLAlchemy ORM models."""
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON, Text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, JSON, Text
 from sqlalchemy.orm import relationship
 from database.session import Base
 from database.enums import ImageStatus, TaskStatus
+
+
+class User(Base):
+    """User model - authentication and access control."""
+
+    __tablename__ = 'users'
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(100), unique=True, nullable=False, index=True)
+    password_hash = Column(String(256), nullable=False)
+    is_admin = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    audit_logs = relationship('AuditLog', back_populates='user', cascade='all, delete-orphan')
+
+    def to_dict(self):
+        """Convert to dictionary for API responses (excludes password)."""
+        return {
+            'id': self.id,
+            'username': self.username,
+            'is_admin': self.is_admin,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
 
 
 class Project(Base):
@@ -43,7 +69,7 @@ class Image(Base):
     filename = Column(String(255), nullable=False)
     original_path = Column(String(512))  # Path to original (backup)
     cropped_path = Column(String(512))   # Path to cropped image
-    status = Column(String(50), default=ImageStatus.CROP.value)  # ImageStatus: crop, cropped, segment, texted, review_pending, reviewed
+    status = Column(String(50), default=ImageStatus.UPLOADED.value)  # ImageStatus: uploaded, cropped, segmented, recognized, reviewed
     crop_params = Column(JSON)  # {x, y, width, height, angle}
     comment = Column(Text, default='')  # Comment from reviewer
     reviewed_at = Column(DateTime)  # Timestamp of review
@@ -121,4 +147,58 @@ class Task(Base):
             'result': self.result,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+        }
+
+
+class ProjectPermission(Base):
+    """User-project permission mapping."""
+
+    __tablename__ = 'project_permissions'
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    project_id = Column(Integer, ForeignKey('projects.id', ondelete='CASCADE'), nullable=False, index=True)
+    role = Column(String(20), default='write', nullable=False)  # 'read', 'write', 'admin'
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'project_id': self.project_id,
+            'role': self.role,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class AuditLog(Base):
+    """Audit trail for tracking who changed what."""
+
+    __tablename__ = 'audit_log'
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), index=True)
+    action = Column(String(50), nullable=False, index=True)  # 'create', 'update', 'delete', 'login'
+    entity_type = Column(String(50), nullable=False, index=True)  # 'project', 'image', 'annotation', 'user'
+    entity_id = Column(Integer, index=True)  # ID affected entity
+    old_value = Column(JSON)  # Previous state
+    new_value = Column(JSON)  # New state
+    details = Column(Text, default='')  # Human-readable description
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    # Relationships
+    user = relationship('User', back_populates='audit_logs')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'username': self.user.username if self.user else 'system',
+            'action': self.action,
+            'entity_type': self.entity_type,
+            'entity_id': self.entity_id,
+            'old_value': self.old_value,
+            'new_value': self.new_value,
+            'details': self.details,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
         }
