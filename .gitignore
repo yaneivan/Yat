@@ -1,5 +1,6 @@
 /__pycache__
 /tests/__pycache__
+/tests/e2e/__pycache__
 /data/annotations
 /data/images
 /data/thumbnails
@@ -15,5 +16,6 @@ database.db
 /database/repository/__pycache__
 /services/__pycache__
 .env
+.vscode/
 .qwen/
 AGENTS.md

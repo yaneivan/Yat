@@ -10,6 +10,10 @@ def _load_config():
     env_file = Path(__file__).parent / ".env"
     if env_file.exists():
         load_dotenv(env_file, override=True)
+    else:
+        env_example = Path(__file__).parent / ".env.example"
+        if env_example.exists():
+            load_dotenv(env_example, override=True)
 
 
 _load_config()
