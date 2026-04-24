@@ -11,24 +11,27 @@ dependencies = [
     "pillow>=12.1.1",
     "python-dotenv>=1.0.0",
     "reportlab>=4.0.0",
+    "shapely>=2.0.0",
     "sqlalchemy>=2.0.48",
-    "transformers>=4.48.0",
-    "ultralytics>=8.3.0",
-    "torch>=2.6.0",
-    "torchvision>=0.21.0",
     "rapidfuzz>=3.10.0",
+    "numpy<2",
 ]
-
-# PyTorch CUDA index
-# Install with: uv pip install --index pytorch-cuda torch torchvision
-[[tool.uv.index]]
-name = "pytorch-cuda"
-url = "https://download.pytorch.org/whl/cu118"
-explicit = true
 
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
     "ruff>=0.15.5",
     "vulture>=2.15",
+    "playwright>=1.40.0",
+    "pytest-playwright>=0.4.4",
+    "python-dotenv>=1.0.0",
+]
+
+[tool.pytest.ini_options]
+# Base URL для E2E тестов (Playwright)
+base_url = "http://127.0.0.1:5000"
+
+# Маркировки тестов
+markers = [
+    "e2e: End-to-End тесты с Playwright",
 ]
