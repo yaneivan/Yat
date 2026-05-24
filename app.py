@@ -1,4 +1,15 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, send_file, session, abort
+from flask import (
+    Flask,
+    render_template,
+    request,
+    jsonify,
+    redirect,
+    url_for,
+    send_from_directory,
+    send_file,
+    session,
+    abort,
+)
 from flask_wtf.csrf import CSRFProtect
 from functools import wraps
 import io
@@ -29,38 +40,42 @@ from database.session import init_db
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
 # Initialize database only if not running tests
 import sys
-if 'pytest' not in sys.modules:
+
+if "pytest" not in sys.modules:
     init_db()
     logger.info("Database initialized")
 
     # ── Seed admin user from env (first-run only) ──
-    _admin_username = os.environ.get('ADMIN_USERNAME', 'admin')
-    _admin_password = os.environ.get('ADMIN_PASSWORD', None)
+    _admin_username = os.environ.get("ADMIN_USERNAME", "admin")
+    _admin_password = os.environ.get("ADMIN_PASSWORD", None)
     if _admin_password and not user_service.has_users():
-        result = user_service.create_user(_admin_username, _admin_password, is_admin=True)
+        result = user_service.create_user(
+            _admin_username, _admin_password, is_admin=True
+        )
         if result:
             logger.info(f"Seed admin user '{_admin_username}' created")
         else:
             logger.error(f"Failed to create seed admin user '{_admin_username}'")
 
 
-def _get_project_role_for_template(project_name):
+def _get_project_role_for_template(project_id):
     """Вернуть роль пользователя на проект для шаблонов."""
-    if not project_name:
-        return 'admin'
+    if not project_id:
+        return "admin"
     if is_admin():
-        return 'admin'
-    user_id = session.get('user_id')
+        return "admin"
+    user_id = session.get("user_id")
     if user_id:
-        return permission_service.get_project_role(user_id, project_name)
+        return permission_service.get_project_role(user_id, project_id)
     return None
+
 
 # Initialize AI models at startup
 if ai_service.is_trocr_available():
@@ -78,17 +93,17 @@ app = Flask(__name__)
 # CSRF can be enabled/disabled via .env file
 # For development over HTTP (external IP), set CSRF_ENABLED=false in .env
 # For production (HTTPS or localhost), set CSRF_ENABLED=true in .env
-CSRF_ENABLED = os.environ.get('CSRF_ENABLED', 'true').lower() == 'true'
+CSRF_ENABLED = os.environ.get("CSRF_ENABLED", "true").lower() == "true"
 
 if CSRF_ENABLED:
-    app.config['WTF_CSRF_ENABLED'] = True
-    app.config['WTF_CSRF_TIME_LIMIT'] = None
-    app.config['WTF_CSRF_SSL_STRICT'] = False  # Allow non-HTTPS for development
-    app.config['WTF_CSRF_HEADERS'] = ['X-CSRFToken', 'X-Requested-With', 'X-Csrf-Token']
+    app.config["WTF_CSRF_ENABLED"] = True
+    app.config["WTF_CSRF_TIME_LIMIT"] = None
+    app.config["WTF_CSRF_SSL_STRICT"] = False  # Allow non-HTTPS for development
+    app.config["WTF_CSRF_HEADERS"] = ["X-CSRFToken", "X-Requested-With", "X-Csrf-Token"]
     csrf = CSRFProtect(app)
     logger.info("CSRF protection ENABLED")
 else:
-    app.config['WTF_CSRF_ENABLED'] = False
+    app.config["WTF_CSRF_ENABLED"] = False
     csrf = CSRFProtect(app)  # Keep reference but disabled
     logger.info("CSRF protection DISABLED")
 
@@ -97,13 +112,13 @@ else:
 # =============================================================================
 # Set secret key for sessions (required for auth)
 # IMPORTANT: Use a fixed secret key in production to persist sessions across restarts
-app.secret_key = os.environ.get('SECRET_KEY', 'yat-htr-annotation-tool-secret-key-2026')
+app.secret_key = os.environ.get("SECRET_KEY", "yat-htr-annotation-tool-secret-key-2026")
 
 # Session cookie settings for development (HTTP)
 # In production with HTTPS, set SESSION_COOKIE_SECURE = True
-app.config['SESSION_COOKIE_SECURE'] = False  # Allow HTTP
-app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent JavaScript access
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # Allow cross-site for navigation
+app.config["SESSION_COOKIE_SECURE"] = False  # Allow HTTP
+app.config["SESSION_COOKIE_HTTPONLY"] = True  # Prevent JavaScript access
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"  # Allow cross-site for navigation
 
 # Determine authentication mode
 # Two modes only:
@@ -116,22 +131,24 @@ def is_admin():
     """Check if current user is admin."""
     if not USE_AUTH:
         return True
-    return session.get('is_admin', False)
+    return session.get("is_admin", False)
 
 
 def require_admin(f):
     """Decorator to restrict access to admin users only."""
+
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if USE_AUTH and not is_admin():
-            return jsonify({'error': 'Admin access required'}), 403
+            return jsonify({"error": "Admin access required"}), 403
         return f(*args, **kwargs)
+
     return decorated_function
 
 
-def check_project_access(project_name):
+def check_project_access(project_id):
     """
-    Проверка доступа к проекту.
+    Проверка доступа к проекту по ID.
     - Если USE_AUTH=False — доступ открыт
     - Если is_admin=True — доступ ко всем
     - Иначе — проверяем project_permissions
@@ -141,26 +158,26 @@ def check_project_access(project_name):
     if is_admin():
         return True
 
-    user_id = session.get('user_id')
+    user_id = session.get("user_id")
     if not user_id:
         return False
 
-    return permission_service.can_access_project(user_id, project_name)
+    return permission_service.can_access_project(user_id, project_id)
 
 
 def require_project_access(f):
     """
-    Декоратор: автоматически находит project_name из:
-    - path param 'project_name' (kwargs)
-    - query param 'project'
+    Декоратор: автоматически находит project_id из kwargs.
     Если нет доступа — возвращает 403.
     """
+
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        project_name = kwargs.get('project_name') or request.args.get('project')
-        if project_name and not check_project_access(project_name):
-            return jsonify({'status': 'error', 'msg': 'Нет доступа к проекту'}), 403
+        project_id = kwargs.get("project_id")
+        if project_id and not check_project_access(project_id):
+            return jsonify({"status": "error", "msg": "Нет доступа к проекту"}), 403
         return f(*args, **kwargs)
+
     return decorated_function
 
 
@@ -169,40 +186,38 @@ def require_write_access(f):
     Декоратор: проверяет доступ к проекту + что пользователь имеет право на запись.
     viewer → только просмотр, annotator и project_admin → запись разрешена.
     """
+
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Admin bypasses all checks
         if is_admin():
             return f(*args, **kwargs)
 
-        # Ищем project_name: URL path → query param → JSON body
-        project_name = kwargs.get('project_name') or request.args.get('project')
-        if not project_name and request.is_json:
+        project_id = kwargs.get("project_id")
+        if not project_id and request.is_json:
             try:
                 data = request.get_json(cache=True)
                 if data:
-                    project_name = data.get('project')
+                    project_id = data.get("project_id")
             except Exception:
                 pass
 
-        if not project_name:
-            # Нет проекта — обычный пользователь, проверяем сессию
-            user_id = session.get('user_id')
+        if not project_id:
+            user_id = session.get("user_id")
             if not user_id:
-                return jsonify({'status': 'error', 'msg': 'Нет доступа'}), 403
+                return jsonify({"status": "error", "msg": "Нет доступа"}), 403
             return f(*args, **kwargs)
 
-        if not check_project_access(project_name):
-            return jsonify({'status': 'error', 'msg': 'Нет доступа к проекту'}), 403
+        if not check_project_access(project_id):
+            return jsonify({"status": "error", "msg": "Нет доступа к проекту"}), 403
 
-        # Check project-level permission
-        user_id = session.get('user_id')
+        user_id = session.get("user_id")
         if user_id:
-            proj_role = permission_service.get_project_role(user_id, project_name)
-            if proj_role == 'viewer':
-                return jsonify({'status': 'error', 'msg': 'Только просмотр'}), 403
+            role = permission_service.get_project_role(user_id, project_id)
+            if role == "viewer":
+                return jsonify({"status": "error", "msg": "Только просмотр"}), 403
 
         return f(*args, **kwargs)
+
     return decorated_function
 
 
@@ -211,27 +226,31 @@ def require_project_admin(f):
     Декоратор: проверяет что пользователь — project_admin (или app admin).
     Нужно для: batch detect/recognize, загрузка/удаление изображений, импорт/экспорт.
     """
+
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if is_admin():
             return f(*args, **kwargs)
 
-        project_name = kwargs.get('project_name') or request.args.get('project')
+        project_id = kwargs.get("project_id")
 
-        user_id = session.get('user_id')
+        user_id = session.get("user_id")
         if not user_id:
-            return jsonify({'status': 'error', 'msg': 'Нет доступа'}), 403
+            return jsonify({"status": "error", "msg": "Нет доступа"}), 403
 
-        if not project_name:
-            return jsonify({'status': 'error', 'msg': 'Нет доступа к проекту'}), 403
+        if not project_id:
+            return jsonify({"status": "error", "msg": "Нет доступа к проекту"}), 403
 
-        if not permission_service.can_access_project(user_id, project_name):
-            return jsonify({'status': 'error', 'msg': 'Нет доступа к проекту'}), 403
+        if not permission_service.can_access_project(user_id, project_id):
+            return jsonify({"status": "error", "msg": "Нет доступа к проекту"}), 403
 
-        if not permission_service.can_manage_project(user_id, project_name):
-            return jsonify({'status': 'error', 'msg': 'Нужны права администратора проекта'}), 403
+        if not permission_service.can_manage_project(user_id, project_id):
+            return jsonify(
+                {"status": "error", "msg": "Нужны права администратора проекта"}
+            ), 403
 
         return f(*args, **kwargs)
+
     return decorated_function
 
 
@@ -239,6 +258,7 @@ def _get_project_id(name):
     """Получить ID проекта по имени."""
     from database.session import SessionLocal
     from database.models import Project
+
     s = SessionLocal()
     try:
         p = s.query(Project).filter_by(name=name).first()
@@ -254,73 +274,78 @@ def check_auth():
         return  # No password - open access, everyone is admin
 
     # Skip login page, static files, and auth API
-    if request.path in ['/login', '/favicon.ico', '/api/auth/me'] or request.path.startswith('/static/'):
+    if request.path in [
+        "/login",
+        "/favicon.ico",
+        "/api/auth/me",
+    ] or request.path.startswith("/static/"):
         return
 
     # No session - redirect to login
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
+    if "user_id" not in session:
+        return redirect(url_for("login"))
 
     # Verify user still exists in database (kicked if deleted)
-    if not user_service.get_user_by_id(session['user_id']):
-        session.pop('is_admin', None)
-        session.pop('user_id', None)
-        session.pop('username', None)
-        return redirect(url_for('login'))
+    if not user_service.get_user_by_id(session["user_id"]):
+        session.pop("is_admin", None)
+        session.pop("user_id", None)
+        session.pop("username", None)
+        return redirect(url_for("login"))
 
 
-@app.route('/login', methods=['GET', 'POST'])
+@app.route("/login", methods=["GET", "POST"])
 def login():
     """Login page — authentication via database only."""
     if not USE_AUTH:
-        return redirect('/')
+        return redirect("/")
 
-    if request.method == 'POST':
-        username = request.form.get('username', '').strip()
-        password = request.form.get('password', '')
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
 
         if not username or not password:
-            return render_template('login.html', error='Заполни имя и пароль')
+            return render_template("login.html", error="Заполни имя и пароль")
 
         user = user_service.authenticate(username, password)
         if user:
-            session['is_admin'] = user['is_admin']
-            session['user_id'] = user['id']
-            session['username'] = user['username']
+            session["is_admin"] = user["is_admin"]
+            session["user_id"] = user["id"]
+            session["username"] = user["username"]
 
             audit_service.log(
-                user_id=user['id'],
-                action='login',
-                entity_type='user',
-                entity_id=user['id'],
+                user_id=user["id"],
+                action="login",
+                entity_type="user",
+                entity_id=user["id"],
                 old_value=None,
-                new_value={'is_admin': user['is_admin']},
-                details=f'User {username} logged in',
+                new_value={"is_admin": user["is_admin"]},
+                details=f"User {username} logged in",
             )
-            return redirect('/')
+            return redirect("/")
 
-        return render_template('login.html', error='Неверный логин или пароль')
+        return render_template("login.html", error="Неверный логин или пароль")
 
-    return render_template('login.html')
+    return render_template("login.html")
 
 
-@app.route('/logout')
+@app.route("/logout")
 def logout():
     """Logout - clear session."""
-    session.pop('is_admin', None)
-    session.pop('user_id', None)
-    session.pop('username', None)
-    return redirect(url_for('login'))
+    session.pop("is_admin", None)
+    session.pop("user_id", None)
+    session.pop("username", None)
+    return redirect(url_for("login"))
 
 
 # Make USE_AUTH and user role available to templates
 @app.context_processor
 def inject_auth():
     return {
-        'USE_AUTH': USE_AUTH,
-        'is_admin': is_admin(),
-        'current_username': session.get('username', None),
+        "USE_AUTH": USE_AUTH,
+        "is_admin": is_admin(),
+        "current_username": session.get("username", None),
     }
+
 
 # Make csrf_token available even when CSRF is disabled
 @app.context_processor
@@ -328,370 +353,458 @@ def inject_csrf():
     def csrf_token():
         if CSRF_ENABLED:
             from flask_wtf.csrf import generate_csrf
+
             return generate_csrf()
-        return ''
-    return {'csrf_token': csrf_token}
+        return ""
+
+    return {"csrf_token": csrf_token}
 
 
 # =============================================================================
 
+
 # --- Pages ---
-@app.route('/')
+@app.route("/")
 def index():
     images = image_service.get_all_images()
-    return render_template('index.html', files=images)
+    return render_template("index.html", files=images)
 
-@app.route('/stats')
+
+@app.route("/stats")
 @require_admin
 def stats_page():
-    return render_template('stats.html')
+    return render_template("stats.html")
 
-@app.route('/editor')
+
+@app.route("/editor")
 def editor():
-    filename = request.args.get('image')
-    project_name = request.args.get('project')
+    filename = request.args.get("image")
+    project_id = request.args.get("project_id", type=int)
     if not filename:
-        return redirect(url_for('index'))
-    if project_name and not check_project_access(project_name):
-        abort(403)
-    project_role = _get_project_role_for_template(project_name)
-    return render_template('editor.html', filename=filename, project=project_name, project_role=project_role)
+        return redirect(url_for("index"))
 
-@app.route('/text_editor')
+    if project_id and not check_project_access(project_id):
+        abort(403)
+
+    project_role = _get_project_role_for_template(project_id)
+    return render_template(
+        "editor.html",
+        filename=filename,
+        project_id=project_id,
+        project_role=project_role,
+    )
+
+
+@app.route("/text_editor")
 def text_editor():
-    filename = request.args.get('image')
-    project_name = request.args.get('project')
+    filename = request.args.get("image")
+    project_id = request.args.get("project_id", type=int)
     if not filename:
-        return redirect(url_for('index'))
-    if project_name and not check_project_access(project_name):
-        abort(403)
-    project_role = _get_project_role_for_template(project_name)
-    return render_template('text_editor.html', filename=filename, project=project_name, project_role=project_role)
+        return redirect(url_for("index"))
 
-@app.route('/cropper')
-def cropper():
-    filename = request.args.get('image')
-    project_name = request.args.get('project')
-    if not filename:
-        return redirect(url_for('index'))
-    if project_name and not check_project_access(project_name):
+    if project_id and not check_project_access(project_id):
         abort(403)
-    # Проверка существования файла
-    if not image_service.get_original_path(filename, project_name):
+
+    project_role = _get_project_role_for_template(project_id)
+    return render_template(
+        "text_editor.html",
+        filename=filename,
+        project_id=project_id,
+        project_role=project_role,
+    )
+
+
+@app.route("/cropper")
+def cropper():
+    filename = request.args.get("image")
+    project_id = request.args.get("project_id", type=int)
+    if not filename:
+        return redirect(url_for("index"))
+
+    if project_id and not check_project_access(project_id):
+        abort(403)
+
+    if not image_service.get_original_path(filename, project_id):
         abort(404)
-    project_role = _get_project_role_for_template(project_name)
-    return render_template('cropper.html', filename=filename, project=project_name, project_role=project_role)
+    project_role = _get_project_role_for_template(project_id)
+    return render_template(
+        "cropper.html",
+        filename=filename,
+        project_id=project_id,
+        project_role=project_role,
+    )
+
 
 # --- API: Images ---
-@app.route('/api/images_list')
-@require_project_access
+@app.route("/api/images_list")
 def list_images():
-    project = request.args.get('project')
-    if project:
-        images = image_service.get_all_images(project_name=project)
+    project_id = request.args.get("project_id", type=int)
+
+    if project_id and not check_project_access(project_id):
+        return jsonify({"error": "No access to project"}), 403
+
+    if project_id:
+        images = image_service.get_all_images(project_id=project_id)
     else:
         images = image_service.get_all_images()
     return jsonify(images)
 
-@app.route('/api/image_url')
+
+@app.route("/api/image_url")
 def image_url():
     """Get URL for an image, optionally scoped to a project."""
-    filename = request.args.get('filename')
-    project = request.args.get('project')
-    image_type = request.args.get('type', 'image')  # 'image' or 'original'
-    cache_bust = request.args.get('t')
+    filename = request.args.get("filename")
+    project_id = request.args.get("project_id", type=int)
+    image_type = request.args.get("type", "image")
+    cache_bust = request.args.get("t")
 
     if not filename:
-        return jsonify({'error': 'No filename provided'}), 400
+        return jsonify({"error": "No filename provided"}), 400
 
     try:
-        if image_type == 'original':
-            url = image_storage_service.get_original_url(filename, project, cache_bust)
+        if image_type == "original":
+            url = image_storage_service.get_original_url(
+                filename, project_id, cache_bust
+            )
         else:
-            url = image_storage_service.get_image_url(filename, project, cache_bust)
-        return jsonify({'url': url})
+            url = image_storage_service.get_image_url(filename, project_id, cache_bust)
+        return jsonify({"url": url})
     except ValueError as e:
-        return jsonify({'error': str(e)}), 400
+        return jsonify({"error": str(e)}), 400
 
-@app.route('/data/images/<path:filename>')
+
+@app.route("/data/images/<path:filename>")
 def serve_image(filename):
     try:
         validated = image_storage_service._validate_filename(filename)
-        project_name = request.args.get('project')
-        file_path = image_storage_service.get_image_path(validated, project_name)
+        project_id = request.args.get("project_id", type=int)
+        file_path = image_storage_service.get_image_path(validated, project_id)
         if not os.path.exists(file_path):
-            return jsonify({'error': 'Image not found'}), 404
-        return send_from_directory(os.path.dirname(file_path), os.path.basename(file_path))
+            return jsonify({"error": "Image not found"}), 404
+        return send_from_directory(
+            os.path.dirname(file_path), os.path.basename(file_path)
+        )
     except ValueError:
-        return jsonify({'error': 'Invalid filename'}), 400
+        return jsonify({"error": "Invalid filename"}), 400
 
-@app.route('/data/originals/<path:filename>')
+
+@app.route("/data/originals/<path:filename>")
 def serve_original(filename):
     try:
         validated = image_storage_service._validate_filename(filename)
-        project_name = request.args.get('project')
-        file_path = image_storage_service.get_original_path(validated, project_name)
+        project_id = request.args.get("project_id", type=int)
+        file_path = image_storage_service.get_original_path(validated, project_id)
         if not os.path.exists(file_path):
-            return jsonify({'error': 'Original not found'}), 404
-        return send_from_directory(os.path.dirname(file_path), os.path.basename(file_path))
+            return jsonify({"error": "Original not found"}), 404
+        return send_from_directory(
+            os.path.dirname(file_path), os.path.basename(file_path)
+        )
     except ValueError:
-        return jsonify({'error': 'Invalid filename'}), 400
+        return jsonify({"error": "Invalid filename"}), 400
 
-@app.route('/data/thumbnails/<path:filename>')
+
+@app.route("/data/thumbnails/<path:filename>")
 def serve_thumbnail(filename):
     try:
         validated = image_storage_service._validate_filename(filename)
-        project_name = request.args.get('project')
+        project_id = request.args.get("project_id", type=int)
 
-        # filename приходит как "ProjectName/name_thumb.jpg" или "name_thumb.jpg"
-        # Нужно извлечь оригинальное имя файла
         thumb_basename = os.path.basename(validated)
-        # Убрать "_thumb.jpg" чтобы получить оригинальное имя
-        if thumb_basename.endswith('_thumb.jpg'):
-            original_name = thumb_basename[:-10]  # убрать "_thumb.jpg"
+        if thumb_basename.endswith("_thumb.jpg"):
+            original_name = thumb_basename[:-10]
         else:
             original_name = thumb_basename
 
-        file_path = image_storage_service.get_thumbnail_path(original_name, project_name)
+        file_path = image_storage_service.get_thumbnail_path(original_name, project_id)
 
         if not os.path.exists(file_path):
-            # Fallback: сгенерировать на лету
-            for ext in ['.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.webp']:
-                if image_storage_service.image_exists(original_name + ext, project_name):
-                    image_storage_service.generate_thumbnail(original_name + ext, project_name)
+            for ext in [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"]:
+                if image_storage_service.image_exists(original_name + ext, project_id):
+                    image_storage_service.generate_thumbnail(
+                        original_name + ext, project_id
+                    )
                     break
 
             if not os.path.exists(file_path):
-                return jsonify({'error': 'Thumbnail not found'}), 404
-        return send_from_directory(os.path.dirname(file_path), os.path.basename(file_path))
+                return jsonify({"error": "Thumbnail not found"}), 404
+        return send_from_directory(
+            os.path.dirname(file_path), os.path.basename(file_path)
+        )
     except ValueError:
-        return jsonify({'error': 'Invalid filename'}), 400
+        return jsonify({"error": "Invalid filename"}), 400
+
 
 # --- API: Annotations ---
-@app.route('/api/load/<filename>')
-@require_project_access
+@app.route("/api/load/<filename>")
 def load_data(filename):
     try:
-        # Validate filename to prevent path traversal
         validated = image_service._validate_filename(filename)
-        # Get project from query parameter
-        project_name = request.args.get('project')
-        data = annotation_service.get_annotation(validated, project_name)
+        project_id = request.args.get("project_id", type=int)
+
+        if project_id and not check_project_access(project_id):
+            return jsonify({"status": "error", "msg": "No access to project"}), 403
+
+        data = annotation_service.get_annotation(validated, project_id)
         return jsonify(data)
     except ValueError:
-        return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
+        return jsonify({"status": "error", "msg": "Invalid filename"}), 400
     except Exception as e:
-        return jsonify({'status': 'error', 'msg': str(e)}), 500
+        return jsonify({"status": "error", "msg": str(e)}), 500
 
-@app.route('/api/save', methods=['POST'])
-@require_write_access
+
+@app.route("/api/save", methods=["POST"])
 def save_data():
     incoming_data = request.json
-    filename = incoming_data.get('image_name')
+    filename = incoming_data.get("image_name")
 
     if not filename:
-        return jsonify({'status': 'error', 'msg': 'No filename'}), 400
+        return jsonify({"status": "error", "msg": "No filename"}), 400
 
     try:
-        # Validate filename to prevent path traversal
         validated = image_service._validate_filename(filename)
 
-        # Get project from query parameter
-        project_name = request.args.get('project')
+        project_id = request.args.get("project_id", type=int)
 
-        # Load existing data with project scope
-        existing_data = annotation_service.get_annotation(validated, project_name)
-        old_regions = existing_data.get('regions', [])
-        old_texts = existing_data.get('texts', {})
+        if project_id and not check_project_access(project_id):
+            return jsonify({"status": "error", "msg": "No access to project"}), 403
 
-        # Update fields
-        for key in ['regions', 'texts', 'status', 'processing_params', 'crop_params']:
+        if USE_AUTH and not is_admin():
+            user_id = session.get("user_id")
+            if user_id and project_id:
+                role = permission_service.get_project_role(user_id, project_id)
+                if role == "viewer":
+                    return jsonify({"status": "error", "msg": "Только просмотр"}), 403
+
+        existing_data = annotation_service.get_annotation(validated, project_id)
+        old_regions = existing_data.get("regions", [])
+        old_texts = existing_data.get("texts", {})
+
+        for key in ["regions", "texts", "status", "processing_params", "crop_params"]:
             if key in incoming_data:
                 existing_data[key] = incoming_data[key]
 
-        # Ensure image_name is set
-        existing_data['image_name'] = validated
+        existing_data["image_name"] = validated
 
-        new_regions = existing_data.get('regions', [])
-        new_texts = existing_data.get('texts', {})
+        new_regions = existing_data.get("regions", [])
+        new_texts = existing_data.get("texts", {})
 
-        logger.info(f"Saving annotation for {validated}: {len(incoming_data.get('regions', []))} regions")
+        logger.info(
+            f"Saving annotation for {validated}: {len(incoming_data.get('regions', []))} regions"
+        )
 
-        if annotation_service.save_annotation(validated, existing_data, project_name):
-            # Write audit log
+        if annotation_service.save_annotation(validated, existing_data, project_id):
             audit_service.log(
-                user_id=session.get('user_id'),
-                action='save_annotation',
-                entity_type='annotation',
+                user_id=session.get("user_id"),
+                action="save_annotation",
+                entity_type="annotation",
                 entity_id=None,
-                old_value={'regions_count': len(old_regions), 'texts': old_texts},
-                new_value={'regions_count': len(new_regions), 'texts': new_texts},
-                details=f'{validated} in {project_name}: {len(new_regions)} regions',
+                old_value={"regions_count": len(old_regions), "texts": old_texts},
+                new_value={"regions_count": len(new_regions), "texts": new_texts},
+                details=f"{validated} in project {project_id}: {len(new_regions)} regions",
             )
             logger.info("Save successful")
-            return jsonify({'status': 'success'})
+            return jsonify({"status": "success"})
         logger.warning("Save failed - annotation_service returned False")
-        return jsonify({'status': 'error'}), 500
+        return jsonify({"status": "error"}), 500
 
     except ValueError as e:
         logger.error(f"ValueError: {e}")
-        return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
+        return jsonify({"status": "error", "msg": "Invalid filename"}), 400
     except Exception as e:
         logger.error(f"Exception: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'msg': str(e)}), 500
+        return jsonify({"status": "error", "msg": str(e)}), 500
 
 
 # --- API: Crop ---
-@app.route('/api/crop', methods=['POST'])
-@require_write_access
+@app.route("/api/crop", methods=["POST"])
 def crop():
     data = request.json
-    filename = data.get('image_name')
-    box = data.get('box')
+    filename = data.get("image_name")
+    box = data.get("box")
 
     if not filename or not box:
-        return jsonify({'status': 'error', 'msg': 'No data'}), 400
+        return jsonify({"status": "error", "msg": "No data"}), 400
 
     try:
-        # Validate filename to prevent path traversal
         validated = image_service._validate_filename(filename)
-        
-        # Get project from query parameter
-        project_name = request.args.get('project')
-    except ValueError:
-        return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
 
-    # Async background processing
+        project_id = data.get("project_id")
+
+        if project_id and not check_project_access(project_id):
+            return jsonify({"status": "error", "msg": "No access to project"}), 403
+
+        if USE_AUTH and not is_admin():
+            user_id = session.get("user_id")
+            if user_id and project_id:
+                role = permission_service.get_project_role(user_id, project_id)
+                if role == "viewer":
+                    return jsonify({"status": "error", "msg": "Только просмотр"}), 403
+    except ValueError:
+        return jsonify({"status": "error", "msg": "Invalid filename"}), 400
+
     def task():
-        image_service.crop_image(validated, box, project_name)
+        image_service.crop_image(validated, box, project_id)
 
     thread = threading.Thread(target=task)
     thread.start()
 
-    return jsonify({'status': 'success', 'msg': 'Background processing started'})
+    return jsonify({"status": "success", "msg": "Background processing started"})
+
 
 # --- API: Import/Export ---
-@app.route('/api/import_zip', methods=['POST'])
-@require_project_admin
+@app.route("/api/import_zip", methods=["POST"])
 def import_zip_route():
     try:
         logger.info("[ZIP Import] Request received")
         logger.debug(f"[ZIP Import] Form keys: {list(request.form.keys())}")
         logger.debug(f"[ZIP Import] Files keys: {list(request.files.keys())}")
-        
-        simp = int(request.form.get('simplify', 0))
-        project_name = request.form.get('project_name', None)
-        logger.info(f"[ZIP Import] simplify={simp}, project_name={project_name}")
 
-        if 'file' not in request.files:
-            logger.error(f"[ZIP Import] No file in request. Available files: {list(request.files.keys())}")
-            return jsonify({'status': 'error', 'msg': 'No file in request'}), 400
+        simp = int(request.form.get("simplify", 0))
+        project_id = request.form.get("project_id", type=int)
 
-        uploaded_file = request.files['file']
-        if uploaded_file.filename == '':
+        if is_admin():
+            pass
+        elif not project_id or not permission_service.can_access_project(
+            session.get("user_id"), project_id
+        ):
+            return jsonify({"status": "error", "msg": "No access to project"}), 403
+
+        logger.info(f"[ZIP Import] simplify={simp}, project_id={project_id}")
+
+        if "file" not in request.files:
+            logger.error(
+                f"[ZIP Import] No file in request. Available files: {list(request.files.keys())}"
+            )
+            return jsonify({"status": "error", "msg": "No file in request"}), 400
+
+        uploaded_file = request.files["file"]
+        if uploaded_file.filename == "":
             logger.error("[ZIP Import] No file selected")
-            return jsonify({'status': 'error', 'msg': 'No file selected'}), 400
+            return jsonify({"status": "error", "msg": "No file selected"}), 400
 
-        logger.info(f"[ZIP Import] File: {uploaded_file.filename}, size: {uploaded_file.content_length}")
+        logger.info(
+            f"[ZIP Import] File: {uploaded_file.filename}, size: {uploaded_file.content_length}"
+        )
 
-        # Use logic function for import (keeps existing ZIP processing)
-        count, final_project_name = logic.process_zip_import(uploaded_file, simp, project_name)
-        logger.info(f"[ZIP Import] Success: {count} images imported to '{final_project_name}'")
-        return jsonify({
-            'status': 'success',
-            'count': count,
-            'project_name': final_project_name
-        })
+        count, final_project_id, final_project_name = logic.process_zip_import(
+            uploaded_file, simp, project_id
+        )
+        logger.info(
+            f"[ZIP Import] Success: {count} images imported to project {final_project_id}"
+        )
+        return jsonify(
+            {
+                "status": "success",
+                "count": count,
+                "project_id": final_project_id,
+                "project_name": final_project_name,
+            }
+        )
 
     except Exception as e:
         logger.error(f"[ZIP Import] Error: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'msg': str(e)}), 500
+        return jsonify({"status": "error", "msg": str(e)}), 500
+
 
 # --- API: AI Operations ---
-@app.route('/api/detect_lines', methods=['POST'])
-@require_project_access
+@app.route("/api/detect_lines", methods=["POST"])
 def detect_lines():
     data = request.json
-    filename = data.get('image_name')
-    settings = data.get('settings', {})
-    project_name = request.args.get('project')
+    filename = data.get("image_name")
+    settings = data.get("settings", {})
+    project_id = request.args.get("project_id", type=int)
 
     if not filename:
-        return jsonify({'status': 'error', 'msg': 'No image name provided'}), 400
+        return jsonify({"status": "error", "msg": "No image name provided"}), 400
+
+    if project_id and not check_project_access(project_id):
+        return jsonify({"status": "error", "msg": "No access to project"}), 403
 
     try:
-        # Validate filename to prevent path traversal
         validated = image_service._validate_filename(filename)
-        regions = ai_service.detect_lines(validated, settings, project_name)
-        return jsonify({'status': 'success', 'regions': regions})
+        regions = ai_service.detect_lines(validated, settings, project_id)
+        return jsonify({"status": "success", "regions": regions})
     except ValueError:
         logger.error(f"detect_lines: Invalid filename - {filename}")
-        return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
+        return jsonify({"status": "error", "msg": "Invalid filename"}), 400
     except Exception as e:
         logger.error(f"detect_lines error: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'msg': str(e)}), 500
+        return jsonify({"status": "error", "msg": str(e)}), 500
+
 
 # Global dict for recognition progress (kept for backward compatibility)
 recognition_progress = {}
 
-@app.route('/api/recognize_text', methods=['POST'])
-@require_project_access
+
+@app.route("/api/recognize_text", methods=["POST"])
 def recognize_text():
     data = request.json
-    filename = data.get('image_name')
-    regions = data.get('regions', None)
+    filename = data.get("image_name")
+    regions = data.get("regions", None)
 
     if not filename:
-        return jsonify({'status': 'error', 'msg': 'No image name provided'}), 400
+        return jsonify({"status": "error", "msg": "No image name provided"}), 400
 
     try:
-        # Validate filename to prevent path traversal
         validated = image_service._validate_filename(filename)
-        
-        # Get project from request data
-        project_name = data.get('project')
-    except ValueError:
-        return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
 
-    # Get regions count for progress
+        project_id = data.get("project_id")
+
+        if project_id and not check_project_access(project_id):
+            return jsonify({"status": "error", "msg": "No access to project"}), 403
+    except ValueError:
+        return jsonify({"status": "error", "msg": "Invalid filename"}), 400
+
     if regions is None:
-        annotation_data = annotation_service.get_annotation(validated, project_name)
-        regions = annotation_data.get('regions', [])
+        annotation_data = annotation_service.get_annotation(validated, project_id)
+        regions = annotation_data.get("regions", [])
 
     total_regions = len(regions)
-    recognition_progress[validated] = {'processed': 0, 'total': total_regions, 'status': 'processing'}
+    recognition_progress[validated] = {
+        "processed": 0,
+        "total": total_regions,
+        "status": "processing",
+    }
 
-    # Сохраняем user_id ДО запуска thread (session недоступна в фоне)
-    current_user_id = session.get('user_id')
+    current_user_id = session.get("user_id")
 
-    # Async background processing
     def task():
         def update_progress(processed, total):
             recognition_progress[validated] = {
-                'processed': processed,
-                'total': total,
-                'status': 'processing'
+                "processed": processed,
+                "total": total,
+                "status": "processing",
             }
 
-        logger.info(f"[recognize_text thread] START: {validated}, regions={len(regions) if regions else 0}, project={project_name}")
+        logger.info(
+            f"[recognize_text thread] START: {validated}, regions={len(regions) if regions else 0}, project_id={project_id}"
+        )
         try:
-            texts = ai_service.recognize_text(validated, regions, progress_callback=update_progress, project_name=project_name, user_id=current_user_id)
+            texts = ai_service.recognize_text(
+                validated,
+                regions,
+                progress_callback=update_progress,
+                project_id=project_id,
+                user_id=current_user_id,
+            )
             recognition_progress[validated] = {
-                'processed': total_regions,
-                'total': total_regions,
-                'status': 'completed',
-                'texts': texts  # Возвращаем тексты фронтенду
+                "processed": total_regions,
+                "total": total_regions,
+                "status": "completed",
+                "texts": texts,  # Возвращаем тексты фронтенду
             }
             logger.info(f"[recognize_text thread] COMPLETED: {validated}")
         except Exception as e:
             # При ошибке тоже очищаем запись
             recognition_progress[validated] = {
-                'processed': 0,
-                'total': total_regions,
-                'status': 'failed',
-                'error': str(e)
+                "processed": 0,
+                "total": total_regions,
+                "status": "failed",
+                "error": str(e),
             }
-            logger.error(f"[recognize_text thread] FAILED: {validated} - {e}", exc_info=True)
+            logger.error(
+                f"[recognize_text thread] FAILED: {validated} - {e}", exc_info=True
+            )
         finally:
             # 🔧 Очистка записи после завершения (предотвращает утечку памяти)
             # Даём клиенту время (5 секунд) прочитать финальный статус перед удалением
@@ -702,426 +815,418 @@ def recognize_text():
     thread = threading.Thread(target=task)
     thread.start()
 
-    return jsonify({'status': 'success', 'msg': 'Background processing started'})
+    return jsonify({"status": "success", "msg": "Background processing started"})
 
-@app.route('/api/recognize_progress/<filename>')
+
+@app.route("/api/recognize_progress/<filename>")
 def recognize_progress(filename):
     try:
         # Validate filename to prevent path traversal
         validated = image_service._validate_filename(filename)
     except ValueError:
-        return jsonify({'error': 'Invalid filename'}), 400
-    
+        return jsonify({"error": "Invalid filename"}), 400
+
     progress_data = recognition_progress.get(
-        validated,
-        {'processed': 0, 'total': 0, 'status': 'not_started'}
+        validated, {"processed": 0, "total": 0, "status": "not_started"}
     )
 
-    if progress_data['total'] > 0:
-        percentage = int((progress_data['processed'] / progress_data['total']) * 100)
+    if progress_data["total"] > 0:
+        percentage = int((progress_data["processed"] / progress_data["total"]) * 100)
     else:
         percentage = 0
 
     result = {
-        'status': progress_data['status'],
-        'processed': progress_data['processed'],
-        'total': progress_data['total'],
-        'percentage': percentage
+        "status": progress_data["status"],
+        "processed": progress_data["processed"],
+        "total": progress_data["total"],
+        "percentage": percentage,
     }
 
     # Если есть распознанные тексты — вернём их клиенту
-    if 'texts' in progress_data:
-        result['texts'] = progress_data['texts']
+    if "texts" in progress_data:
+        result["texts"] = progress_data["texts"]
 
     return jsonify(result)
 
+
 # --- API: Projects ---
-@app.route('/api/projects', methods=['GET', 'POST'])
+@app.route("/api/projects", methods=["GET", "POST"])
 def projects():
-    if request.method == 'GET':
+    if request.method == "GET":
         projects_list = project_service.get_all_projects()
 
-        # Фильтрация по правам доступа (non-admin видят только свои)
         if USE_AUTH and not is_admin():
-            user_id = session.get('user_id')
+            user_id = session.get("user_id")
             if user_id:
-                accessible = set(permission_service.get_accessible_projects(user_id))
-                projects_list = [p for p in projects_list if p['name'] in accessible]
+                accessible_ids = set(
+                    permission_service.get_accessible_projects(user_id)
+                )
+                projects_list = [p for p in projects_list if p["id"] in accessible_ids]
             else:
                 projects_list = []
 
-        return jsonify({'projects': projects_list})
+        return jsonify({"projects": projects_list})
 
-    elif request.method == 'POST':
-        # Admin only: create project
+    elif request.method == "POST":
         if USE_AUTH and not is_admin():
-            return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
-        
+            return jsonify({"status": "error", "msg": "Admin access required"}), 403
+
         try:
             data = request.json
-            name = data.get('name')
-            description = data.get('description', '')
+            name = data.get("name")
+            description = data.get("description", "")
 
             if not name:
-                return jsonify({'status': 'error', 'msg': 'Project name is required'}), 400
+                return jsonify(
+                    {"status": "error", "msg": "Project name is required"}
+                ), 400
 
             result = project_service.create_project(name, description)
 
             if result:
-                # Get project ID for audit log
-                proj_id = _get_project_id(name)
-
                 audit_service.log(
-                    user_id=session.get('user_id'),
-                    action='create_project',
-                    entity_type='project',
-                    entity_id=proj_id,
+                    user_id=session.get("user_id"),
+                    action="create_project",
+                    entity_type="project",
+                    entity_id=result["id"],
                     old_value=None,
-                    new_value={'name': name, 'description': description},
-                    details=f'Created project: {name}',
+                    new_value={"name": name, "description": description},
+                    details=f"Created project: {name}",
                 )
-                return jsonify({'status': 'success', 'project': result})
+                return jsonify({"status": "success", "project": result})
             else:
-                return jsonify({'status': 'error', 'msg': 'Project already exists'}), 400
+                return jsonify(
+                    {"status": "error", "msg": "Project already exists"}
+                ), 400
 
         except Exception as e:
-            return jsonify({'status': 'error', 'msg': f'Server error: {str(e)}'}), 500
+            return jsonify({"status": "error", "msg": f"Server error: {str(e)}"}), 500
 
 
-@app.route('/api/projects/<project_name>', methods=['GET', 'PUT', 'DELETE'])
-def project(project_name):
-    # Sanitize project name to prevent path traversal
-    sanitized_name = project_service._sanitize_name(project_name)
+@app.route("/api/projects/<int:project_id>", methods=["GET", "PUT", "DELETE"])
+def project(project_id):
+    if request.method == "GET":
+        if not check_project_access(project_id):
+            return jsonify({"status": "error", "msg": "Нет доступа к проекту"}), 403
 
-    if request.method == 'GET':
-        # Проверка доступа к проекту
-        if not check_project_access(sanitized_name):
-            return jsonify({'status': 'error', 'msg': 'Нет доступа к проекту'}), 403
-
-        project_data = project_service.get_project(sanitized_name)
+        project_data = project_service.get_project(project_id)
 
         if not project_data:
-            return jsonify({'status': 'error', 'msg': 'Project not found'}), 404
+            return jsonify({"status": "error", "msg": "Project not found"}), 404
 
-        return jsonify({'project': project_data})
+        return jsonify({"project": project_data})
 
-    elif request.method == 'PUT':
-        # Admin only: edit project
+    elif request.method == "PUT":
         if USE_AUTH and not is_admin():
-            return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
-        
+            return jsonify({"status": "error", "msg": "Admin access required"}), 403
+
         data = request.json
-        new_name = data.get('name')
-        description = data.get('description')
+        new_name = data.get("name")
+        description = data.get("description")
 
         result = project_service.update_project(
-            sanitized_name,
-            new_name=new_name,
-            description=description
+            project_id, new_name=new_name, description=description
         )
 
         if result:
-            return jsonify({'status': 'success', 'project': result})
+            return jsonify({"status": "success", "project": result})
         else:
-            return jsonify({'status': 'error', 'msg': 'Project not found or name collision'}), 400
+            return jsonify(
+                {"status": "error", "msg": "Project not found or name collision"}
+            ), 400
 
-    elif request.method == 'DELETE':
-        # Admin only: delete project
+    elif request.method == "DELETE":
         if USE_AUTH and not is_admin():
-            return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
-        
-        result = project_service.delete_project(sanitized_name)
+            return jsonify({"status": "error", "msg": "Admin access required"}), 403
+
+        project_data = project_service.get_project(project_id)
+        project_name = project_data["name"] if project_data else None
+
+        result = project_service.delete_project(project_id)
 
         if result:
-            proj_id = _get_project_id(sanitized_name)
-
             audit_service.log(
-                user_id=session.get('user_id'),
-                action='delete_project',
-                entity_type='project',
-                entity_id=proj_id,
-                old_value={'name': sanitized_name},
+                user_id=session.get("user_id"),
+                action="delete_project",
+                entity_type="project",
+                entity_id=project_id,
+                old_value={"name": project_name},
                 new_value=None,
-                details=f'Deleted project: {sanitized_name}',
+                details=f"Deleted project: {project_name}",
             )
-            return jsonify({'status': 'success', 'msg': 'Project deleted'})
+            return jsonify({"status": "success", "msg": "Project deleted"})
         else:
-            return jsonify({'status': 'error', 'msg': 'Project not found'}), 404
+            return jsonify({"status": "error", "msg": "Project not found"}), 404
 
 
-@app.route('/api/projects/<project_name>/images', methods=['GET', 'DELETE'])
+@app.route("/api/projects/<int:project_id>/images", methods=["GET", "DELETE"])
 @require_project_access
-def project_images(project_name):
-    # Sanitize project name to prevent path traversal
-    sanitized_name = project_service._sanitize_name(project_name)
+def project_images(project_id):
+    if request.method == "GET":
+        images = project_service.get_images(project_id)
+        return jsonify({"images": images})
 
-    if request.method == 'GET':
-        images = project_service.get_images(sanitized_name)
-        return jsonify({'images': images})
-
-    elif request.method == 'DELETE':
-        # project_admin or app admin can remove images
+    elif request.method == "DELETE":
         if USE_AUTH and not is_admin():
-            user_id = session.get('user_id')
-            role = permission_service.get_project_role(user_id, sanitized_name) if user_id else None
-            if not user_id or role != 'project_admin':
-                return jsonify({'status': 'error', 'msg': 'Admin access required'}), 403
-        
+            user_id = session.get("user_id")
+            role = (
+                permission_service.get_project_role(user_id, project_id)
+                if user_id
+                else None
+            )
+            if not user_id or role != "project_admin":
+                return jsonify({"status": "error", "msg": "Admin access required"}), 403
+
         data = request.json
-        image_name = data.get('image_name')
+        image_name = data.get("image_name")
 
         if not image_name:
-            return jsonify({'status': 'error', 'msg': 'Image name is required'}), 400
+            return jsonify({"status": "error", "msg": "Image name is required"}), 400
 
-        result = project_service.remove_image(sanitized_name, image_name)
+        project_data = project_service.get_project(project_id)
+        project_name = project_data["name"] if project_data else None
+
+        result = project_service.remove_image(project_id, image_name)
 
         if result:
             audit_service.log(
-                user_id=session.get('user_id'),
-                action='remove_image',
-                entity_type='image',
+                user_id=session.get("user_id"),
+                action="remove_image",
+                entity_type="image",
                 entity_id=None,
-                old_value={'filename': image_name, 'project': sanitized_name},
+                old_value={"filename": image_name, "project": project_name},
                 new_value=None,
-                details=f'Removed {image_name} from {sanitized_name}',
+                details=f"Removed {image_name} from {project_name}",
             )
-            return jsonify({'status': 'success', 'msg': 'Image removed from project'})
+            return jsonify({"status": "success", "msg": "Image removed from project"})
         else:
-            return jsonify({'status': 'error', 'msg': 'Image or project not found'}), 404
+            return jsonify(
+                {"status": "error", "msg": "Image or project not found"}
+            ), 404
 
 
-@app.route('/api/projects/<project_name>/images/<filename>/status', methods=['GET', 'PUT'])
+@app.route(
+    "/api/projects/<int:project_id>/images/<filename>/status", methods=["GET", "PUT"]
+)
 @require_project_access
-def image_status(project_name, filename):
+def image_status(project_id, filename):
     """Get or update image status and comment."""
-    # Sanitize project name and filename
-    sanitized_name = project_service._sanitize_name(project_name)
+    project_data = project_service.get_project(project_id)
+    if not project_data:
+        return jsonify({"status": "error", "msg": "Project not found"}), 404
+    project_name = project_data["name"]
 
     try:
         validated_filename = image_service._validate_filename(filename)
     except ValueError:
-        return jsonify({'status': 'error', 'msg': 'Invalid filename'}), 400
+        return jsonify({"status": "error", "msg": "Invalid filename"}), 400
 
-    if request.method == 'GET':
-        # Get image status
-        result = image_service.get_status(validated_filename, sanitized_name)
+    if request.method == "GET":
+        result = image_service.get_status(validated_filename, project_name)
         if not result:
-            return jsonify({'status': 'error', 'msg': 'Image not found'}), 404
+            return jsonify({"status": "error", "msg": "Image not found"}), 404
 
         return jsonify(result)
 
-    elif request.method == 'PUT':
-        # Проверка write access через декоратор уже сделана, но для PUT status
-        # нужно проверить что пользователь не 'viewer' на уровне проекта
+    elif request.method == "PUT":
         if USE_AUTH and not is_admin():
-            user_id = session.get('user_id')
-            proj_role = permission_service.get_project_role(user_id, sanitized_name) if user_id else None
-            if proj_role == 'viewer':
-                return jsonify({'status': 'error', 'msg': 'Только просмотр'}), 403
-        # Update status and/or comment
-        data = request.json
-        new_status = data.get('status')
-        new_comment = data.get('comment')
+            user_id = session.get("user_id")
+            proj_role = (
+                permission_service.get_project_role(user_id, project_id)
+                if user_id
+                else None
+            )
+            if proj_role == "viewer":
+                return jsonify({"status": "error", "msg": "Только просмотр"}), 403
 
-        # Get old values for audit
-        old_data = image_service.get_status(validated_filename, sanitized_name)
-        old_status = old_data.get('status') if old_data else None
-        old_comment = old_data.get('comment', '') if old_data else ''
+        data = request.json
+        new_status = data.get("status")
+        new_comment = data.get("comment")
+
+        old_data = image_service.get_status(validated_filename, project_name)
+        old_status = old_data.get("status") if old_data else None
+        old_comment = old_data.get("comment", "") if old_data else ""
 
         success = image_service.update_status(
-            validated_filename,
-            sanitized_name,
-            status=new_status,
-            comment=new_comment
+            validated_filename, project_name, status=new_status, comment=new_comment
         )
 
         if not success:
-            return jsonify({'status': 'error', 'msg': 'Image not found'}), 404
-        
-        # Return updated status
-        updated = image_service.get_status(validated_filename, sanitized_name)
+            return jsonify({"status": "error", "msg": "Image not found"}), 404
 
-        # Write audit log
+        updated = image_service.get_status(validated_filename, project_name)
+
         audit_service.log(
-            user_id=session.get('user_id'),
-            action='update_status',
-            entity_type='image',
+            user_id=session.get("user_id"),
+            action="update_status",
+            entity_type="image",
             entity_id=None,
-            old_value={'status': old_status, 'comment': old_comment},
-            new_value={'status': new_status, 'comment': new_comment},
-            details=f'{validated_filename} in {sanitized_name}: {old_status} → {new_status}',
+            old_value={"status": old_status, "comment": old_comment},
+            new_value={"status": new_status, "comment": new_comment},
+            details=f"{validated_filename} in {project_name}: {old_status} → {new_status}",
         )
 
-        return jsonify({
-            'status': 'success',
-            'message': 'Status updated',
-            **updated
-        })
+        return jsonify({"status": "success", "message": "Status updated", **updated})
 
 
-@app.route('/api/projects/<project_name>/upload_images', methods=['POST'])
+@app.route("/api/projects/<int:project_id>/upload_images", methods=["POST"])
 @require_project_admin
-def upload_project_images(project_name):
-    # Sanitize project name to prevent path traversal
-    sanitized_name = project_service._sanitize_name(project_name)
+def upload_project_images(project_id):
+    project_data = project_service.get_project(project_id)
+    if not project_data:
+        return jsonify({"status": "error", "msg": "Project not found"}), 404
+    project_name = project_data["name"]
 
-    if 'images' not in request.files:
-        return jsonify({'status': 'error', 'msg': 'No images provided'}), 400
+    if "images" not in request.files:
+        return jsonify({"status": "error", "msg": "No images provided"}), 400
 
-    files = request.files.getlist('images')
+    files = request.files.getlist("images")
     uploaded_count = 0
     skipped_count = 0
 
     for file in files:
         if file and file.filename:
-            # Validate extension
             if not image_service.is_allowed_extension(file.filename):
                 continue
 
-            # Save image and add to project
-            filename = image_service.upload_image(file, project_name=sanitized_name)
+            filename = image_service.upload_image(file, project_id=project_id)
             if filename:
                 uploaded_count += 1
             else:
-                skipped_count += 1  # Duplicate or invalid
+                skipped_count += 1
 
     if uploaded_count == 0 and skipped_count > 0:
-        return jsonify({
-            'status': 'error',
-            'msg': 'Все файлы уже существуют в проекте (дубликаты)'
-        }), 409
+        return jsonify(
+            {"status": "error", "msg": "Все файлы уже существуют в проекте (дубликаты)"}
+        ), 409
 
     result = {
-        'status': 'success',
-        'msg': f'Загружено {uploaded_count} изображений' + (f' ({skipped_count} пропущено)' if skipped_count > 0 else '')
+        "status": "success",
+        "msg": f"Загружено {uploaded_count} изображений"
+        + (f" ({skipped_count} пропущено)" if skipped_count > 0 else ""),
     }
 
     if uploaded_count > 0:
         audit_service.log(
-            user_id=session.get('user_id'),
-            action='upload_images',
-            entity_type='project',
-            entity_id=None,
+            user_id=session.get("user_id"),
+            action="upload_images",
+            entity_type="project",
+            entity_id=project_id,
             old_value=None,
-            new_value={'uploaded_count': uploaded_count, 'skipped_count': skipped_count},
-            details=f'{sanitized_name}: +{uploaded_count} images',
+            new_value={
+                "uploaded_count": uploaded_count,
+                "skipped_count": skipped_count,
+            },
+            details=f"{project_name}: +{uploaded_count} images",
         )
 
     return jsonify(result)
 
 
-@app.route('/api/projects/<project_name>/export_zip')
+@app.route("/api/projects/<int:project_id>/export_zip")
 @require_project_admin
-def export_project_zip(project_name):
-    # Sanitize project name to prevent path traversal
-    sanitized_name = project_service._sanitize_name(project_name)
+def export_project_zip(project_id):
+    project_data = project_service.get_project(project_id)
+    if not project_data:
+        return jsonify({"status": "error", "msg": "Project not found"}), 404
+    project_name = project_data["name"]
 
-    zip_data = project_service.export_to_zip(sanitized_name)
+    zip_data = project_service.export_to_zip(project_id)
 
     if zip_data is None:
-        return jsonify({'status': 'error', 'msg': 'Project not found'}), 404
+        return jsonify({"status": "error", "msg": "Project not found"}), 404
 
     return send_file(
         io.BytesIO(zip_data),
         as_attachment=True,
-        download_name=f'{sanitized_name}_export.zip',
-        mimetype='application/zip'
+        download_name=f"{project_name}_export.zip",
+        mimetype="application/zip",
     )
 
 
-@app.route('/api/projects/<project_name>/export_pdf')
+@app.route("/api/projects/<int:project_id>/export_pdf")
 @require_project_admin
-def export_project_pdf(project_name):
-    # Sanitize project name to prevent path traversal
-    sanitized_name = project_service._sanitize_name(project_name)
-    
-    # Get variant from query parameter (default: overlay)
-    variant = request.args.get('variant', 'overlay')
-    
-    # Validate variant
-    valid_variants = ['original', 'overlay', 'parallel', 'text']
+def export_project_pdf(project_id):
+    project_data = project_service.get_project(project_id)
+    if not project_data:
+        return jsonify({"status": "error", "msg": "Project not found"}), 404
+    project_name = project_data["name"]
+
+    variant = request.args.get("variant", "overlay")
+
+    valid_variants = ["original", "overlay", "parallel", "text"]
     if variant not in valid_variants:
-        return jsonify({'status': 'error', 'msg': f'Invalid variant. Must be one of: {valid_variants}'}), 400
-    
-    # Import PDF export service
+        return jsonify(
+            {
+                "status": "error",
+                "msg": f"Invalid variant. Must be one of: {valid_variants}",
+            }
+        ), 400
+
     from services.pdf_export_service import pdf_export_service
-    
-    # Generate PDF
-    pdf_data = pdf_export_service.export_project(sanitized_name, variant=variant)
-    
+
+    pdf_data = pdf_export_service.export_project(project_id, variant=variant)
+
     if pdf_data is None:
-        return jsonify({'status': 'error', 'msg': 'Project not found or export failed'}), 404
-    
-    # Determine filename
+        return jsonify(
+            {"status": "error", "msg": "Project not found or export failed"}
+        ), 404
+
     variant_names = {
-        'original': 'images_only',
-        'overlay': 'with_text_overlay',
-        'parallel': 'side_by_side',
-        'text': 'text_only'
+        "original": "images_only",
+        "overlay": "with_text_overlay",
+        "parallel": "side_by_side",
+        "text": "text_only",
     }
-    
+
     return send_file(
         io.BytesIO(pdf_data),
         as_attachment=True,
-        download_name=f'{sanitized_name}_{variant_names[variant]}.pdf',
-        mimetype='application/pdf'
+        download_name=f"{project_name}_{variant_names[variant]}.pdf",
+        mimetype="application/pdf",
     )
 
 
-@app.route('/api/projects/<project_name>/batch_detect', methods=['POST'])
+@app.route("/api/projects/<int:project_id>/batch_detect", methods=["POST"])
 @require_project_admin
-def batch_detect(project_name):
-    logger.info(f"POST /api/projects/{project_name}/batch_detect")
+def batch_detect(project_id):
+    project_data = project_service.get_project(project_id)
+    if not project_data:
+        return jsonify({"status": "error", "msg": "Project not found"}), 404
+    project_name = project_data["name"]
 
-    # Sanitize project name to prevent path traversal
-    sanitized_name = project_service._sanitize_name(project_name)
+    logger.info(f"POST /api/projects/{project_id}/batch_detect")
 
-    settings = request.json.get('settings', {})
-    selected_images = request.json.get('images', [])  # Empty list = all images
-    
+    settings = request.json.get("settings", {})
+    selected_images = request.json.get("images", [])
+
     logger.info(f"  selected_images: {len(selected_images)} images")
-    
-    # Get all images from project
-    all_images = project_service.get_images(sanitized_name)
+
+    all_images = project_service.get_images(project_id)
 
     if not all_images:
-        return jsonify({'status': 'error', 'msg': 'No images in project'}), 400
+        return jsonify({"status": "error", "msg": "No images in project"}), 400
 
-    # Filter images if specific ones were selected
     if selected_images:
-        images = [img for img in all_images if (img['filename'] if isinstance(img, dict) else img) in selected_images]
+        images = [
+            img
+            for img in all_images
+            if (img["filename"] if isinstance(img, dict) else img) in selected_images
+        ]
     else:
         images = all_images
 
     if not images:
-        return jsonify({'status': 'error', 'msg': 'No images selected'}), 400
+        return jsonify({"status": "error", "msg": "No images selected"}), 400
 
     logger.info(f"  processing {len(images)} images")
 
-    # Get project for project_id
-    project = project_service.get_project(sanitized_name)
-    project_id = None
-    if project:
-        # Get project_id from DB
-        from database.session import SessionLocal
-        from database.repository.project_repository import ProjectRepository
-        session = SessionLocal()
-        try:
-            repo = ProjectRepository(session)
-            db_project = repo.get_by_name(sanitized_name)
-            if db_project:
-                project_id = db_project.id
-                logger.info(f"  project_id: {project_id}")
-        finally:
-            session.close()
-
-    # Create task and run in background
     task = task_service.create_task(
         task_type="batch_detection",
-        project_name=sanitized_name,
+        project_name=project_name,
         project_id=project_id,
-        images=[img['filename'] if isinstance(img, dict) else img for img in images],
-        description=f"Batch detection for {len(images)} images"
+        images=[img["filename"] if isinstance(img, dict) else img for img in images],
+        description=f"Batch detection for {len(images)} images",
     )
 
     logger.info(f"  created task {task.id}")
@@ -1129,357 +1234,379 @@ def batch_detect(project_name):
     task_service.run_background(
         task=task,
         func=logic.run_batch_detection_for_project,
-        project_name=sanitized_name,
+        project_id=project_id,
         settings=settings,
-        task_id=task.id
+        task_id=task.id,
     )
 
-    return jsonify({
-        'status': 'success',
-        'msg': f'Batch detection started for {len(images)} images',
-        'task_id': task.id
-    })
+    return jsonify(
+        {
+            "status": "success",
+            "msg": f"Batch detection started for {len(images)} images",
+            "task_id": task.id,
+        }
+    )
 
 
-@app.route('/api/projects/<project_name>/batch_recognize', methods=['POST'])
+@app.route("/api/projects/<int:project_id>/batch_recognize", methods=["POST"])
 @require_project_admin
-def batch_recognize(project_name):
-    # Sanitize project name to prevent path traversal
-    sanitized_name = project_service._sanitize_name(project_name)
+def batch_recognize(project_id):
+    project_data = project_service.get_project(project_id)
+    if not project_data:
+        return jsonify({"status": "error", "msg": "Project not found"}), 404
+    project_name = project_data["name"]
 
-    selected_images = request.json.get('images', [])  # Empty list = all images
-    
-    # Get all images from project
-    all_images = project_service.get_images(sanitized_name)
+    selected_images = request.json.get("images", [])
+
+    all_images = project_service.get_images(project_id)
 
     if not all_images:
-        return jsonify({'status': 'error', 'msg': 'No images in project'}), 400
+        return jsonify({"status": "error", "msg": "No images in project"}), 400
 
-    # Filter images if specific ones were selected
     if selected_images:
-        images = [img for img in all_images if (img['filename'] if isinstance(img, dict) else img) in selected_images]
+        images = [
+            img
+            for img in all_images
+            if (img["filename"] if isinstance(img, dict) else img) in selected_images
+        ]
     else:
         images = all_images
 
     if not images:
-        return jsonify({'status': 'error', 'msg': 'No images selected'}), 400
+        return jsonify({"status": "error", "msg": "No images selected"}), 400
 
-    # Get project_id
-    from database.session import SessionLocal
-    from database.repository.project_repository import ProjectRepository
-    session = SessionLocal()
-    project_id = None
-    try:
-        repo = ProjectRepository(session)
-        db_project = repo.get_by_name(sanitized_name)
-        if db_project:
-            project_id = db_project.id
-    finally:
-        session.close()
-
-    # Create task and run in background
     task = task_service.create_task(
         task_type="batch_recognition",
-        project_name=sanitized_name,
+        project_name=project_name,
         project_id=project_id,
-        images=[img['filename'] if isinstance(img, dict) else img for img in images],
-        description=f"Batch recognition for {len(images)} images"
+        images=[img["filename"] if isinstance(img, dict) else img for img in images],
+        description=f"Batch recognition for {len(images)} images",
     )
 
     task_service.run_background(
         task=task,
         func=logic.run_batch_recognition_for_project,
-        project_name=sanitized_name,
-        task_id=task.id
+        project_id=project_id,
+        task_id=task.id,
     )
 
-    return jsonify({
-        'status': 'success',
-        'msg': f'Batch recognition started for {len(images)} images',
-        'task_id': task.id
-    })
+    return jsonify(
+        {
+            "status": "success",
+            "msg": f"Batch recognition started for {len(images)} images",
+            "task_id": task.id,
+        }
+    )
 
 
 # --- API: Tasks ---
-@app.route('/api/tasks', methods=['GET'])
+@app.route("/api/tasks", methods=["GET"])
 def get_tasks():
     tasks = task_service.get_all_tasks()
     logger.info(f"GET /api/tasks: returning {len(tasks)} tasks")
     for task in tasks:
-        logger.info(f"  Task {task.id}: type={task.type}, project={task.project_name}, status={task.status}")
-    return jsonify({'tasks': [t.to_dict() for t in tasks]})
+        logger.info(
+            f"  Task {task.id}: type={task.type}, project={task.project_name}, status={task.status}"
+        )
+    return jsonify({"tasks": [t.to_dict() for t in tasks]})
 
 
-@app.route('/api/tasks/<task_id>', methods=['GET'])
+@app.route("/api/tasks/<task_id>", methods=["GET"])
 def get_task(task_id):
     task = task_service.get_task(task_id)
 
     if task is None:
-        return jsonify({'status': 'error', 'msg': 'Task not found'}), 404
+        return jsonify({"status": "error", "msg": "Task not found"}), 404
 
-    return jsonify({'task': task.to_dict()})
+    return jsonify({"task": task.to_dict()})
 
 
 # --- API: Auth ---
-@app.route('/api/auth/me', methods=['GET'])
+@app.route("/api/auth/me", methods=["GET"])
 def get_current_user():
     """Get current user info."""
     if not USE_AUTH:
-        return jsonify({'is_admin': True, 'username': 'admin'})
-    return jsonify({
-        'is_admin': is_admin(),
-        'username': session.get('username', None),
-        'user_id': session.get('user_id', None),
-    })
+        return jsonify({"is_admin": True, "username": "admin"})
+    return jsonify(
+        {
+            "is_admin": is_admin(),
+            "username": session.get("username", None),
+            "user_id": session.get("user_id", None),
+        }
+    )
 
 
 # =============================================================================
 # API: Users (Admin only)
 # =============================================================================
-@app.route('/api/users', methods=['GET'])
+@app.route("/api/users", methods=["GET"])
 @require_admin
 def api_list_users():
     """List all users."""
     users = user_service.get_all_users()
-    return jsonify({'users': users})
+    return jsonify({"users": users})
 
 
-@app.route('/api/users', methods=['POST'])
+@app.route("/api/users", methods=["POST"])
 @require_admin
 def api_create_user():
     """Create a new user. Body: {username, password, is_admin?}."""
     data = request.json
-    username = data.get('username', '').strip()
-    password = data.get('password', '')
-    is_admin_flag = data.get('is_admin', False)
+    username = data.get("username", "").strip()
+    password = data.get("password", "")
+    is_admin_flag = data.get("is_admin", False)
 
     if not username or not password:
-        return jsonify({'error': 'username и password обязательны'}), 400
+        return jsonify({"error": "username и password обязательны"}), 400
 
-    result = user_service.create_user(username=username, password=password, is_admin=is_admin_flag)
+    result = user_service.create_user(
+        username=username, password=password, is_admin=is_admin_flag
+    )
     if not result:
-        return jsonify({'error': 'Пользователь уже существует'}), 409
+        return jsonify({"error": "Пользователь уже существует"}), 409
 
-    return jsonify({'user': result}), 201
+    return jsonify({"user": result}), 201
 
 
-@app.route('/api/users/<int:user_id>', methods=['PUT'])
+@app.route("/api/users/<int:user_id>", methods=["PUT"])
 @require_admin
 def api_update_user(user_id):
     """Update user. Body: {password?, is_admin?}."""
     data = request.json
     user = user_service.get_user_by_id(user_id)
     if not user:
-        return jsonify({'error': 'Пользователь не найден'}), 404
+        return jsonify({"error": "Пользователь не найден"}), 404
 
     result = user_service.update_user(
-        username=user['username'],
-        new_password=data.get('password'),
-        is_admin=data.get('is_admin'),
+        username=user["username"],
+        new_password=data.get("password"),
+        is_admin=data.get("is_admin"),
     )
     if not result:
-        return jsonify({'error': 'Ошибка обновления'}), 500
+        return jsonify({"error": "Ошибка обновления"}), 500
 
-    return jsonify({'user': result})
+    return jsonify({"user": result})
 
 
-@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+@app.route("/api/users/<int:user_id>", methods=["DELETE"])
 @require_admin
 def api_delete_user(user_id):
     """Delete a user."""
     user = user_service.get_user_by_id(user_id)
     if not user:
-        return jsonify({'error': 'Пользователь не найден'}), 404
+        return jsonify({"error": "Пользователь не найден"}), 404
 
-    if user_service.delete_user(user['username']):
-        return jsonify({'message': 'Пользователь удалён'})
-    return jsonify({'error': 'Нельзя удалить последнего администратора'}), 400
+    if user_service.delete_user(user["username"]):
+        return jsonify({"message": "Пользователь удалён"})
+    return jsonify({"error": "Нельзя удалить последнего администратора"}), 400
 
 
 # =============================================================================
 # API: Project Permissions (Admin only)
 # =============================================================================
-@app.route('/api/projects/<project_name>/permissions', methods=['GET'])
+@app.route("/api/projects/<int:project_id>/permissions", methods=["GET"])
 @require_admin
-def api_get_project_permissions(project_name):
+def api_get_project_permissions(project_id):
     """Get all users with access to a project."""
-    perms = permission_service.get_project_permissions(project_name)
-    return jsonify({'project': project_name, 'permissions': perms})
+    project_data = project_service.get_project(project_id)
+    if not project_data:
+        return jsonify({"error": "Project not found"}), 404
+    perms = permission_service.get_project_permissions_by_id(project_id)
+    return jsonify(
+        {
+            "project_id": project_id,
+            "project_name": project_data["name"],
+            "permissions": perms,
+        }
+    )
 
 
-@app.route('/api/projects/<project_name>/permissions', methods=['POST'])
+@app.route("/api/projects/<int:project_id>/permissions", methods=["POST"])
 @require_admin
-def api_grant_project_permission(project_name):
+def api_grant_project_permission(project_id):
     """Grant access to a user. Body: {user_id, role?}."""
     data = request.json
-    user_id = data.get('user_id')
-    role = data.get('role', 'annotator')
+    user_id = data.get("user_id")
+    role = data.get("role", "annotator")
 
     if not user_id:
-        return jsonify({'error': 'user_id обязателен'}), 400
+        return jsonify({"error": "user_id обязателен"}), 400
 
-    result = permission_service.grant_access(user_id, project_name, role)
+    result = permission_service.grant_access(user_id, project_id, role)
     if not result:
-        return jsonify({'error': 'Проект не найден'}), 404
+        return jsonify({"error": "Проект не найден"}), 404
 
-    proj_id = _get_project_id(project_name)
     audit_service.log(
-        session.get('user_id'), 'grant_permission', 'project',
-        entity_id=proj_id, details=f'User {user_id} → {project_name} ({role})'
+        session.get("user_id"),
+        "grant_permission",
+        "project",
+        entity_id=project_id,
+        details=f"User {user_id} → project {project_id} ({role})",
     )
-    return jsonify({'permission': result}), 201
+    return jsonify({"permission": result}), 201
 
 
-@app.route('/api/projects/<project_name>/permissions/<int:user_id>', methods=['DELETE'])
+@app.route(
+    "/api/projects/<int:project_id>/permissions/<int:user_id>", methods=["DELETE"]
+)
 @require_admin
-def api_revoke_project_permission(project_name, user_id):
+def api_revoke_project_permission(project_id, user_id):
     """Revoke user access from a project."""
-    if permission_service.revoke_access(user_id, project_name):
-        proj_id = _get_project_id(project_name)
+    project_data = project_service.get_project(project_id)
+    project_name = project_data["name"] if project_data else None
+
+    if permission_service.revoke_access_by_id(user_id, project_id):
         audit_service.log(
-            session.get('user_id'), 'revoke_permission', 'project',
-            entity_id=proj_id, details=f'User {user_id} ← {project_name}'
+            session.get("user_id"),
+            "revoke_permission",
+            "project",
+            entity_id=project_id,
+            details=f"User {user_id} ← project {project_name}",
         )
-        return jsonify({'message': 'Доступ отозван'})
-    return jsonify({'error': 'Доступ не найден'}), 404
+        return jsonify({"message": "Доступ отозван"})
+    return jsonify({"error": "Доступ не найден"}), 404
 
 
-@app.route('/api/users/<int:user_id>/permissions', methods=['GET'])
+@app.route("/api/users/<int:user_id>/permissions", methods=["GET"])
 @require_admin
 def api_get_user_permissions(user_id):
     """Get all projects accessible to a user."""
     user = user_service.get_user_by_id(user_id)
     if not user:
-        return jsonify({'error': 'Пользователь не найден'}), 404
+        return jsonify({"error": "Пользователь не найден"}), 404
 
     perms = permission_service.get_user_permissions(user_id)
-    return jsonify({'user_id': user_id, 'permissions': perms})
+    return jsonify({"user_id": user_id, "permissions": perms})
 
 
 # =============================================================================
 # API: Password Change
 # =============================================================================
-@app.route('/api/users/me/password', methods=['POST'])
+@app.route("/api/users/me/password", methods=["POST"])
 def api_change_own_password():
     """Сменить пароль текущего пользователя."""
     if not USE_AUTH:
-        return jsonify({'error': 'Авторизация отключена'}), 400
+        return jsonify({"error": "Авторизация отключена"}), 400
 
-    username = session.get('username')
+    username = session.get("username")
     if not username:
-        return jsonify({'error': 'Не авторизован'}), 401
+        return jsonify({"error": "Не авторизован"}), 401
 
     data = request.json
-    current_password = data.get('current_password', '')
-    new_password = data.get('new_password', '')
+    current_password = data.get("current_password", "")
+    new_password = data.get("new_password", "")
 
     if not current_password or not new_password:
-        return jsonify({'error': 'Заполни текущий и новый пароль'}), 400
+        return jsonify({"error": "Заполни текущий и новый пароль"}), 400
 
     # Проверка текущего пароля
     user = user_service.authenticate(username, current_password)
     if not user:
-        return jsonify({'error': 'Неверный текущий пароль'}), 403
+        return jsonify({"error": "Неверный текущий пароль"}), 403
 
     # Обновление пароля
     result = user_service.update_user(username, new_password=new_password)
     if not result:
-        return jsonify({'error': 'Ошибка обновления пароля'}), 500
+        return jsonify({"error": "Ошибка обновления пароля"}), 500
 
     audit_service.log(
-        session.get('user_id'), 'change_password', 'user',
-        entity_id=user['id'], details=f'User {username} changed password'
+        session.get("user_id"),
+        "change_password",
+        "user",
+        entity_id=user["id"],
+        details=f"User {username} changed password",
     )
-    return jsonify({'message': 'Пароль изменён'})
+    return jsonify({"message": "Пароль изменён"})
 
 
-@app.route('/api/users/<int:user_id>/reset-password', methods=['POST'])
+@app.route("/api/users/<int:user_id>/reset-password", methods=["POST"])
 @require_admin
 def api_reset_user_password(user_id):
     """Админ сбрасывает пароль пользователя."""
     user = user_service.get_user_by_id(user_id)
     if not user:
-        return jsonify({'error': 'Пользователь не найден'}), 404
+        return jsonify({"error": "Пользователь не найден"}), 404
 
     data = request.json
-    new_password = data.get('password', '')
+    new_password = data.get("password", "")
     if not new_password:
-        return jsonify({'error': 'Пароль обязателен'}), 400
+        return jsonify({"error": "Пароль обязателен"}), 400
 
-    result = user_service.update_user(user['username'], new_password=new_password)
+    result = user_service.update_user(user["username"], new_password=new_password)
     if not result:
-        return jsonify({'error': 'Ошибка обновления'}), 500
+        return jsonify({"error": "Ошибка обновления"}), 500
 
     audit_service.log(
-        session.get('user_id'), 'reset_password', 'user',
+        session.get("user_id"),
+        "reset_password",
+        "user",
         entity_id=user_id,
-        details=f'Admin reset password for {user["username"]}'
+        details=f"Admin reset password for {user['username']}",
     )
-    return jsonify({'message': f'Пароль пользователя {user["username"]} сброшен'})
+    return jsonify({"message": f"Пароль пользователя {user['username']} сброшен"})
 
 
 # =============================================================================
 # API: Audit Log (Admin only)
 # =============================================================================
-@app.route('/api/audit', methods=['GET'])
+@app.route("/api/audit", methods=["GET"])
 @require_admin
 def api_get_audit_log():
     """Get audit log entries. Query: user_id, entity_type, entity_id, action, limit, offset."""
     logs = audit_service.get_logs(
-        user_id=request.args.get('user_id', type=int),
-        entity_type=request.args.get('entity_type'),
-        entity_id=request.args.get('entity_id', type=int),
-        action=request.args.get('action'),
-        limit=request.args.get('limit', 100, type=int),
-        offset=request.args.get('offset', 0, type=int),
+        user_id=request.args.get("user_id", type=int),
+        entity_type=request.args.get("entity_type"),
+        entity_id=request.args.get("entity_id", type=int),
+        action=request.args.get("action"),
+        limit=request.args.get("limit", 100, type=int),
+        offset=request.args.get("offset", 0, type=int),
     )
-    return jsonify({'logs': logs, 'total': len(logs)})
+    return jsonify({"logs": logs, "total": len(logs)})
 
 
-@app.route('/api/audit/stats/<int:user_id>', methods=['GET'])
+@app.route("/api/audit/stats/<int:user_id>", methods=["GET"])
 @require_admin
 def api_get_user_stats(user_id):
     """Get user activity statistics."""
     user = user_service.get_user_by_id(user_id)
     if not user:
-        return jsonify({'error': 'Пользователь не найден'}), 404
+        return jsonify({"error": "Пользователь не найден"}), 404
 
     stats = audit_service.get_user_stats(user_id)
-    return jsonify({'stats': stats})
+    return jsonify({"stats": stats})
 
 
 # --- Pages: Project ---
-@app.route('/project/<project_name>')
-def project_page(project_name):
-    sanitized_name = project_service._sanitize_name(project_name)
-
-    if not check_project_access(sanitized_name):
+@app.route("/project/<int:project_id>")
+def project_page(project_id):
+    if not check_project_access(project_id):
         abort(403)
 
-    project_data = project_service.get_project(sanitized_name)
+    project_data = project_service.get_project(project_id)
 
     if not project_data:
         abort(404)
 
-    images = project_service.get_images(sanitized_name)
-    project_data['images'] = images
+    images = project_service.get_images(project_id)
+    project_data["images"] = images
 
-    # Определяем роль пользователя на проект
-    project_role = 'admin' if is_admin() else None
+    project_role = "admin" if is_admin() else None
     if not project_role:
-        user_id = session.get('user_id')
+        user_id = session.get("user_id")
         if user_id:
-            project_role = permission_service.get_project_role(user_id, sanitized_name)
+            project_role = permission_service.get_project_role(user_id, project_id)
 
-    return render_template('project.html', project=project_data, project_role=project_role)
+    return render_template(
+        "project.html", project=project_data, project_role=project_role
+    )
 
 
 # --- Error Handlers ---
 @app.errorhandler(404)
 def handle_404(error):
     """Обработчик 404 ошибки."""
-    return render_template('404.html'), 404
+    return render_template("404.html"), 404
 
 
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=True)
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=5000, use_reloader=True)

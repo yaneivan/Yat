@@ -30,8 +30,8 @@ const ProjectAPI = {
         return await response.json();
     },
 
-    async getProject(projectName) {
-        const response = await fetch(`/api/projects/${projectName}`);
+    async getProject(projectId) {
+        const response = await fetch(`/api/projects/${projectId}`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -39,8 +39,8 @@ const ProjectAPI = {
         return data.project;
     },
 
-    async updateProject(projectName, name, description = "") {
-        const response = await fetch(`/api/projects/${projectName}`, {
+    async updateProject(projectId, name, description = "") {
+        const response = await fetch(`/api/projects/${projectId}`, {
             method: 'PUT',
             headers: API.getCsrfHeaders(),
             body: JSON.stringify({name, description})
@@ -53,8 +53,8 @@ const ProjectAPI = {
         return await response.json();
     },
 
-    async deleteProject(projectName) {
-        const response = await fetch(`/api/projects/${projectName}`, {
+    async deleteProject(projectId) {
+        const response = await fetch(`/api/projects/${projectId}`, {
             method: 'DELETE',
             headers: API.getCsrfHeaders()
         });
@@ -67,8 +67,8 @@ const ProjectAPI = {
     },
 
     // Project Images
-    async getProjectImages(projectName) {
-        const response = await fetch(`/api/projects/${projectName}/images`);
+    async getProjectImages(projectId) {
+        const response = await fetch(`/api/projects/${projectId}/images`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -76,8 +76,8 @@ const ProjectAPI = {
         return data.images;
     },
 
-    async addImageToProject(projectName, imageName) {
-        const response = await fetch(`/api/projects/${projectName}/images`, {
+    async addImageToProject(projectId, imageName) {
+        const response = await fetch(`/api/projects/${projectId}/images`, {
             method: 'POST',
             headers: API.getCsrfHeaders(),
             body: JSON.stringify({image_name: imageName})
@@ -90,8 +90,8 @@ const ProjectAPI = {
         return await response.json();
     },
 
-    async removeImageFromProject(projectName, imageName) {
-        const response = await fetch(`/api/projects/${projectName}/images`, {
+    async removeImageFromProject(projectId, imageName) {
+        const response = await fetch(`/api/projects/${projectId}/images`, {
             method: 'DELETE',
             headers: API.getCsrfHeaders(),
             body: JSON.stringify({image_name: imageName})
@@ -105,8 +105,8 @@ const ProjectAPI = {
     },
 
     // Batch Processing
-    async startBatchDetection(projectName, settings = {}) {
-        const response = await fetch(`/api/projects/${projectName}/batch_detect`, {
+    async startBatchDetection(projectId, settings = {}) {
+        const response = await fetch(`/api/projects/${projectId}/batch_detect`, {
             method: 'POST',
             headers: API.getCsrfHeaders(),
             body: JSON.stringify({settings})
@@ -119,8 +119,8 @@ const ProjectAPI = {
         return await response.json();
     },
 
-    async startBatchRecognition(projectName) {
-        const response = await fetch(`/api/projects/${projectName}/batch_recognize`, {
+    async startBatchRecognition(projectId) {
+        const response = await fetch(`/api/projects/${projectId}/batch_recognize`, {
             method: 'POST',
             headers: API.getCsrfHeaders()
         });
@@ -204,13 +204,13 @@ class ProjectManager {
             const projectPromises = basicProjects.map(async (basicProject) => {
                 try {
                     const [detailedProject, imagesResponse] = await Promise.all([
-                        ProjectAPI.getProject(basicProject.name),
-                        ProjectAPI.getProjectImages(basicProject.name)
+                        ProjectAPI.getProject(basicProject.id),
+                        ProjectAPI.getProjectImages(basicProject.id)
                     ]);
                     detailedProject.images = imagesResponse; // imagesResponse is already an array of image objects
                     return detailedProject;
                 } catch (error) {
-                    console.error(`Error loading details for project ${basicProject.name}:`, error);
+                    console.error(`Error loading details for project ${basicProject.id}:`, error);
                     // Add the basic project info if detailed load fails
                     return basicProject;
                 }
@@ -296,7 +296,7 @@ class ProjectManager {
         projectActions.className = 'project-actions';
 
         const openLink = document.createElement('a');
-        openLink.href = `/project/${encodeURIComponent(project.name)}`;
+        openLink.href = `/project/${project.id}`;
         openLink.className = 'action-btn';
         openLink.textContent = 'Открыть';
 
@@ -307,7 +307,7 @@ class ProjectManager {
             const deleteButton = document.createElement('button');
             deleteButton.className = 'action-btn';
             deleteButton.textContent = 'Удалить';
-            deleteButton.onclick = () => projectManager.deleteProject(project.name);
+            deleteButton.onclick = () => projectManager.deleteProject(project.id);
             projectActions.appendChild(deleteButton);
         }
 
@@ -390,14 +390,14 @@ class ProjectManager {
 
         // Support both string (filename) and object (from updated API)
         const filename = typeof image === 'string' ? image : image.name;
-        const projectName = typeof image === 'object' ? image.project_name : null;
+        const projectId = typeof image === 'object' ? image.project_id : null;
 
         // Create elements safely to prevent XSS
         const imageContainer = document.createElement('div');
         imageContainer.style.position = 'relative';
 
         const img = document.createElement('img');
-        const projectParam = projectName ? `?project=${encodeURIComponent(projectName)}` : '';
+        const projectParam = projectId ? `?project_id=${projectId}` : '';
         img.src = `/data/images/${encodeURIComponent(filename)}${projectParam}`;
         img.className = 'thumb';
         img.loading = 'lazy';
@@ -422,19 +422,19 @@ class ProjectManager {
         cardActions.className = 'card-actions';
 
         const cropLink = document.createElement('a');
-        cropLink.href = `/cropper?image=${encodeURIComponent(image)}`;
+        cropLink.href = `/cropper?project_id=${projectId}&image=${encodeURIComponent(filename)}`;
         cropLink.className = 'action-btn action-crop';
         cropLink.title = 'Кадрировать';
         cropLink.textContent = '✂️ Crop';
 
         const segmentLink = document.createElement('a');
-        segmentLink.href = `/editor?image=${encodeURIComponent(image)}`;
+        segmentLink.href = `/editor?project_id=${projectId}&image=${encodeURIComponent(filename)}`;
         segmentLink.className = 'action-btn action-segment';
         segmentLink.title = 'Размечать';
         segmentLink.textContent = '✏️ Seg';
 
         const textLink = document.createElement('a');
-        textLink.href = `/text_editor?image=${encodeURIComponent(image)}`;
+        textLink.href = `/text_editor?project_id=${projectId}&image=${encodeURIComponent(filename)}`;
         textLink.className = 'action-btn';
         textLink.title = 'Распознавание текста';
         textLink.textContent = '📝 Расп';
@@ -487,13 +487,15 @@ class ProjectManager {
         }
     }
 
-    async deleteProject(projectName) {
+    async deleteProject(projectId) {
+        const project = this.projects.find(p => p.id === projectId);
+        const projectName = project ? project.name : projectId;
         if (!confirm(`Удалить проект "${projectName}"?`)) {
             return false;
         }
 
         try {
-            const result = await ProjectAPI.deleteProject(projectName);
+            const result = await ProjectAPI.deleteProject(projectId);
             if (result.status === 'success') {
                 this.showSuccess('Проект удален успешно');
                 // Reload the page to maintain view state
@@ -610,13 +612,13 @@ class ProjectManager {
         }
     }
 
-    openAddImagesModal(projectName) {
-        this.currentProjectName = projectName;
+    openAddImagesModal(projectId) {
+        this.currentProjectId = projectId;
         const modal = document.getElementById('addImagesModal');
         if (modal) {
             modal.style.display = 'block';
             // Load available images to add to the project
-            this.loadAvailableImagesForProject(projectName);
+            this.loadAvailableImagesForProject(projectId);
         }
     }
 
@@ -627,14 +629,14 @@ class ProjectManager {
         }
     }
 
-    async loadAvailableImagesForProject(projectName) {
+    async loadAvailableImagesForProject(projectId) {
         try {
             // Get all images
             const allImagesResponse = await fetch('/api/images_list');
             const allImages = await allImagesResponse.json();
 
             // Get project images
-            const projectImagesResponse = await fetch(`/api/projects/${encodeURIComponent(projectName)}/images`);
+            const projectImagesResponse = await fetch(`/api/projects/${projectId}/images`);
             const projectImagesData = await projectImagesResponse.json();
             const projectImages = projectImagesData.images.map(img => img.name);
 
@@ -642,14 +644,14 @@ class ProjectManager {
             const availableImages = allImages.filter(img => !projectImages.includes(img));
 
             // Render available images
-            this.renderAvailableImages(availableImages, projectName);
+            this.renderAvailableImages(availableImages, projectId);
         } catch (error) {
             console.error('Error loading available images:', error);
             this.showError('Ошибка при загрузке изображений');
         }
     }
 
-    renderAvailableImages(images, projectName) {
+    renderAvailableImages(images, projectId) {
         const container = document.getElementById('available-images-container');
         if (!container) return;
 
@@ -660,8 +662,6 @@ class ProjectManager {
             return;
         }
 
-        const projectParam = projectName ? `?project=${encodeURIComponent(projectName)}` : '';
-
         images.forEach(image => {
             const imageCard = document.createElement('div');
             imageCard.className = 'file-card';
@@ -671,7 +671,7 @@ class ProjectManager {
             imageContainer.style.position = 'relative';
 
             const img = document.createElement('img');
-            img.src = `/data/images/${encodeURIComponent(image)}${projectParam}`;
+            img.src = `/data/images/${encodeURIComponent(image)}`;
             img.className = 'thumb';
             img.loading = 'lazy';
             img.style.cursor = 'pointer';
@@ -697,7 +697,7 @@ class ProjectManager {
             const addButton = document.createElement('button');
             addButton.className = 'action-btn';
             addButton.textContent = 'Добавить';
-            addButton.onclick = () => this.addImageToProject(projectName, image);  // Safe: closure
+            addButton.onclick = () => this.addImageToProject(projectId, image);  // Safe: closure
 
             cardActions.appendChild(addButton);
 
@@ -709,9 +709,9 @@ class ProjectManager {
         });
     }
 
-    async addImageToProject(projectName, image) {
+    async addImageToProject(projectId, image) {
         try {
-            const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/images`, {
+            const response = await fetch(`/api/projects/${projectId}/images`, {
                 method: 'POST',
                 headers: API.getCsrfHeaders(),
                 body: JSON.stringify({image_name: image})
@@ -722,7 +722,7 @@ class ProjectManager {
             if (result.status === 'success') {
                 this.showSuccess(`Изображение ${image} добавлено в проект`);
                 // Reload the available images to update the list
-                this.loadAvailableImagesForProject(projectName);
+                this.loadAvailableImagesForProject(projectId);
                 // Also reload projects to update stats
                 await this.loadProjects();
                 this.updateStats();
@@ -789,7 +789,7 @@ class ProjectManager {
         projectActions.className = 'project-actions';
 
         const openLink = document.createElement('a');
-        openLink.href = `/project/${encodeURIComponent(project.name)}`;
+        openLink.href = `/project/${project.id}`;
         openLink.className = 'btn';
         openLink.textContent = 'Открыть';
 
@@ -802,7 +802,7 @@ class ProjectManager {
             deleteBtn.textContent = 'Удалить';
             deleteBtn.onclick = (event) => {
                 event.stopPropagation();
-                this.deleteProject(project.name);
+                this.deleteProject(project.id);
             };
             projectActions.appendChild(deleteBtn);
         }
@@ -812,7 +812,7 @@ class ProjectManager {
 
         // Make the entire card clickable
         projectItem.addEventListener('click', function() {
-            window.location.href = `/project/${encodeURIComponent(project.name)}`;
+            window.location.href = `/project/${project.id}`;
         });
 
         return projectItem;
@@ -883,11 +883,11 @@ class ProjectManager {
         const pathParts = window.location.pathname.split('/');
         const isProjectPage = pathParts.length >= 3 && pathParts[1] === 'project';
         if (isProjectPage) {
-            const projectName = decodeURIComponent(pathParts[2]);
-            formData.append('project_name', projectName);
-            console.log('[ZIP Import] Project page, project_name:', projectName);
+            const projectId = parseInt(pathParts[2], 10);
+            formData.append('project_id', projectId);
+            console.log('[ZIP Import] Project page, project_id:', projectId);
         } else {
-            console.log('[ZIP Import] Main page, no project_name');
+            console.log('[ZIP Import] Main page, no project_id');
         }
 
         try {
@@ -1066,18 +1066,14 @@ class ProjectManager {
     }
 
     async saveProjectInfo(newName, newDescription) {
-        // Get the current project name from the URL
+        // Get the current project id from the URL
         const pathParts = window.location.pathname.split('/');
-        const currentProjectName = pathParts[pathParts.length - 1];
+        const currentProjectId = parseInt(pathParts[2], 10);
 
         try {
-            const result = await ProjectAPI.updateProject(currentProjectName, newName, newDescription);
+            const result = await ProjectAPI.updateProject(currentProjectId, newName, newDescription);
             if (result.status === 'success') {
-                // Update the URL to reflect the new project name
-                const newUrl = `/project/${encodeURIComponent(newName)}`;
-                window.history.pushState({}, '', newUrl);
-                
-                // Reload the page to reflect changes with the new URL
+                // Reload the page to reflect changes
                 location.reload();
             } else {
                 // В случае ошибки восстанавливаем исходное состояние
@@ -1247,7 +1243,7 @@ async function openUserPermissions(userId, username) {
         select.innerHTML = '';
         for (const proj of (projectsData.projects || [])) {
             const opt = document.createElement('option');
-            opt.value = proj.name;
+            opt.value = proj.id;
             opt.textContent = proj.name;
             select.appendChild(opt);
         }
@@ -1274,7 +1270,7 @@ async function loadUserPermissions() {
             li.style.cssText = 'display:flex; justify-content:space-between; padding:8px; border-bottom:1px solid #eee;';
             li.innerHTML = `
                 <span><b>${perm.project_name}</b> — ${perm.role}</span>
-                <button class="btn" style="padding:2px 8px; color:#dc3545;" onclick="revokePermission('${perm.project_name}')">Отозвать</button>
+                <button class="btn" style="padding:2px 8px; color:#dc3545;" onclick="revokePermission(${perm.project_id})">Отозвать</button>
             `;
             list.appendChild(li);
         }
@@ -1288,13 +1284,13 @@ async function loadUserPermissions() {
 }
 
 async function grantPermission() {
-    const project = document.getElementById('perm-project').value;
+    const projectId = parseInt(document.getElementById('perm-project').value, 10);
     const role = document.getElementById('perm-role').value;
 
-    if (!project) { alert('Выбери проект'); return; }
+    if (!projectId) { alert('Выбери проект'); return; }
 
     try {
-        const resp = await fetch(`/api/projects/${encodeURIComponent(project)}/permissions`, {
+        const resp = await fetch(`/api/projects/${projectId}/permissions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ user_id: _currentPermUserId, role })
@@ -1310,11 +1306,11 @@ async function grantPermission() {
     }
 }
 
-async function revokePermission(projectName) {
-    if (!confirm(`Отозвать доступ к "${projectName}"?`)) return;
+async function revokePermission(projectId) {
+    if (!confirm(`Отозвать доступ к проекту?`)) return;
 
     try {
-        const resp = await fetch(`/api/projects/${encodeURIComponent(projectName)}/permissions/${_currentPermUserId}`, {
+        const resp = await fetch(`/api/projects/${projectId}/permissions/${_currentPermUserId}`, {
             method: 'DELETE'
         });
         if (resp.ok) {

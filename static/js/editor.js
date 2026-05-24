@@ -171,7 +171,7 @@ class HTREditor {
         const loadVersion = this._loadVersion = (this._loadVersion || 0) + 1;
 
         const timestamp = new Date().getTime();
-        const projectParam = this.project ? `&project=${this.project}` : '';
+        const projectParam = this.project ? `&project_id=${this.project}` : '';
         const imgUrl = `/data/images/${this.filename}?t=${timestamp}${projectParam}`;
 
         const imgEl = new Image();
@@ -235,7 +235,7 @@ class HTREditor {
     navigateTo(toolName) {
         let url = `/${toolName}?image=${this.filename}`;
         if (this.project) {
-            url += `&project=${this.project}`;
+            url += `&project_id=${this.project}`;
         }
         window.location.href = url;
     }
@@ -245,7 +245,7 @@ class HTREditor {
         if (idx === -1) return;
         [(idx + 1) % this.imageList.length, (idx - 1 + this.imageList.length) % this.imageList.length].forEach(i => {
             const fname = this.imageList[i];
-            const projectParam = this.project ? `?project=${this.project}` : '';
+            const projectParam = this.project ? `?project_id=${this.project}` : '';
             new Image().src = `/data/images/${fname}${projectParam}`;
             API.loadAnnotation(fname, this.project);
         });
@@ -280,7 +280,7 @@ class HTREditor {
             // 3. Формируем новый URL с учетом проекта
             let newUrl = `${window.location.pathname}?image=${newFilename}`;
             if (this.project) {
-                newUrl += `&project=${this.project}`;
+                newUrl += `&project_id=${this.project}`;
             }
 
             // 4. Пишем в историю браузера
@@ -741,7 +741,7 @@ class HTREditor {
 
             console.log('Sending settings to API:', settings); // Отладочный вывод
 
-            const projectParam = this.project ? `?project=${encodeURIComponent(this.project)}` : '';
+            const projectParam = this.project ? `?project_id=${this.project}` : '';
             const response = await fetch(`/api/detect_lines${projectParam}`, {
                 method: 'POST',
                 headers: API.getCsrfHeaders(),

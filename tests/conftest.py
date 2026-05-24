@@ -33,7 +33,6 @@ def pytest_configure(config):
     global _temp_test_dir, _original_db_path, _original_database_url
     global _original_engine, _original_SessionLocal, _original_storage
     
-    import tempfile
     from sqlalchemy import create_engine
     
     # Create temporary directory for all test data
@@ -149,7 +148,6 @@ def _setup_test_database(config):
     global _temp_test_dir, _original_db_path, _original_database_url
     global _original_engine, _original_SessionLocal, _original_storage
     
-    import tempfile
     from sqlalchemy import create_engine
     
     # Create temporary directory for all test data
